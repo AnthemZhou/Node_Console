@@ -1,12 +1,12 @@
 # Node Console
 
 ![Blender](https://img.shields.io/badge/Blender-4.0%2B-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-0.7.11-blue)
+![Version](https://img.shields.io/badge/version-0.7.21-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 
 Author: Anthem  
-Version: 0.7.11
+Version: 0.7.21
 
 Node Console is a language-independent Blender node launcher. It replaces the default `Shift + A` node search with a custom console that can search and display node names in English, Chinese, or bilingual formats.
 
@@ -36,7 +36,7 @@ Node Console is a language-independent Blender node launcher. It replaces the de
 
 ## Install
 
-1. Use the generated `Node_Console_0.7.11.zip`.
+1. Use the generated `Node_Console_0.7.21.zip`.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...` and choose the zip file.
 4. Enable `Node Console`.

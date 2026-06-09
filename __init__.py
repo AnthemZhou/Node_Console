@@ -4,6 +4,7 @@ import ast
 import json
 import math
 import re
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,7 +20,7 @@ from gpu_extras.batch import batch_for_shader
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 7, 11),
+    "version": (0, 7, 21),
     "blender": (4, 0, 0),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -37,11 +38,11 @@ BACKGROUND_ASSET_INDEX = None
 FONT_ID = 0
 MAX_RESULTS = 12
 PANEL_WIDTH = 323
-SEARCH_HEIGHT = 31
+SEARCH_HEIGHT = 23
 ROW_HEIGHT = 26
 PANEL_PADDING = 8
-SHORTCUT_HEIGHT = 30
-SHORTCUT_GAP = 6
+SHORTCUT_HEIGHT = 23
+SHORTCUT_GAP = 4
 CONTEXT_MENU_WIDTH = 190
 CONTEXT_MENU_ROW_HEIGHT = 30
 PANEL_BACKGROUND = (0.095, 0.095, 0.1, 0.98)
@@ -148,6 +149,7 @@ def _save_preference_settings():
             "shortcut_shift": prefs.shortcut_shift,
             "shortcut_ctrl": prefs.shortcut_ctrl,
             "shortcut_alt": prefs.shortcut_alt,
+            "shortcut_oskey": prefs.shortcut_oskey,
             "scan_asset_libraries": prefs.scan_asset_libraries,
             "settings_version": 2,
         }
@@ -165,7 +167,7 @@ def _load_preferences_from_settings():
         data["ui_scale"] = max(1.0, min(2.0, float(data["ui_scale"]) / 1.7))
         data["settings_version"] = 2
         _write_settings(data)
-    for name in ("display_mode", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "scan_asset_libraries"):
+    for name in ("display_mode", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "scan_asset_libraries"):
         if name in data:
             try:
                 setattr(prefs, name, data[name])
@@ -955,8 +957,22 @@ def _add_asset_node(context, entry: NodeSearchEntry):
     return node
 
 
+def _uniform_shader():
+    global UNIFORM_SHADER
+    if UNIFORM_SHADER is None:
+        UNIFORM_SHADER = gpu.shader.from_builtin("UNIFORM_COLOR")
+    return UNIFORM_SHADER
+
+
+def _smooth_shader():
+    global SMOOTH_SHADER
+    if SMOOTH_SHADER is None:
+        SMOOTH_SHADER = gpu.shader.from_builtin("SMOOTH_COLOR")
+    return SMOOTH_SHADER
+
+
 def _draw_rect(x: float, y: float, width: float, height: float, color: tuple[float, float, float, float]):
-    shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+    shader = _uniform_shader()
     vertices = ((x, y), (x + width, y), (x + width, y + height), (x, y + height))
     batch = batch_for_shader(shader, "TRI_FAN", {"pos": vertices})
     shader.bind()
@@ -967,10 +983,45 @@ def _draw_rect(x: float, y: float, width: float, height: float, color: tuple[flo
 def _draw_horizontal_fade(x: float, y: float, width: float, height: float, color: tuple[float, float, float, float], steps: int = 10):
     if width <= 0 or height <= 0:
         return
-    step_width = width / steps
-    for step in range(steps):
-        alpha = color[3] * ((step + 1) / steps)
-        _draw_rect(x + step * step_width, y, step_width + 1, height, (color[0], color[1], color[2], alpha))
+
+    previous_blend = None
+    try:
+        previous_blend = gpu.state.blend_get()
+        gpu.state.blend_set("ALPHA")
+    except Exception:
+        previous_blend = None
+
+    try:
+        shader = _smooth_shader()
+        vertices = (
+            (x, y),
+            (x + width, y),
+            (x + width, y + height),
+            (x, y),
+            (x + width, y + height),
+            (x, y + height),
+        )
+        transparent = (color[0], color[1], color[2], 0.0)
+        colors = (transparent, color, color, transparent, color, transparent)
+        batch = batch_for_shader(shader, "TRIS", {"pos": vertices, "color": colors})
+        shader.bind()
+        batch.draw(shader)
+    finally:
+        try:
+            gpu.state.blend_set(previous_blend if previous_blend is not None else "NONE")
+        except Exception:
+            pass
+
+
+def _draw_right_rounded_fill(x: float, y: float, width: float, height: float, radius: float, color: tuple[float, float, float, float]):
+    if width <= 0 or height <= 0:
+        return
+
+    radius = max(0, min(radius, width / 2, height / 2))
+    if width > radius:
+        _draw_rect(x, y, width - radius, height, color)
+    cap_width = min(width, radius * 2)
+    _draw_rounded_rect(x + width - cap_width, y, cap_width, height, radius, color)
 
 
 def _rounded_rect_vertices(x: float, y: float, width: float, height: float, radius: float, segments: int = 8):
@@ -1000,7 +1051,7 @@ def _draw_rounded_rect(
     radius: float,
     color: tuple[float, float, float, float],
 ):
-    shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+    shader = _uniform_shader()
     batch = batch_for_shader(shader, "TRI_FAN", {"pos": _rounded_rect_vertices(x, y, width, height, radius)})
     shader.bind()
     shader.uniform_float("color", color)
@@ -1031,6 +1082,12 @@ def _draw_centered_text(text: str, x: float, y: float, width: float, height: flo
     blf.size(FONT_ID, size)
     text_width, text_height = blf.dimensions(FONT_ID, text)
     _draw_text(text, x + (width - text_width) / 2, y + (height - text_height) / 2, size, color)
+
+
+def _draw_text_vcenter(text: str, x: float, y: float, height: float, size: int, color: tuple[float, float, float, float]):
+    blf.size(FONT_ID, size)
+    _text_width_value, text_height = blf.dimensions(FONT_ID, text)
+    _draw_text(text, x, y + (height - text_height) / 2, size, color)
 
 
 def _text_width(text: str, size: int) -> float:
@@ -1099,6 +1156,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _search_y = None
     _placing_node = None
     _scroll_offset = 0
+    _scroll_remainder = 0.0
     _visible_limit = MAX_RESULTS
     _shortcuts: list[str] = []
     _shortcut_rects: list[tuple[str, tuple[float, float, float, float]]] = []
@@ -1284,6 +1342,45 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._context_menu_rect = (x, y, width, row_height * 3)
         self._context_menu_hover = self._context_menu_action_from_mouse(event)
 
+    def _scroll_results(self, amount: int) -> bool:
+        if not self._query or not self._results or self._visible_limit <= 0:
+            return False
+
+        max_scroll = max(0, len(self._results) - self._visible_limit)
+        old_offset = self._scroll_offset
+        self._scroll_offset = min(max(0, self._scroll_offset + amount), max_scroll)
+        if self._selected_index < self._scroll_offset:
+            self._selected_index = self._scroll_offset
+        elif self._selected_index >= self._scroll_offset + self._visible_limit:
+            self._selected_index = self._scroll_offset + self._visible_limit - 1
+        self._selected_index = max(0, min(self._selected_index, len(self._results) - 1))
+        return self._scroll_offset != old_offset
+
+    def _scroll_amount_from_event(self, event) -> int:
+        if event.type in {"WHEELDOWNMOUSE", "WHEELOUTMOUSE"}:
+            self._scroll_remainder = 0.0
+            return 1
+        if event.type in {"WHEELUPMOUSE", "WHEELINMOUSE"}:
+            self._scroll_remainder = 0.0
+            return -1
+        if event.type in {"TRACKPADPAN", "MOUSEPAN"}:
+            delta_y = getattr(event, "mouse_prev_y", event.mouse_region_y) - getattr(event, "mouse_y", event.mouse_region_y)
+            if delta_y == 0:
+                delta_y = getattr(event, "mouse_prev_y", event.mouse_region_y) - event.mouse_region_y
+            if delta_y == 0:
+                return 0
+
+            row_step = max(16.0, self._row_height * 0.9)
+            self._scroll_remainder += -delta_y / row_step
+            amount = int(self._scroll_remainder)
+            if amount == 0:
+                return 0
+
+            amount = max(-1, min(1, amount))
+            self._scroll_remainder -= amount
+            return amount
+        return 0
+
     def invoke(self, context, event):
         _store_cursor_location(context, event)
         _rebuild_search_entries(context)
@@ -1306,6 +1403,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._shortcut_hover_started = 0.0
         self._shortcut_delete_confirm = None
         self._scroll_offset = 0
+        self._scroll_remainder = 0.0
         self._refresh_results()
         self._draw_handler = SpaceNodeEditor.draw_handler_add(self._draw_callback, (context,), "WINDOW", "POST_PIXEL")
         self._timer = context.window_manager.event_timer_add(0.2, window=context.window)
@@ -1352,17 +1450,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 context.area.tag_redraw()
             return {"RUNNING_MODAL"}
 
-        if event.type in {"WHEELUPMOUSE", "WHEELDOWNMOUSE"}:
+        if event.type in {"WHEELUPMOUSE", "WHEELDOWNMOUSE", "WHEELINMOUSE", "WHEELOUTMOUSE", "TRACKPADPAN", "MOUSEPAN"}:
             if self._context_menu_index is not None:
                 return {"RUNNING_MODAL"}
-            max_scroll = max(0, len(self._results) - self._visible_limit)
-            if event.type == "WHEELUPMOUSE":
-                self._scroll_offset = max(0, self._scroll_offset - 1)
-            else:
-                self._scroll_offset = min(max_scroll, self._scroll_offset + 1)
-            self._selected_index = min(max(self._scroll_offset, self._selected_index), min(len(self._results) - 1, self._scroll_offset + self._visible_limit - 1)) if self._results else 0
-            if context.area:
-                context.area.tag_redraw()
+            amount = self._scroll_amount_from_event(event)
+            if amount:
+                self._scroll_results(amount)
+                if context.area:
+                    context.area.tag_redraw()
             return {"RUNNING_MODAL"}
 
         if event.value == "PRESS":
@@ -1505,7 +1600,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if self._search_y is None:
             self._search_y = self._anchor_y - search_height / 2
 
-        x = min(max(0, self._panel_x), region.width - width)
+        x = min(max(1, self._panel_x), max(1, region.width - width - 1))
         preferred_rows_below = min(4, MAX_RESULTS)
         min_search_y = padding + gap + preferred_rows_below * row_height
         search_y = min(max(min_search_y, self._search_y), region.height - padding - search_height)
@@ -1528,15 +1623,15 @@ class ENS_AddNodeByEnglishSearch(Operator):
         placeholder = "搜索节点..." if _display_mode() in {"CHINESE", "CHINESE_ENGLISH"} else "Search nodes..."
         query_text = self._query if self._query else placeholder
         query_color = TEXT_COLOR if self._query else MUTED_TEXT_COLOR
-        query_size = _scaled(14, scale)
-        search_text_y = search_y + (search_height - _scaled(14, scale)) / 2 + _scaled(2, scale)
-        _draw_text("⌕", x + padding + _scaled(11, scale), search_text_y - _scaled(3, scale), _scaled(22, scale), MUTED_TEXT_COLOR)
-        query_x = x + padding + _scaled(44, scale)
+        query_size = _scaled(13, scale)
+        search_text_y = search_y + (search_height - _scaled(13, scale)) / 2 + _scaled(1, scale)
+        _draw_text("⌕", x + padding + _scaled(10, scale), search_text_y - _scaled(2, scale), _scaled(18, scale), MUTED_TEXT_COLOR)
+        query_x = x + padding + _scaled(36, scale)
         text_x = query_x if self._query else query_x + _scaled(9, scale)
         _draw_text(query_text, text_x, search_text_y, query_size, query_color)
         if int(time.monotonic() * 2) % 2 == 0:
             cursor_x = query_x + (_text_width(self._query, query_size) if self._query else 0) + _scaled(2, scale)
-            _draw_rect(cursor_x, search_y + _scaled(7, scale), max(1, _scaled(1, scale)), search_height - _scaled(14, scale), TEXT_COLOR)
+            _draw_rect(cursor_x, search_y + _scaled(5, scale), max(1, _scaled(1, scale)), search_height - _scaled(10, scale), TEXT_COLOR)
 
         self._shortcut_rects = []
         self._shortcut_delete_rects = []
@@ -1558,7 +1653,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 if delete_visible:
                     self._shortcut_delete_rects.append((identifier, (delete_x, delete_y, delete_size, delete_size)))
                 shortcut_text = _fit_text(_abbreviate_label(_entry_primary_label(entry)), item_width - _scaled(18, scale), shortcut_text_size)
-                _draw_text(shortcut_text, item_x + _scaled(7, scale), shortcuts_y + _scaled(8, scale), shortcut_text_size, TEXT_COLOR)
+                _draw_text_vcenter(shortcut_text, item_x + _scaled(7, scale), shortcuts_y, shortcut_height, shortcut_text_size, TEXT_COLOR)
                 if delete_visible:
                     x_size = max(9, _scaled(9, scale))
                     if self._shortcut_delete_confirm == identifier:
@@ -1588,27 +1683,26 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
             row_text_y = row_y + _scaled(7, scale)
             category_x = x + padding + _scaled(10, scale)
-            fav_width = _scaled(10, scale)
+            fav_width = _scaled(12, scale)
             fav_height = _scaled(18, scale)
             fav_x = x + width - padding - fav_width - _scaled(8, scale)
-            fade_width = _scaled(24, scale)
+            fade_width = _scaled(46, scale)
             fade_x = fav_x - fade_width
             category_size = _scaled(11, scale)
             label_size = _scaled(13, scale)
             category_text = f"{entry.category} >"
-            max_category_width = max(_scaled(28, scale), min(_text_width(category_text, category_size), fav_x - category_x - _scaled(92, scale)))
-            category_text = _clip_text(category_text, max_category_width, category_size)
+            category_text = _clip_text(category_text, max(0, fav_x - category_x), category_size)
             category_width = _text_width(category_text, category_size)
             label_x = category_x + category_width + _scaled(8, scale)
             label_text = _clip_text(entry.label, max(0, fav_x - label_x), label_size)
             _draw_text(category_text, category_x, row_text_y, category_size, MUTED_TEXT_COLOR)
             _draw_text(label_text, label_x, row_text_y, label_size, TEXT_COLOR)
             fade_color = HIGHLIGHT_COLOR if is_selected else PANEL_BACKGROUND
-            _draw_horizontal_fade(fade_x, row_y + _scaled(2, scale), fade_width, row_height - _scaled(4, scale), fade_color)
-            _draw_rect(fav_x, row_y + _scaled(2, scale), max(0, x + width - fav_x), row_height - _scaled(4, scale), fade_color)
+            _draw_horizontal_fade(fade_x, row_y + _scaled(2, scale), fade_width, row_height - _scaled(4, scale), fade_color, steps=32)
+            _draw_right_rounded_fill(fav_x, row_y + _scaled(2, scale), max(0, x + width - padding - fav_x), row_height - _scaled(4, scale), max(3, radius - 2), fade_color)
             if is_favorite:
                 fav_y = row_y + (row_height - fav_height) / 2
-                _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, _scaled(3, scale), (0.45, 0.45, 0.46, 0.95))
+                _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), (0.45, 0.45, 0.46, 0.95))
 
         if has_query and len(self._results) > self._scroll_offset + rows:
             _draw_text("▼", x + width / 2 - _scaled(4, scale), y + _scaled(4, scale), _scaled(12, scale), TEXT_COLOR)
@@ -1737,6 +1831,12 @@ class ENS_AddonPreferences(AddonPreferences):
         default=False,
         update=_shortcut_changed,
     )
+    shortcut_oskey: BoolProperty(
+        name="Command",
+        description="Require Command for the Node Console shortcut on macOS",
+        default=False,
+        update=_shortcut_changed,
+    )
     scan_asset_libraries: BoolProperty(
         name="Show Cached Asset Nodes",
         description="Show cached Asset Library node groups in search results. Refresh Asset Index updates the cache.",
@@ -1769,32 +1869,37 @@ class ENS_AddonPreferences(AddonPreferences):
 
     def draw(self, _context):
         layout = self.layout
-        grid = layout.grid_flow(row_major=True, columns=4, even_columns=True, even_rows=False, align=True)
-        grid.label(text="Search Result Display")
-        grid.prop(self, "display_mode", text="")
-        grid.label(text="")
-        grid.prop(self, "ui_scale")
-        grid.prop(self, "scan_asset_libraries", text="Show Cached Asset Nodes")
-        grid.label(text=f"Cached Assets: {len(_load_asset_index())}")
-        grid.label(text="")
-        grid.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="Refresh Asset Index")
+        top = layout.split(factor=0.76)
+        left_grid = top.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=False, align=True)
+        left_grid.label(text="Search Result Display")
+        left_grid.prop(self, "display_mode", text="")
+        left_grid.prop(self, "scan_asset_libraries", text="Show Cached Asset Nodes")
+        left_grid.label(text=f"Cached Assets: {len(_load_asset_index())}")
+        right_col = top.column(align=False)
+        right_col.prop(self, "ui_scale")
+        right_col.separator(factor=0.35)
+        right_col.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="Refresh Asset Index")
 
         box = layout.box()
         box.label(text="Shortcut")
         row = box.row(align=False)
         row.prop(self, "shortcut_key", text="", translate=False)
         row.separator(factor=1.0)
-        row.prop(self, "shortcut_shift", text="Shift", toggle=True, translate=False)
-        row.separator(factor=0.45)
+        if sys.platform == "darwin":
+            row.prop(self, "shortcut_oskey", text="Command", toggle=True, translate=False)
+            row.separator(factor=0.45)
         row.prop(self, "shortcut_ctrl", text="Ctrl", toggle=True, translate=False)
+        row.separator(factor=0.45)
+        row.prop(self, "shortcut_shift", text="Shift", toggle=True, translate=False)
         row.separator(factor=0.45)
         row.prop(self, "shortcut_alt", text="Alt", toggle=True, translate=False)
 
         favorite_meta = _load_favorite_meta()
-        lists = layout.row(align=True)
+        lists = layout.row(align=False)
 
         favorites = _load_favorites()
-        box = lists.box()
+        left_col = lists.column()
+        box = left_col.box()
         box.label(text="Favorites")
         if not favorites:
             box.label(text="No favorite nodes")
@@ -1806,7 +1911,9 @@ class ENS_AddonPreferences(AddonPreferences):
                 remove_op.identifier = identifier
 
         shortcuts = _load_shortcuts()
-        box = lists.box()
+        lists.separator(factor=0.8)
+        right_col = lists.column()
+        box = right_col.box()
         box.label(text="Shortcuts")
         if not shortcuts:
             box.label(text="No node shortcuts")
@@ -1851,6 +1958,7 @@ def register_keymap():
     shift = prefs.shortcut_shift if prefs else True
     ctrl = prefs.shortcut_ctrl if prefs else False
     alt = prefs.shortcut_alt if prefs else False
+    oskey = prefs.shortcut_oskey if prefs else False
     keymap_item = keymap.keymap_items.new(
         ENS_AddNodeByEnglishSearch.bl_idname,
         type=key_type,
@@ -1858,6 +1966,7 @@ def register_keymap():
         shift=shift,
         ctrl=ctrl,
         alt=alt,
+        oskey=oskey,
     )
     KEYMAP_ITEMS.append((keymap, keymap_item))
 
