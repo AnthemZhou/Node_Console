@@ -4,6 +4,7 @@ import ast
 import json
 import math
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from gpu_extras.batch import batch_for_shader
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 7, 2),
+    "version": (0, 7, 11),
     "blender": (4, 0, 0),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -29,10 +30,13 @@ bl_info = {
 ADDON_ID = __name__
 KEYMAP_ITEMS = []
 NODE_SEARCH_ENTRIES: list["NodeSearchEntry"] = []
+MENU_ENTRY_CACHE: dict[str, list[tuple[str, str, str, tuple[tuple[str, str], ...]]]] = {}
+NODE_CLASS_CACHE: list[type] | None = None
+BACKGROUND_ASSET_INDEX = None
 
 FONT_ID = 0
 MAX_RESULTS = 12
-PANEL_WIDTH = 430
+PANEL_WIDTH = 323
 SEARCH_HEIGHT = 31
 ROW_HEIGHT = 26
 PANEL_PADDING = 8
@@ -67,6 +71,12 @@ class NodeSearchEntry:
 
 
 NODE_ENTRY_BY_ID: dict[str, NodeSearchEntry] = {}
+
+
+def _clear_search_caches():
+    global NODE_CLASS_CACHE
+    MENU_ENTRY_CACHE.clear()
+    NODE_CLASS_CACHE = None
 
 
 def _safe_identifier(prefix: str, *parts: str) -> str:
@@ -138,6 +148,7 @@ def _save_preference_settings():
             "shortcut_shift": prefs.shortcut_shift,
             "shortcut_ctrl": prefs.shortcut_ctrl,
             "shortcut_alt": prefs.shortcut_alt,
+            "scan_asset_libraries": prefs.scan_asset_libraries,
             "settings_version": 2,
         }
     )
@@ -154,7 +165,7 @@ def _load_preferences_from_settings():
         data["ui_scale"] = max(1.0, min(2.0, float(data["ui_scale"]) / 1.7))
         data["settings_version"] = 2
         _write_settings(data)
-    for name in ("display_mode", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt"):
+    for name in ("display_mode", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "scan_asset_libraries"):
         if name in data:
             try:
                 setattr(prefs, name, data[name])
@@ -207,6 +218,34 @@ def _load_favorite_meta() -> dict[str, str]:
     return {key: value for key, value in raw.items() if isinstance(key, str) and isinstance(value, str)}
 
 
+def _load_asset_index() -> list[tuple[str, str]]:
+    raw = _load_settings().get("asset_index", [])
+    if not isinstance(raw, list):
+        return []
+
+    entries = []
+    seen = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        blend_path = item.get("path")
+        name = item.get("name")
+        if not isinstance(blend_path, str) or not isinstance(name, str):
+            continue
+        key = (blend_path, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(key)
+    return entries
+
+
+def _save_asset_index(entries: list[tuple[str, str]]):
+    data = _load_settings()
+    data["asset_index"] = [{"path": blend_path, "name": name} for blend_path, name in entries]
+    _write_settings(data)
+
+
 def _save_favorites(favorites: set[str], favorite_meta: dict[str, str] | None = None):
     data = _load_settings()
     data["favorites"] = sorted(favorites)
@@ -251,6 +290,7 @@ def _remove_favorite(identifier: str):
 
 
 def _preference_changed(_self, _context):
+    _clear_search_caches()
     _save_preference_settings()
 
 
@@ -281,9 +321,13 @@ def _translation_label(text: str) -> str:
     return text
 
 
-def _entry_label(english: str, chinese: str) -> str:
+def _display_mode() -> str:
     prefs = _preferences()
-    display_mode = prefs.display_mode if prefs else "ENGLISH_CHINESE"
+    return prefs.display_mode if prefs else "ENGLISH_CHINESE"
+
+
+def _entry_label(english: str, chinese: str) -> str:
+    display_mode = _display_mode()
 
     if display_mode == "ENGLISH":
         return english
@@ -295,6 +339,18 @@ def _entry_label(english: str, chinese: str) -> str:
         return f"{english} / {chinese}"
 
     return english
+
+
+def _entry_primary_label(entry: NodeSearchEntry) -> str:
+    display_mode = _display_mode()
+    if display_mode in {"CHINESE", "CHINESE_ENGLISH"} and entry.chinese != entry.english:
+        return entry.chinese
+    return entry.english
+
+
+def _entry_display_label(identifier: str, fallback: str = "") -> str:
+    entry = NODE_ENTRY_BY_ID.get(identifier)
+    return entry.label if entry else fallback or identifier
 
 
 def _node_tree_allows_node(context, node_type: str) -> bool:
@@ -322,8 +378,15 @@ def _node_tree_allows_node(context, node_type: str) -> bool:
 
 
 def _iter_node_classes():
+    global NODE_CLASS_CACHE
+
+    if NODE_CLASS_CACHE is not None:
+        yield from NODE_CLASS_CACHE
+        return
+
     pending = list(bpy.types.Node.__subclasses__())
     seen = set()
+    classes = []
 
     while pending:
         cls = pending.pop()
@@ -336,10 +399,21 @@ def _iter_node_classes():
         bl_idname = getattr(cls, "bl_idname", "")
         bl_label = getattr(cls, "bl_label", "")
         if bl_idname and bl_label:
-            yield cls
+            classes.append(cls)
+
+    NODE_CLASS_CACHE = classes
+    yield from classes
 
 
-def _node_menu_script_paths() -> list[Path]:
+def _node_menu_script_paths(context) -> list[Path]:
+    menu_files = {
+        "GeometryNodeTree": {"node_add_menu.py", "node_add_menu_geometry.py"},
+        "ShaderNodeTree": {"node_add_menu.py", "node_add_menu_shader.py"},
+        "CompositorNodeTree": {"node_add_menu.py", "node_add_menu_compositor.py"},
+        "TextureNodeTree": {"node_add_menu.py", "node_add_menu_texture.py"},
+    }
+    tree = getattr(getattr(context, "space_data", None), "edit_tree", None)
+    allowed_names = menu_files.get(getattr(tree, "bl_idname", ""), {"node_add_menu.py"})
     paths = []
 
     for resource_type in ("LOCAL", "SYSTEM", "USER"):
@@ -350,7 +424,7 @@ def _node_menu_script_paths() -> list[Path]:
 
         ui_path = resource_path / "scripts/startup/bl_ui"
         if ui_path.exists():
-            paths.extend(sorted(ui_path.glob("node_add_menu*.py")))
+            paths.extend(path for path in sorted(ui_path.glob("node_add_menu*.py")) if path.name in allowed_names)
 
     return paths
 
@@ -403,10 +477,19 @@ def _enum_items_for_node_property(node_type: str, property_name: str):
         yield item.identifier, english, chinese
 
 
-def _iter_menu_entries():
-    seen = set()
+def _iter_menu_entries(context):
+    tree_id = getattr(getattr(getattr(context, "space_data", None), "edit_tree", None), "bl_idname", "")
+    if tree_id in MENU_ENTRY_CACHE:
+        yield from MENU_ENTRY_CACHE[tree_id]
+        return
 
-    for path in _node_menu_script_paths():
+    seen = set()
+    entries = []
+
+    def add_entry(node_type, category, variant_label, settings):
+        entries.append((node_type, category, variant_label, tuple(settings)))
+
+    for path in _node_menu_script_paths(context):
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except Exception:
@@ -427,14 +510,14 @@ def _iter_menu_entries():
                     key = ("ShaderNodeMix", (), category)
                     if key not in seen:
                         seen.add(key)
-                        yield "ShaderNodeMix", category, "", ()
+                        add_entry("ShaderNodeMix", category, "", ())
                     for item_identifier, item_english, item_chinese in _enum_items_for_node_property("ShaderNodeMix", "blend_type"):
                         settings = (("blend_type", item_identifier),)
                         key = ("ShaderNodeMix", settings, category)
                         if key in seen:
                             continue
                         seen.add(key)
-                        yield "ShaderNodeMix", category, item_english, settings
+                        add_entry("ShaderNodeMix", category, item_english, settings)
                     continue
 
                 if func.attr not in {"node_operator", "node_operator_with_outputs", "node_operator_with_searchable_enum"}:
@@ -448,7 +531,7 @@ def _iter_menu_entries():
                 key = (node_type, (), category)
                 if key not in seen:
                     seen.add(key)
-                    yield node_type, category, "", ()
+                    add_entry(node_type, category, "", ())
 
                 if func.attr != "node_operator_with_searchable_enum":
                     continue
@@ -470,12 +553,14 @@ def _iter_menu_entries():
                     if key in seen:
                         continue
                     seen.add(key)
-                    yield node_type, category, item_english, settings
+                    add_entry(node_type, category, item_english, settings)
+
+    MENU_ENTRY_CACHE[tree_id] = entries
+    yield from entries
 
 
-def _asset_node_directories() -> list[Path]:
+def _built_in_asset_node_directories() -> list[Path]:
     directories = []
-
     for resource_type in ("LOCAL", "SYSTEM", "USER"):
         try:
             resource_path = Path(bpy.utils.resource_path(resource_type))
@@ -485,7 +570,11 @@ def _asset_node_directories() -> list[Path]:
         nodes_dir = resource_path / "datafiles/assets/nodes"
         if nodes_dir.exists():
             directories.append(nodes_dir)
+    return directories
 
+
+def _external_asset_node_directories() -> list[Path]:
+    directories = []
     try:
         for library in bpy.context.preferences.filepaths.asset_libraries:
             library_path = Path(bpy.path.abspath(library.path))
@@ -493,34 +582,112 @@ def _asset_node_directories() -> list[Path]:
                 directories.append(library_path)
     except Exception:
         pass
-
     return directories
 
 
-def _iter_asset_node_groups():
+def _read_asset_node_groups(blend_path: Path) -> list[str]:
+    try:
+        with bpy.data.libraries.load(str(blend_path), assets_only=True) as (data_from, _data_to):
+            return list(getattr(data_from, "node_groups", ()))
+    except TypeError:
+        try:
+            with bpy.data.libraries.load(str(blend_path)) as (data_from, _data_to):
+                return list(getattr(data_from, "node_groups", ()))
+        except Exception:
+            return []
+    except Exception:
+        return []
+
+
+def _iter_asset_blend_paths(directories: list[Path]):
+    for nodes_dir in directories:
+        try:
+            yield from sorted(nodes_dir.rglob("*.blend"))
+        except Exception:
+            continue
+
+
+def _scan_asset_node_groups(directories: list[Path]) -> list[tuple[str, str]]:
     seen = set()
+    entries = []
 
-    for nodes_dir in _asset_node_directories():
-        for blend_path in sorted(nodes_dir.rglob("*.blend")):
-            try:
-                with bpy.data.libraries.load(str(blend_path), assets_only=True) as (data_from, _data_to):
-                    names = list(getattr(data_from, "node_groups", ()))
-            except TypeError:
-                try:
-                    with bpy.data.libraries.load(str(blend_path)) as (data_from, _data_to):
-                        names = list(getattr(data_from, "node_groups", ()))
-                except Exception:
-                    continue
-            except Exception:
+    for blend_path in _iter_asset_blend_paths(directories):
+        for name in _read_asset_node_groups(blend_path):
+            key = (str(blend_path), name)
+            if key in seen:
                 continue
+            seen.add(key)
+            entries.append(key)
 
-            for name in names:
-                key = (str(blend_path), name)
-                if key in seen:
-                    continue
+    return entries
 
-                seen.add(key)
-                yield blend_path, name
+
+def _background_asset_index_step():
+    global BACKGROUND_ASSET_INDEX
+    state = BACKGROUND_ASSET_INDEX
+    if not state:
+        return None
+
+    deadline = time.monotonic() + 0.012
+    processed = 0
+    while time.monotonic() < deadline and processed < 1:
+        try:
+            blend_path = next(state["paths"])
+        except StopIteration:
+            _save_asset_index(state["entries"])
+            _clear_search_caches()
+            BACKGROUND_ASSET_INDEX = None
+            return None
+
+        for name in _read_asset_node_groups(blend_path):
+            key = (str(blend_path), name)
+            if key in state["seen"]:
+                continue
+            state["seen"].add(key)
+            state["entries"].append(key)
+        processed += 1
+
+    return 0.75
+
+
+def _start_background_asset_index():
+    global BACKGROUND_ASSET_INDEX
+    prefs = _preferences()
+    if prefs and not prefs.scan_asset_libraries:
+        return
+
+    directories = _built_in_asset_node_directories() + _external_asset_node_directories()
+    if not directories:
+        return
+
+    BACKGROUND_ASSET_INDEX = {
+        "paths": iter(_iter_asset_blend_paths(directories)),
+        "entries": [],
+        "seen": set(),
+    }
+    try:
+        bpy.app.timers.register(_background_asset_index_step, first_interval=3.0)
+    except Exception:
+        pass
+
+
+def _refresh_asset_index() -> int:
+    global BACKGROUND_ASSET_INDEX
+    BACKGROUND_ASSET_INDEX = None
+    directories = _built_in_asset_node_directories() + _external_asset_node_directories()
+    entries = _scan_asset_node_groups(directories)
+    _save_asset_index(entries)
+    _clear_search_caches()
+    return len(entries)
+
+
+def _iter_asset_node_groups():
+    prefs = _preferences()
+    if prefs and not prefs.scan_asset_libraries:
+        return
+
+    for blend_path, name in _load_asset_index():
+        yield Path(blend_path), name
 
 
 def _make_search_text(english: str, chinese: str, label: str, node_type: str) -> str:
@@ -582,7 +749,7 @@ def _rebuild_search_entries(context):
             )
         )
 
-    for node_type, category, variant_label, settings in _iter_menu_entries():
+    for node_type, category, variant_label, settings in _iter_menu_entries(context):
         add_builtin_entry(node_type, category, variant_label, settings, trusted_menu=True)
 
     for cls in sorted(_iter_node_classes(), key=lambda item: getattr(item, "bl_label", "")):
@@ -590,6 +757,32 @@ def _rebuild_search_entries(context):
 
     space = context.space_data
     edit_tree = getattr(space, "edit_tree", None)
+    if edit_tree:
+        for node_group in bpy.data.node_groups:
+            if node_group == edit_tree or node_group.bl_idname != edit_tree.bl_idname:
+                continue
+            asset_name = node_group.name
+            key = ("LOCAL_GROUP", asset_name)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            chinese = _translation_label(asset_name)
+            label = _entry_label(asset_name, chinese)
+            identifier = _safe_identifier("G", asset_name)
+            add_entry(
+                NodeSearchEntry(
+                    identifier=identifier,
+                    category="Group",
+                    english=asset_name,
+                    chinese=chinese,
+                    label=label,
+                    description=f"Node group: {asset_name}",
+                    kind="ASSET",
+                    asset_name=asset_name,
+                    search_text=_make_search_text(asset_name, chinese, label, ""),
+                )
+            )
+
     if edit_tree and edit_tree.bl_idname == "GeometryNodeTree":
         for blend_path, asset_name in _iter_asset_node_groups():
             chinese = _translation_label(asset_name)
@@ -771,6 +964,15 @@ def _draw_rect(x: float, y: float, width: float, height: float, color: tuple[flo
     batch.draw(shader)
 
 
+def _draw_horizontal_fade(x: float, y: float, width: float, height: float, color: tuple[float, float, float, float], steps: int = 10):
+    if width <= 0 or height <= 0:
+        return
+    step_width = width / steps
+    for step in range(steps):
+        alpha = color[3] * ((step + 1) / steps)
+        _draw_rect(x + step * step_width, y, step_width + 1, height, (color[0], color[1], color[2], alpha))
+
+
 def _rounded_rect_vertices(x: float, y: float, width: float, height: float, radius: float, segments: int = 8):
     radius = max(0, min(radius, width / 2, height / 2))
     corners = (
@@ -825,6 +1027,12 @@ def _draw_text(text: str, x: float, y: float, size: int, color: tuple[float, flo
     blf.draw(FONT_ID, text)
 
 
+def _draw_centered_text(text: str, x: float, y: float, width: float, height: float, size: int, color: tuple[float, float, float, float]):
+    blf.size(FONT_ID, size)
+    text_width, text_height = blf.dimensions(FONT_ID, text)
+    _draw_text(text, x + (width - text_width) / 2, y + (height - text_height) / 2, size, color)
+
+
 def _text_width(text: str, size: int) -> float:
     blf.size(FONT_ID, size)
     return blf.dimensions(FONT_ID, text)[0]
@@ -852,6 +1060,17 @@ def _fit_text(text: str, max_width: float, size: int) -> str:
     while trimmed and _text_width(trimmed + ellipsis, size) > max_width:
         trimmed = trimmed[:-1]
     return (trimmed + ellipsis) if trimmed else ellipsis
+
+
+def _clip_text(text: str, max_width: float, size: int) -> str:
+    if max_width <= 0:
+        return ""
+    if _text_width(text, size) <= max_width:
+        return text
+    clipped = text
+    while clipped and _text_width(clipped, size) > max_width:
+        clipped = clipped[:-1]
+    return clipped
 
 
 class ENS_AddNodeByEnglishSearch(Operator):
@@ -883,7 +1102,11 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _visible_limit = MAX_RESULTS
     _shortcuts: list[str] = []
     _shortcut_rects: list[tuple[str, tuple[float, float, float, float]]] = []
+    _shortcut_delete_rects: list[tuple[str, tuple[float, float, float, float]]] = []
     _shortcut_hover = None
+    _shortcut_hover_started = 0.0
+    _shortcut_delete_confirm = None
+    _timer = None
 
     @classmethod
     def poll(cls, context):
@@ -908,6 +1131,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if self._draw_handler is not None:
             SpaceNodeEditor.draw_handler_remove(self._draw_handler, "WINDOW")
             self._draw_handler = None
+        if self._timer is not None:
+            try:
+                context.window_manager.event_timer_remove(self._timer)
+            except Exception:
+                pass
+            self._timer = None
         self._placing_node = None
         if context.area:
             context.area.tag_redraw()
@@ -990,8 +1219,18 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 return identifier
         return None
 
+    def _shortcut_delete_identifier_from_mouse(self, event):
+        for identifier, rect in self._shortcut_delete_rects:
+            x, y, width, height = rect
+            if x <= event.mouse_region_x <= x + width and y <= event.mouse_region_y <= y + height:
+                return identifier
+        return None
+
     def _update_shortcut_hover(self, event):
-        self._shortcut_hover = self._shortcut_identifier_from_mouse(event)
+        identifier = self._shortcut_identifier_from_mouse(event)
+        if identifier != self._shortcut_hover:
+            self._shortcut_hover = identifier
+            self._shortcut_hover_started = time.monotonic() if identifier else 0.0
 
     def _entry_from_identifier(self, identifier: str):
         return NODE_ENTRY_BY_ID.get(identifier)
@@ -1007,8 +1246,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if mouse_x < x or mouse_x > x + width or mouse_y < y or mouse_y > y + height:
             return None
 
-        row = int((y + height - mouse_y) // (height / 4))
-        return ("FAVORITE", "UNFAVORITE", "SHORTCUT", "UNSHORTCUT")[max(0, min(3, row))]
+        row = int((y + height - mouse_y) // (height / 3))
+        return ("FAVORITE", "UNFAVORITE", "SHORTCUT")[max(0, min(2, row))]
 
     def _update_context_menu_hover(self, event):
         self._context_menu_hover = self._context_menu_action_from_mouse(event)
@@ -1037,12 +1276,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
         width = _scaled(CONTEXT_MENU_WIDTH, scale)
         row_height = _scaled(CONTEXT_MENU_ROW_HEIGHT, scale)
         x = event.mouse_region_x
-        y = event.mouse_region_y - row_height * 4
+        y = event.mouse_region_y - row_height * 3
         if self._panel_rect[2]:
             panel_x, panel_y, panel_width, panel_height = self._panel_rect
             x = min(max(panel_x, x), panel_x + panel_width - width)
-            y = min(max(panel_y, y), panel_y + panel_height - row_height * 4)
-        self._context_menu_rect = (x, y, width, row_height * 4)
+            y = min(max(panel_y, y), panel_y + panel_height - row_height * 3)
+        self._context_menu_rect = (x, y, width, row_height * 3)
         self._context_menu_hover = self._context_menu_action_from_mouse(event)
 
     def invoke(self, context, event):
@@ -1064,15 +1303,23 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._favorites = _load_favorites()
         self._favorite_meta = _load_favorite_meta()
         self._shortcuts = _load_shortcuts()
+        self._shortcut_hover_started = 0.0
+        self._shortcut_delete_confirm = None
         self._scroll_offset = 0
         self._refresh_results()
         self._draw_handler = SpaceNodeEditor.draw_handler_add(self._draw_callback, (context,), "WINDOW", "POST_PIXEL")
+        self._timer = context.window_manager.event_timer_add(0.2, window=context.window)
         context.window_manager.modal_handler_add(self)
         if context.area:
             context.area.tag_redraw()
         return {"RUNNING_MODAL"}
 
     def modal(self, context, event):
+        if event.type == "TIMER":
+            if context.area:
+                context.area.tag_redraw()
+            return {"RUNNING_MODAL"}
+
         if self._placing_node:
             if event.type == "MOUSEMOVE":
                 self._move_placing_node(context, event)
@@ -1087,6 +1334,35 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     self._move_placing_node(context, event)
                     return self._finish(context, {"FINISHED"})
 
+            return {"RUNNING_MODAL"}
+
+        if event.value == "PRESS" and event.type == "V" and (event.ctrl or event.oskey):
+            clipboard = getattr(context.window_manager, "clipboard", "")
+            if clipboard:
+                self._query += clipboard
+                self._refresh_results()
+                if context.area:
+                    context.area.tag_redraw()
+            return {"RUNNING_MODAL"}
+
+        if event.unicode and not event.ctrl and not event.alt and not event.oskey and event.type not in {"RET", "NUMPAD_ENTER", "ESC", "BACK_SPACE", "DEL"}:
+            self._query += event.unicode
+            self._refresh_results()
+            if context.area:
+                context.area.tag_redraw()
+            return {"RUNNING_MODAL"}
+
+        if event.type in {"WHEELUPMOUSE", "WHEELDOWNMOUSE"}:
+            if self._context_menu_index is not None:
+                return {"RUNNING_MODAL"}
+            max_scroll = max(0, len(self._results) - self._visible_limit)
+            if event.type == "WHEELUPMOUSE":
+                self._scroll_offset = max(0, self._scroll_offset - 1)
+            else:
+                self._scroll_offset = min(max_scroll, self._scroll_offset + 1)
+            self._selected_index = min(max(self._scroll_offset, self._selected_index), min(len(self._results) - 1, self._scroll_offset + self._visible_limit - 1)) if self._results else 0
+            if context.area:
+                context.area.tag_redraw()
             return {"RUNNING_MODAL"}
 
         if event.value == "PRESS":
@@ -1105,10 +1381,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 self._selected_index = min(max(0, len(self._results) - 1), self._selected_index + 1)
                 if self._selected_index >= self._scroll_offset + self._visible_limit:
                     self._scroll_offset = self._selected_index - self._visible_limit + 1
-            elif event.type == "WHEELUPMOUSE":
-                self._scroll_offset = max(0, self._scroll_offset - 1)
-            elif event.type == "WHEELDOWNMOUSE":
-                self._scroll_offset = min(max(0, len(self._results) - self._visible_limit), self._scroll_offset + 1)
             elif event.type == "BACK_SPACE":
                 self._query = self._query[:-1]
                 self._refresh_results()
@@ -1132,10 +1404,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         self._query = ""
                         self._scroll_offset = 0
                         self._refresh_results()
-                    elif action == "UNSHORTCUT" and entry:
-                        _remove_shortcut(entry.identifier)
-                        self._shortcuts = _load_shortcuts()
-                        self._context_menu_index = None
                     else:
                         self._context_menu_index = None
                         if not self._mouse_in_panel(event):
@@ -1148,8 +1416,22 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 if index is not None:
                     self._selected_index = index
                     return self._confirm(context, event)
+                shortcut_delete_identifier = self._shortcut_delete_identifier_from_mouse(event)
+                if shortcut_delete_identifier:
+                    if self._shortcut_delete_confirm == shortcut_delete_identifier:
+                        _remove_shortcut(shortcut_delete_identifier)
+                        self._shortcuts = _load_shortcuts()
+                        self._shortcut_delete_confirm = None
+                        self._shortcut_hover = None
+                    else:
+                        self._shortcut_delete_confirm = shortcut_delete_identifier
+                    if context.area:
+                        context.area.tag_redraw()
+                    return {"RUNNING_MODAL"}
+
                 shortcut_identifier = self._shortcut_identifier_from_mouse(event)
                 if shortcut_identifier:
+                    self._shortcut_delete_confirm = None
                     entry = self._entry_from_identifier(shortcut_identifier)
                     if entry:
                         self._results = [entry]
@@ -1157,6 +1439,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         return self._confirm(context, event)
                 if not self._mouse_in_panel(event):
                     return self._finish(context, {"CANCELLED"})
+                self._shortcut_delete_confirm = None
             elif event.type == "RIGHTMOUSE":
                 self._open_context_menu(event, self._row_index_from_mouse(event))
             elif event.type == "MOUSEMOVE":
@@ -1173,9 +1456,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 self._update_shortcut_hover(event)
                 if old_hover != self._shortcut_hover and context.area:
                     context.area.tag_redraw()
-            elif event.unicode and not event.ctrl and not event.alt and not event.oskey:
-                self._query += event.unicode
-                self._refresh_results()
 
             if context.area:
                 context.area.tag_redraw()
@@ -1245,18 +1525,21 @@ class ENS_AddNodeByEnglishSearch(Operator):
         _draw_rounded_panel(x, y, width, height, radius, PANEL_BACKGROUND)
         _draw_rounded_panel(x + padding, search_y, search_width, search_height, max(4, radius - 1), FIELD_BACKGROUND, BORDER_COLOR)
 
-        query_text = self._query if self._query else "Search nodes..."
+        placeholder = "搜索节点..." if _display_mode() in {"CHINESE", "CHINESE_ENGLISH"} else "Search nodes..."
+        query_text = self._query if self._query else placeholder
         query_color = TEXT_COLOR if self._query else MUTED_TEXT_COLOR
         query_size = _scaled(14, scale)
         search_text_y = search_y + (search_height - _scaled(14, scale)) / 2 + _scaled(2, scale)
-        _draw_text("⌕", x + padding + _scaled(12, scale), search_text_y - _scaled(1, scale), _scaled(17, scale), MUTED_TEXT_COLOR)
-        query_x = x + padding + _scaled(34, scale)
-        _draw_text(query_text, query_x, search_text_y, query_size, query_color)
-        if self._query:
-            cursor_x = query_x + _text_width(self._query, query_size) + _scaled(2, scale)
+        _draw_text("⌕", x + padding + _scaled(11, scale), search_text_y - _scaled(3, scale), _scaled(22, scale), MUTED_TEXT_COLOR)
+        query_x = x + padding + _scaled(44, scale)
+        text_x = query_x if self._query else query_x + _scaled(9, scale)
+        _draw_text(query_text, text_x, search_text_y, query_size, query_color)
+        if int(time.monotonic() * 2) % 2 == 0:
+            cursor_x = query_x + (_text_width(self._query, query_size) if self._query else 0) + _scaled(2, scale)
             _draw_rect(cursor_x, search_y + _scaled(7, scale), max(1, _scaled(1, scale)), search_height - _scaled(14, scale), TEXT_COLOR)
 
         self._shortcut_rects = []
+        self._shortcut_delete_rects = []
         shortcuts_y = search_y - shortcut_gap - shortcut_height
         if active_shortcuts and not has_query:
             item_gap = _scaled(5, scale)
@@ -1268,8 +1551,22 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, max(3, radius - 1), FIELD_BACKGROUND, BORDER_COLOR)
                 entry = NODE_ENTRY_BY_ID[identifier]
                 shortcut_text_size = _scaled(11, scale)
-                shortcut_text = _fit_text(_abbreviate_label(entry.label), item_width - _scaled(14, scale), shortcut_text_size)
+                delete_size = max(_scaled(13, scale), 11)
+                delete_x = item_x + item_width - delete_size - _scaled(4, scale)
+                delete_y = shortcuts_y + shortcut_height - delete_size - _scaled(4, scale)
+                delete_visible = self._shortcut_hover == identifier or self._shortcut_delete_confirm == identifier
+                if delete_visible:
+                    self._shortcut_delete_rects.append((identifier, (delete_x, delete_y, delete_size, delete_size)))
+                shortcut_text = _fit_text(_abbreviate_label(_entry_primary_label(entry)), item_width - _scaled(18, scale), shortcut_text_size)
                 _draw_text(shortcut_text, item_x + _scaled(7, scale), shortcuts_y + _scaled(8, scale), shortcut_text_size, TEXT_COLOR)
+                if delete_visible:
+                    x_size = max(9, _scaled(9, scale))
+                    if self._shortcut_delete_confirm == identifier:
+                        _draw_rounded_rect(delete_x, delete_y, delete_size, delete_size, delete_size / 2, (0.42, 0.42, 0.44, 0.96))
+                        x_color = (0.92, 0.92, 0.94, 1.0)
+                    else:
+                        x_color = (0.68, 0.68, 0.70, 0.92)
+                    _draw_centered_text("x", delete_x, delete_y, delete_size, delete_size, x_size, x_color)
 
         rows_top = search_y - shortcuts_height - gap
         self._rows_top = rows_top
@@ -1291,16 +1588,25 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
             row_text_y = row_y + _scaled(7, scale)
             category_x = x + padding + _scaled(10, scale)
+            fav_width = _scaled(10, scale)
+            fav_height = _scaled(18, scale)
+            fav_x = x + width - padding - fav_width - _scaled(8, scale)
+            fade_width = _scaled(24, scale)
+            fade_x = fav_x - fade_width
+            category_size = _scaled(11, scale)
+            label_size = _scaled(13, scale)
             category_text = f"{entry.category} >"
-            blf.size(FONT_ID, _scaled(12, scale))
-            category_width = blf.dimensions(FONT_ID, category_text)[0]
+            max_category_width = max(_scaled(28, scale), min(_text_width(category_text, category_size), fav_x - category_x - _scaled(92, scale)))
+            category_text = _clip_text(category_text, max_category_width, category_size)
+            category_width = _text_width(category_text, category_size)
             label_x = category_x + category_width + _scaled(8, scale)
-            _draw_text(category_text, category_x, row_text_y, _scaled(11, scale), MUTED_TEXT_COLOR)
-            _draw_text(entry.label, label_x, row_text_y, _scaled(13, scale), TEXT_COLOR)
+            label_text = _clip_text(entry.label, max(0, fav_x - label_x), label_size)
+            _draw_text(category_text, category_x, row_text_y, category_size, MUTED_TEXT_COLOR)
+            _draw_text(label_text, label_x, row_text_y, label_size, TEXT_COLOR)
+            fade_color = HIGHLIGHT_COLOR if is_selected else PANEL_BACKGROUND
+            _draw_horizontal_fade(fade_x, row_y + _scaled(2, scale), fade_width, row_height - _scaled(4, scale), fade_color)
+            _draw_rect(fav_x, row_y + _scaled(2, scale), max(0, x + width - fav_x), row_height - _scaled(4, scale), fade_color)
             if is_favorite:
-                fav_width = _scaled(10, scale)
-                fav_height = _scaled(18, scale)
-                fav_x = x + width - padding - fav_width - _scaled(8, scale)
                 fav_y = row_y + (row_height - fav_height) / 2
                 _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, _scaled(3, scale), (0.45, 0.45, 0.46, 0.95))
 
@@ -1309,16 +1615,20 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
         if self._context_menu_index is not None:
             menu_x, menu_y, menu_width, menu_height = self._context_menu_rect
-            menu_row_height = menu_height / 4
+            menu_row_height = menu_height / 3
             _draw_rounded_panel(menu_x, menu_y, menu_width, menu_height, radius, PANEL_BACKGROUND)
-            labels = (("FAVORITE", "Add Favorite"), ("UNFAVORITE", "Remove Favorite"), ("SHORTCUT", "Add Shortcut"), ("UNSHORTCUT", "Remove Shortcut"))
+            labels = (("FAVORITE", "Add Favorite"), ("UNFAVORITE", "Remove Favorite"), ("SHORTCUT", "Add Shortcut"))
             for index, (action, label) in enumerate(labels):
                 row_y = menu_y + menu_height - (index + 1) * menu_row_height
                 if self._context_menu_hover == action:
                     _draw_rounded_panel(menu_x + 4, row_y + 3, menu_width - 8, menu_row_height - 6, max(3, radius - 2), HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
                 _draw_text(label, menu_x + _scaled(12, scale), row_y + _scaled(8, scale), _scaled(13, scale), TEXT_COLOR)
 
-        if self._shortcut_hover and self._shortcut_hover in NODE_ENTRY_BY_ID:
+        if (
+            self._shortcut_hover
+            and self._shortcut_hover in NODE_ENTRY_BY_ID
+            and time.monotonic() - self._shortcut_hover_started >= 1.0
+        ):
             entry = NODE_ENTRY_BY_ID[self._shortcut_hover]
             tooltip_text = entry.label
             tooltip_width = _text_width(tooltip_text, _scaled(12, scale)) + _scaled(18, scale)
@@ -1329,6 +1639,18 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 tooltip_y = shortcuts_y + shortcut_height + _scaled(4, scale)
             _draw_rounded_panel(tooltip_x, tooltip_y, tooltip_width, tooltip_height, max(3, radius - 1), FIELD_BACKGROUND, BORDER_COLOR)
             _draw_text(tooltip_text, tooltip_x + _scaled(9, scale), tooltip_y + _scaled(7, scale), _scaled(12, scale), TEXT_COLOR)
+
+
+class NODECONSOLE_OT_RefreshAssetIndex(Operator):
+    bl_idname = "node_console.refresh_asset_index"
+    bl_label = "Refresh Asset Index"
+    bl_description = "Scan Blender asset node groups and cache them for fast search"
+    bl_options = {"INTERNAL"}
+
+    def execute(self, _context):
+        count = _refresh_asset_index()
+        self.report({"INFO"}, f"Node Console cached {count} asset node groups")
+        return {"FINISHED"}
 
 
 class NODECONSOLE_OT_RemoveFavorite(Operator):
@@ -1379,9 +1701,9 @@ class ENS_AddonPreferences(AddonPreferences):
         description="How node names are shown in the custom search panel",
         items=(
             ("ENGLISH", "English", "Show only English names"),
-            ("CHINESE", "Chinese", "Show only translated names where available"),
-            ("ENGLISH_CHINESE", "English / Chinese", "Show English names first with Chinese translations"),
-            ("CHINESE_ENGLISH", "Chinese / English", "Show Chinese translations first with English names"),
+            ("CHINESE", "中文", "Show only translated names where available"),
+            ("ENGLISH_CHINESE", "English / 中文", "Show English names first with Chinese translations"),
+            ("CHINESE_ENGLISH", "中文 / English", "Show Chinese translations first with English names"),
         ),
         default="ENGLISH_CHINESE",
         update=_preference_changed,
@@ -1391,10 +1713,8 @@ class ENS_AddonPreferences(AddonPreferences):
         description="Keyboard key used to open Node Console in the node editor",
         items=(
             ("A", "A", ""),
-            ("SPACE", "Space", ""),
             ("F", "F", ""),
-            ("S", "S", ""),
-            ("TAB", "Tab", ""),
+            ("SPACE", "Space", ""),
         ),
         default="A",
         update=_shortcut_changed,
@@ -1416,6 +1736,12 @@ class ENS_AddonPreferences(AddonPreferences):
         description="Require Alt for the Node Console shortcut",
         default=False,
         update=_shortcut_changed,
+    )
+    scan_asset_libraries: BoolProperty(
+        name="Show Cached Asset Nodes",
+        description="Show cached Asset Library node groups in search results. Refresh Asset Index updates the cache.",
+        default=True,
+        update=_preference_changed,
     )
     ui_scale: FloatProperty(
         name="Console Size",
@@ -1443,54 +1769,64 @@ class ENS_AddonPreferences(AddonPreferences):
 
     def draw(self, _context):
         layout = self.layout
-        layout.prop(self, "display_mode")
-        layout.prop(self, "ui_scale")
+        grid = layout.grid_flow(row_major=True, columns=4, even_columns=True, even_rows=False, align=True)
+        grid.label(text="Search Result Display")
+        grid.prop(self, "display_mode", text="")
+        grid.label(text="")
+        grid.prop(self, "ui_scale")
+        grid.prop(self, "scan_asset_libraries", text="Show Cached Asset Nodes")
+        grid.label(text=f"Cached Assets: {len(_load_asset_index())}")
+        grid.label(text="")
+        grid.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="Refresh Asset Index")
 
         box = layout.box()
         box.label(text="Shortcut")
-        row = box.row(align=True)
-        row.prop(self, "shortcut_key", text="")
-        row.prop(self, "shortcut_shift", toggle=True)
-        row.prop(self, "shortcut_ctrl", toggle=True)
-        row.prop(self, "shortcut_alt", toggle=True)
+        row = box.row(align=False)
+        row.prop(self, "shortcut_key", text="", translate=False)
+        row.separator(factor=1.0)
+        row.prop(self, "shortcut_shift", text="Shift", toggle=True, translate=False)
+        row.separator(factor=0.45)
+        row.prop(self, "shortcut_ctrl", text="Ctrl", toggle=True, translate=False)
+        row.separator(factor=0.45)
+        row.prop(self, "shortcut_alt", text="Alt", toggle=True, translate=False)
+
+        favorite_meta = _load_favorite_meta()
+        lists = layout.row(align=True)
 
         favorites = _load_favorites()
-        favorite_meta = _load_favorite_meta()
-        box = layout.box()
+        box = lists.box()
         box.label(text="Favorites")
         if not favorites:
             box.label(text="No favorite nodes")
-            return
-
-        for identifier in sorted(favorites, key=lambda item: favorite_meta.get(item, item).lower()):
-            row = box.row(align=True)
-            row.label(text=favorite_meta.get(identifier, identifier))
-            remove_op = row.operator(NODECONSOLE_OT_RemoveFavorite.bl_idname, text="", icon="X")
-            remove_op.identifier = identifier
+        else:
+            for identifier in sorted(favorites, key=lambda item: _entry_display_label(item, favorite_meta.get(item, item)).lower()):
+                row = box.row(align=True)
+                row.label(text=_entry_display_label(identifier, favorite_meta.get(identifier, identifier)))
+                remove_op = row.operator(NODECONSOLE_OT_RemoveFavorite.bl_idname, text="", icon="X")
+                remove_op.identifier = identifier
 
         shortcuts = _load_shortcuts()
-        box = layout.box()
+        box = lists.box()
         box.label(text="Shortcuts")
         if not shortcuts:
             box.label(text="No node shortcuts")
-            return
-
-        for identifier in shortcuts:
-            entry = NODE_ENTRY_BY_ID.get(identifier)
-            row = box.row(align=True)
-            row.label(text=entry.label if entry else favorite_meta.get(identifier, identifier))
-            up_op = row.operator(NODECONSOLE_OT_MoveShortcut.bl_idname, text="", icon="TRIA_UP")
-            up_op.identifier = identifier
-            up_op.direction = "UP"
-            down_op = row.operator(NODECONSOLE_OT_MoveShortcut.bl_idname, text="", icon="TRIA_DOWN")
-            down_op.identifier = identifier
-            down_op.direction = "DOWN"
-            remove_op = row.operator(NODECONSOLE_OT_RemoveShortcut.bl_idname, text="", icon="X")
-            remove_op.identifier = identifier
+        else:
+            for identifier in shortcuts:
+                row = box.row(align=True)
+                row.label(text=_entry_display_label(identifier, favorite_meta.get(identifier, identifier)))
+                up_op = row.operator(NODECONSOLE_OT_MoveShortcut.bl_idname, text="", icon="TRIA_UP")
+                up_op.identifier = identifier
+                up_op.direction = "UP"
+                down_op = row.operator(NODECONSOLE_OT_MoveShortcut.bl_idname, text="", icon="TRIA_DOWN")
+                down_op.identifier = identifier
+                down_op.direction = "DOWN"
+                remove_op = row.operator(NODECONSOLE_OT_RemoveShortcut.bl_idname, text="", icon="X")
+                remove_op.identifier = identifier
 
 
 classes = (
     ENS_AddNodeByEnglishSearch,
+    NODECONSOLE_OT_RefreshAssetIndex,
     NODECONSOLE_OT_RemoveFavorite,
     NODECONSOLE_OT_RemoveShortcut,
     NODECONSOLE_OT_MoveShortcut,
@@ -1544,6 +1880,8 @@ def register():
 
 
 def unregister():
+    global BACKGROUND_ASSET_INDEX
+    BACKGROUND_ASSET_INDEX = None
     unregister_keymap()
 
     for cls in reversed(classes):

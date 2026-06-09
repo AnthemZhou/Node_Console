@@ -1,0 +1,15 @@
+schema_version = "1.0.0"
+
+id = "node_console"
+version = "0.7.11"
+name = "Node Console"
+tagline = "Language-independent node search console for Blender"
+maintainer = "Anthem"
+type = "add-on"
+
+blender_version_min = "4.2.0"
+license = ["SPDX:MIT"]
+tags = ["Node", "User Interface"]
+
+[permissions]
+files = "Read Blender asset libraries and save Node Console preferences and cached asset indexes."
