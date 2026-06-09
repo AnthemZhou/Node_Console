@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import math
 import re
@@ -20,7 +21,7 @@ from gpu_extras.batch import batch_for_shader
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 7, 21),
+    "version": (0, 7, 28),
     "blender": (4, 0, 0),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -32,6 +33,8 @@ ADDON_ID = __name__
 KEYMAP_ITEMS = []
 NODE_SEARCH_ENTRIES: list["NodeSearchEntry"] = []
 MENU_ENTRY_CACHE: dict[str, list[tuple[str, str, str, tuple[tuple[str, str], ...]]]] = {}
+SEARCH_INDEX_MEMORY_KEYS: set[str] = set()
+TRANSLATION_LABEL_CACHE: dict[tuple[str, str | None], str] = {}
 NODE_CLASS_CACHE: list[type] | None = None
 BACKGROUND_ASSET_INDEX = None
 
@@ -53,6 +56,7 @@ HIGHLIGHT_BORDER_COLOR = (0.38, 0.38, 0.38, 0.85)
 TEXT_COLOR = (0.88, 0.88, 0.9, 1.0)
 MUTED_TEXT_COLOR = (0.58, 0.58, 0.6, 1.0)
 SETTINGS_FILENAME = "node_console_settings.json"
+BUNDLED_CACHE_FILENAME = "node_console_builtin_cache.json"
 
 
 @dataclass(frozen=True)
@@ -77,6 +81,7 @@ NODE_ENTRY_BY_ID: dict[str, NodeSearchEntry] = {}
 def _clear_search_caches():
     global NODE_CLASS_CACHE
     MENU_ENTRY_CACHE.clear()
+    TRANSLATION_LABEL_CACHE.clear()
     NODE_CLASS_CACHE = None
 
 
@@ -248,6 +253,130 @@ def _save_asset_index(entries: list[tuple[str, str]]):
     _write_settings(data)
 
 
+def _node_tree_id(context) -> str:
+    tree = getattr(getattr(context, "space_data", None), "edit_tree", None)
+    return getattr(tree, "bl_idname", "") or "NodeTree"
+
+
+def _asset_index_signature() -> str:
+    prefs = _preferences()
+    if prefs and not prefs.scan_asset_libraries:
+        return "assets-disabled"
+    payload = json.dumps(_load_asset_index(), ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def _search_index_cache_key(context) -> str:
+    version = ".".join(str(part) for part in bl_info["version"])
+    blender = ".".join(str(part) for part in bpy.app.version)
+    return f"{version}:{blender}:{_node_tree_id(context)}:{_asset_index_signature()}"
+
+
+def _entry_to_cache(entry: NodeSearchEntry) -> dict:
+    return {
+        "identifier": entry.identifier,
+        "category": entry.category,
+        "english": entry.english,
+        "chinese": entry.chinese,
+        "description": entry.description,
+        "kind": entry.kind,
+        "node_type": entry.node_type,
+        "asset_path": entry.asset_path,
+        "asset_name": entry.asset_name,
+        "settings": [list(item) for item in entry.settings],
+    }
+
+
+def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
+    try:
+        english = str(item["english"])
+        chinese = str(item.get("chinese") or english)
+        node_type = str(item.get("node_type", ""))
+        settings = tuple(tuple(pair) for pair in item.get("settings", []))
+        label = _entry_label(english, chinese)
+        return NodeSearchEntry(
+            identifier=str(item["identifier"]),
+            category=str(item.get("category", "Node")),
+            english=english,
+            chinese=chinese,
+            label=label,
+            description=str(item.get("description", english)),
+            kind=str(item.get("kind", "NODE")),
+            node_type=node_type,
+            asset_path=str(item.get("asset_path", "")),
+            asset_name=str(item.get("asset_name", "")),
+            search_text=_make_search_text(english, chinese, label, node_type),
+            settings=settings,
+        )
+    except Exception:
+        return None
+
+
+def _load_search_index_cache(context) -> list[NodeSearchEntry] | None:
+    cache_key = _search_index_cache_key(context)
+    cache = _load_settings().get("search_index_cache", {})
+    if not isinstance(cache, dict):
+        return None
+    raw_entries = cache.get(cache_key)
+    if not isinstance(raw_entries, list):
+        return None
+
+    entries = []
+    for item in raw_entries:
+        if isinstance(item, dict):
+            entry = _entry_from_cache(item)
+            if entry:
+                entries.append(entry)
+    if entries:
+        SEARCH_INDEX_MEMORY_KEYS.add(cache_key)
+    return entries or None
+
+
+def _load_bundled_search_index(context) -> list[NodeSearchEntry] | None:
+    cache_path = Path(__file__).with_name(BUNDLED_CACHE_FILENAME)
+    if not cache_path.exists():
+        return None
+
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    trees = payload.get("trees") if isinstance(payload, dict) else None
+    if not isinstance(trees, dict):
+        return None
+
+    raw_entries = trees.get(_node_tree_id(context))
+    if not isinstance(raw_entries, list):
+        return None
+
+    entries = []
+    for item in raw_entries:
+        if isinstance(item, dict):
+            entry = _entry_from_cache(item)
+            if entry:
+                entries.append(entry)
+    return entries or None
+
+
+def _save_search_index_cache(context, entries: list[NodeSearchEntry]):
+    cache_key = _search_index_cache_key(context)
+    if cache_key in SEARCH_INDEX_MEMORY_KEYS:
+        return
+
+    data = _load_settings()
+    cache = data.get("search_index_cache", {})
+    if not isinstance(cache, dict):
+        cache = {}
+    cache[cache_key] = [_entry_to_cache(entry) for entry in entries]
+    if len(cache) > 12:
+        for key in list(cache.keys())[:-12]:
+            cache.pop(key, None)
+    data["search_index_cache"] = cache
+    _write_settings(data)
+    SEARCH_INDEX_MEMORY_KEYS.add(cache_key)
+
+
 def _save_favorites(favorites: set[str], favorite_meta: dict[str, str] | None = None):
     data = _load_settings()
     data["favorites"] = sorted(favorites)
@@ -301,26 +430,50 @@ def _shortcut_changed(_self, _context):
     refresh_keymap()
 
 
-def _translation_label(text: str) -> str:
+def _translation_label(text: str, translation_context: str | None = None) -> str:
     if not text:
         return text
 
-    for translate in (
-        getattr(bpy.app.translations, "pgettext_iface", None),
-        getattr(bpy.app.translations, "pgettext_data", None),
-    ):
-        if not translate:
-            continue
+    cache_key = (text, translation_context)
+    cached = TRANSLATION_LABEL_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
 
+    view = bpy.context.preferences.view
+    original_language = view.language
+    original_iface = view.use_translate_interface
+    original_data = view.use_translate_new_dataname
+    translated = text
+
+    try:
+        view.language = "zh_HANS"
+        view.use_translate_interface = True
+        view.use_translate_new_dataname = True
+        for translate in (
+            getattr(bpy.app.translations, "pgettext_iface", None),
+            getattr(bpy.app.translations, "pgettext_data", None),
+        ):
+            if not translate:
+                continue
+
+            try:
+                candidate = translate(text, translation_context) if translation_context else translate(text)
+            except Exception:
+                continue
+
+            if candidate and candidate != text:
+                translated = candidate
+                break
+    finally:
         try:
-            translated = translate(text)
+            view.language = original_language
+            view.use_translate_interface = original_iface
+            view.use_translate_new_dataname = original_data
         except Exception:
-            continue
+            pass
 
-        if translated and translated != text:
-            return translated
-
-    return text
+    TRANSLATION_LABEL_CACHE[cache_key] = translated
+    return translated
 
 
 def _display_mode() -> str:
@@ -468,14 +621,7 @@ def _enum_items_for_node_property(node_type: str, property_name: str):
     translation_context = getattr(prop, "translation_context", None)
     for item in prop.enum_items_static:
         english = item.name
-        chinese = english
-        if translation_context:
-            try:
-                translated = bpy.app.translations.pgettext_iface(english, translation_context)
-                if translated:
-                    chinese = translated
-            except Exception:
-                pass
+        chinese = _translation_label(english, translation_context)
         yield item.identifier, english, chinese
 
 
@@ -720,46 +866,18 @@ def _rebuild_search_entries(context):
         NODE_SEARCH_ENTRIES.append(entry)
         NODE_ENTRY_BY_ID[entry.identifier] = entry
 
-    def add_builtin_entry(node_type: str, category: str = "Node", variant_label: str = "", settings=(), trusted_menu=False):
-        key = (node_type, tuple(settings))
-        if key in seen_keys:
+    def remember_key(entry: NodeSearchEntry):
+        if entry.kind == "NODE":
+            seen_keys.add((entry.node_type, tuple(entry.settings)))
+        elif entry.kind == "ASSET" and entry.asset_path:
+            seen_keys.add(("ASSET", entry.asset_path, entry.asset_name))
+
+    def add_local_groups():
+        space = context.space_data
+        edit_tree = getattr(space, "edit_tree", None)
+        if not edit_tree:
             return
-        if not trusted_menu and not _node_tree_allows_node(context, node_type):
-            return
 
-        seen_keys.add(key)
-
-        bl_rna = bpy.types.Node.bl_rna_get_subclass(node_type)
-        base_english = bl_rna.name if bl_rna and bl_rna.name else node_type
-        english = f"{base_english} > {variant_label}" if variant_label else base_english
-        chinese = _translation_label(english)
-        label = _entry_label(english, chinese)
-        description = bl_rna.description if bl_rna and bl_rna.description else english
-        identifier = _safe_identifier("N", node_type, english, repr(settings))
-        add_entry(
-            NodeSearchEntry(
-                identifier=identifier,
-                category=category,
-                english=english,
-                chinese=chinese,
-                label=label,
-                description=description,
-                kind="NODE",
-                node_type=node_type,
-                search_text=_make_search_text(english, chinese, label, node_type),
-                settings=tuple(settings),
-            )
-        )
-
-    for node_type, category, variant_label, settings in _iter_menu_entries(context):
-        add_builtin_entry(node_type, category, variant_label, settings, trusted_menu=True)
-
-    for cls in sorted(_iter_node_classes(), key=lambda item: getattr(item, "bl_label", "")):
-        add_builtin_entry(cls.bl_idname)
-
-    space = context.space_data
-    edit_tree = getattr(space, "edit_tree", None)
-    if edit_tree:
         for node_group in bpy.data.node_groups:
             if node_group == edit_tree or node_group.bl_idname != edit_tree.bl_idname:
                 continue
@@ -785,26 +903,89 @@ def _rebuild_search_entries(context):
                 )
             )
 
-    if edit_tree and edit_tree.bl_idname == "GeometryNodeTree":
+    def add_asset_library_entries(cacheable_entries: list[NodeSearchEntry] | None = None):
+        space = context.space_data
+        edit_tree = getattr(space, "edit_tree", None)
+        if not edit_tree or edit_tree.bl_idname != "GeometryNodeTree":
+            return
+
         for blend_path, asset_name in _iter_asset_node_groups():
+            key = ("ASSET", str(blend_path), asset_name)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
             chinese = _translation_label(asset_name)
             label = _entry_label(asset_name, chinese)
-            description = f"Node group asset: {asset_name}"
-            identifier = _safe_identifier("A", asset_name, str(blend_path))
-            add_entry(
-                NodeSearchEntry(
-                    identifier=identifier,
-                    category="Asset",
-                    english=asset_name,
-                    chinese=chinese,
-                    label=label,
-                    description=description,
-                    kind="ASSET",
-                    asset_path=str(blend_path),
-                    asset_name=asset_name,
-                    search_text=_make_search_text(asset_name, chinese, label, ""),
-                )
+            entry = NodeSearchEntry(
+                identifier=_safe_identifier("A", asset_name, str(blend_path)),
+                category="Asset",
+                english=asset_name,
+                chinese=chinese,
+                label=label,
+                description=f"Node group asset: {asset_name}",
+                kind="ASSET",
+                asset_path=str(blend_path),
+                asset_name=asset_name,
+                search_text=_make_search_text(asset_name, chinese, label, ""),
             )
+            if cacheable_entries is not None:
+                cacheable_entries.append(entry)
+            add_entry(entry)
+
+    cached_entries = _load_search_index_cache(context) or _load_bundled_search_index(context)
+    if cached_entries is not None:
+        for entry in cached_entries:
+            add_entry(entry)
+            remember_key(entry)
+        add_asset_library_entries()
+        add_local_groups()
+        return
+
+    cacheable_entries: list[NodeSearchEntry] = []
+
+    def add_cacheable_entry(entry: NodeSearchEntry):
+        cacheable_entries.append(entry)
+        add_entry(entry)
+
+    def add_builtin_entry(node_type: str, category: str = "Node", variant_label: str = "", settings=(), trusted_menu=False):
+        key = (node_type, tuple(settings))
+        if key in seen_keys:
+            return
+        if not trusted_menu and not _node_tree_allows_node(context, node_type):
+            return
+
+        seen_keys.add(key)
+
+        bl_rna = bpy.types.Node.bl_rna_get_subclass(node_type)
+        base_english = bl_rna.name if bl_rna and bl_rna.name else node_type
+        english = f"{base_english} > {variant_label}" if variant_label else base_english
+        chinese = _translation_label(english)
+        label = _entry_label(english, chinese)
+        description = bl_rna.description if bl_rna and bl_rna.description else english
+        add_cacheable_entry(
+            NodeSearchEntry(
+                identifier=_safe_identifier("N", node_type, english, repr(settings)),
+                category=category,
+                english=english,
+                chinese=chinese,
+                label=label,
+                description=description,
+                kind="NODE",
+                node_type=node_type,
+                search_text=_make_search_text(english, chinese, label, node_type),
+                settings=tuple(settings),
+            )
+        )
+
+    for node_type, category, variant_label, settings in _iter_menu_entries(context):
+        add_builtin_entry(node_type, category, variant_label, settings, trusted_menu=True)
+
+    for cls in sorted(_iter_node_classes(), key=lambda item: getattr(item, "bl_label", "")):
+        add_builtin_entry(cls.bl_idname)
+
+    add_asset_library_entries(cacheable_entries)
+    _save_search_index_cache(context, cacheable_entries)
+    add_local_groups()
 
 
 def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int | None:
@@ -957,22 +1138,8 @@ def _add_asset_node(context, entry: NodeSearchEntry):
     return node
 
 
-def _uniform_shader():
-    global UNIFORM_SHADER
-    if UNIFORM_SHADER is None:
-        UNIFORM_SHADER = gpu.shader.from_builtin("UNIFORM_COLOR")
-    return UNIFORM_SHADER
-
-
-def _smooth_shader():
-    global SMOOTH_SHADER
-    if SMOOTH_SHADER is None:
-        SMOOTH_SHADER = gpu.shader.from_builtin("SMOOTH_COLOR")
-    return SMOOTH_SHADER
-
-
 def _draw_rect(x: float, y: float, width: float, height: float, color: tuple[float, float, float, float]):
-    shader = _uniform_shader()
+    shader = gpu.shader.from_builtin("UNIFORM_COLOR")
     vertices = ((x, y), (x + width, y), (x + width, y + height), (x, y + height))
     batch = batch_for_shader(shader, "TRI_FAN", {"pos": vertices})
     shader.bind()
@@ -992,20 +1159,10 @@ def _draw_horizontal_fade(x: float, y: float, width: float, height: float, color
         previous_blend = None
 
     try:
-        shader = _smooth_shader()
-        vertices = (
-            (x, y),
-            (x + width, y),
-            (x + width, y + height),
-            (x, y),
-            (x + width, y + height),
-            (x, y + height),
-        )
-        transparent = (color[0], color[1], color[2], 0.0)
-        colors = (transparent, color, color, transparent, color, transparent)
-        batch = batch_for_shader(shader, "TRIS", {"pos": vertices, "color": colors})
-        shader.bind()
-        batch.draw(shader)
+        step_width = width / steps
+        for step in range(steps):
+            alpha = color[3] * ((step + 1) / steps)
+            _draw_rect(x + step * step_width, y, step_width + 1, height, (color[0], color[1], color[2], alpha))
     finally:
         try:
             gpu.state.blend_set(previous_blend if previous_blend is not None else "NONE")
@@ -1051,7 +1208,7 @@ def _draw_rounded_rect(
     radius: float,
     color: tuple[float, float, float, float],
 ):
-    shader = _uniform_shader()
+    shader = gpu.shader.from_builtin("UNIFORM_COLOR")
     batch = batch_for_shader(shader, "TRI_FAN", {"pos": _rounded_rect_vertices(x, y, width, height, radius)})
     shader.bind()
     shader.uniform_float("color", color)
@@ -1169,12 +1326,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
     @classmethod
     def poll(cls, context):
         space = context.space_data
-        return (
-            space
-            and space.type == "NODE_EDITOR"
-            and getattr(space, "edit_tree", None)
-            and space.edit_tree.is_editable
-        )
+        if not space or space.type != "NODE_EDITOR":
+            return False
+        return bool(getattr(space, "edit_tree", None) or getattr(space, "node_tree", None))
 
     def _refresh_results(self):
         self._results = _search_entries(self._query, self._favorites)
@@ -1359,10 +1513,10 @@ class ENS_AddNodeByEnglishSearch(Operator):
     def _scroll_amount_from_event(self, event) -> int:
         if event.type in {"WHEELDOWNMOUSE", "WHEELOUTMOUSE"}:
             self._scroll_remainder = 0.0
-            return 1
+            return -1
         if event.type in {"WHEELUPMOUSE", "WHEELINMOUSE"}:
             self._scroll_remainder = 0.0
-            return -1
+            return 1
         if event.type in {"TRACKPADPAN", "MOUSEPAN"}:
             delta_y = getattr(event, "mouse_prev_y", event.mouse_region_y) - getattr(event, "mouse_y", event.mouse_region_y)
             if delta_y == 0:
@@ -1698,7 +1852,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             _draw_text(category_text, category_x, row_text_y, category_size, MUTED_TEXT_COLOR)
             _draw_text(label_text, label_x, row_text_y, label_size, TEXT_COLOR)
             fade_color = HIGHLIGHT_COLOR if is_selected else PANEL_BACKGROUND
-            _draw_horizontal_fade(fade_x, row_y + _scaled(2, scale), fade_width, row_height - _scaled(4, scale), fade_color, steps=32)
+            _draw_horizontal_fade(fade_x, row_y + _scaled(2, scale), fade_width, row_height - _scaled(4, scale), fade_color, steps=10)
             _draw_right_rounded_fill(fav_x, row_y + _scaled(2, scale), max(0, x + width - padding - fav_x), row_height - _scaled(4, scale), max(3, radius - 2), fade_color)
             if is_favorite:
                 fav_y = row_y + (row_height - fav_height) / 2
@@ -1946,6 +2100,22 @@ def refresh_keymap():
     register_keymap()
 
 
+def _remove_node_console_keymap_items():
+    wm = bpy.context.window_manager
+    for keyconfig in (wm.keyconfigs.addon, wm.keyconfigs.user):
+        if not keyconfig:
+            continue
+        keymap = keyconfig.keymaps.get("Node Editor")
+        if not keymap:
+            continue
+        stale_items = [item for item in keymap.keymap_items if item.idname == ENS_AddNodeByEnglishSearch.bl_idname]
+        for item in stale_items:
+            try:
+                keymap.keymap_items.remove(item)
+            except Exception:
+                pass
+
+
 def register_keymap():
     prefs = _preferences()
 
@@ -1953,7 +2123,9 @@ def register_keymap():
     if not keyconfig:
         return
 
+    _remove_node_console_keymap_items()
     keymap = keyconfig.keymaps.new(name="Node Editor", space_type="NODE_EDITOR")
+
     key_type = prefs.shortcut_key if prefs else "A"
     shift = prefs.shortcut_shift if prefs else True
     ctrl = prefs.shortcut_ctrl if prefs else False
@@ -1978,6 +2150,7 @@ def unregister_keymap():
             keymap.keymap_items.remove(keymap_item)
         except Exception:
             pass
+    _remove_node_console_keymap_items()
 
 
 def register():
