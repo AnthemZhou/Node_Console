@@ -21,7 +21,7 @@ from gpu_extras.batch import batch_for_shader
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 7, 28),
+    "version": (0, 8, 0),
     "blender": (4, 0, 0),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -32,7 +32,7 @@ bl_info = {
 ADDON_ID = __name__
 KEYMAP_ITEMS = []
 NODE_SEARCH_ENTRIES: list["NodeSearchEntry"] = []
-MENU_ENTRY_CACHE: dict[str, list[tuple[str, str, str, tuple[tuple[str, str], ...]]]] = {}
+MENU_ENTRY_CACHE: dict[str, list[tuple[str, str, str, str, tuple[tuple[str, str], ...]]]] = {}
 SEARCH_INDEX_MEMORY_KEYS: set[str] = set()
 TRANSLATION_LABEL_CACHE: dict[tuple[str, str | None], str] = {}
 NODE_CLASS_CACHE: list[type] | None = None
@@ -40,7 +40,7 @@ BACKGROUND_ASSET_INDEX = None
 
 FONT_ID = 0
 MAX_RESULTS = 12
-PANEL_WIDTH = 323
+PANEL_WIDTH = 404
 SEARCH_HEIGHT = 23
 ROW_HEIGHT = 26
 PANEL_PADDING = 8
@@ -55,6 +55,7 @@ HIGHLIGHT_COLOR = (0.31, 0.31, 0.31, 0.98)
 HIGHLIGHT_BORDER_COLOR = (0.38, 0.38, 0.38, 0.85)
 TEXT_COLOR = (0.88, 0.88, 0.9, 1.0)
 MUTED_TEXT_COLOR = (0.58, 0.58, 0.6, 1.0)
+SECONDARY_TEXT_COLOR = (0.435, 0.435, 0.45, 1.0)
 SETTINGS_FILENAME = "node_console_settings.json"
 BUNDLED_CACHE_FILENAME = "node_console_builtin_cache.json"
 
@@ -508,6 +509,330 @@ def _entry_display_label(identifier: str, fallback: str = "") -> str:
     return entry.label if entry else fallback or identifier
 
 
+def _settings_dict(settings: tuple[tuple[str, str], ...]) -> dict[str, str]:
+    return {str(name): str(value) for name, value in settings}
+
+
+def _append_category_parts(category: str, parts: list[str]) -> str:
+    result = category
+    existing = [part.strip() for part in category.split(" > ") if part.strip()]
+    for part in parts:
+        if not part:
+            continue
+        if existing and existing[-1] == part:
+            continue
+        result = f"{result} > {part}" if result else part
+        existing.append(part)
+    return result
+
+
+def _display_parts(entry: NodeSearchEntry) -> tuple[str, str]:
+    category = entry.category
+    english_parts = [part.strip() for part in entry.english.split(" > ") if part.strip()]
+    chinese_parts = [part.strip() for part in entry.chinese.split(" > ") if part.strip()]
+
+    if len(english_parts) <= 1:
+        return category, _entry_label(entry.english, entry.chinese)
+
+    settings = _settings_dict(entry.settings)
+    category_parts = english_parts[:-1]
+    chinese_label = chinese_parts[-1] if len(chinese_parts) == len(english_parts) else ""
+
+    if entry.node_type == "ShaderNodeMix" and settings.get("data_type") == "RGBA" and "blend_type" in settings:
+        category_parts = ["Mix Color"]
+    elif entry.node_type == "ShaderNodeMix" and settings.get("data_type") == "RGBA" and entry.english == "Mix > Mix Color":
+        return category, _entry_label("Mix Color", chinese_parts[-1] if chinese_parts else entry.chinese)
+    elif entry.node_type == "ShaderNodeMix" and settings.get("data_type") in {"VECTOR", "ROTATION"}:
+        category_parts = []
+
+    category = _append_category_parts(category, category_parts)
+    english = english_parts[-1]
+    chinese = chinese_label or english
+    return category, _entry_label(english, chinese)
+
+
+def _entry_display_depth(entry: NodeSearchEntry) -> int:
+    category_depth = len([part for part in entry.category.split(" > ") if part.strip()])
+    english_depth = len([part for part in entry.english.split(" > ") if part.strip()])
+    return category_depth + max(1, english_depth)
+
+
+def _token_matches_word_prefix(token: str, word: str) -> bool:
+    if not token or not word:
+        return False
+    if word.startswith(token):
+        return True
+    if len(token) < 4 or word[0] != token[0]:
+        return False
+
+    position = 0
+    skipped = 0
+    for char in token:
+        found = word.find(char, position)
+        if found < 0:
+            return False
+        skipped += max(0, found - position)
+        position = found + 1
+    return skipped <= max(1, len(token) // 3)
+
+
+def _word_prefix_tokens_match(text: str, tokens: list[str]) -> bool:
+    if not tokens:
+        return False
+    words = _normalize(text).split()
+    if not words:
+        return False
+    return all(any(_token_matches_word_prefix(token, word) for word in words) for token in tokens)
+
+
+def _path_without_leaf(entry: NodeSearchEntry) -> str:
+    english_parts = [part.strip() for part in entry.english.split(" > ") if part.strip()]
+    if len(english_parts) > 1:
+        return " > ".join(english_parts[:-1])
+    return entry.english
+
+
+def _query_match_parts(entry: NodeSearchEntry, query: str):
+    query = _normalize(query)
+    tokens = query.split()
+    english = _normalize(entry.english)
+    chinese = _normalize(entry.chinese)
+    english_parts = [_normalize(part) for part in entry.english.split(" > ") if part.strip()]
+    chinese_parts = [_normalize(part) for part in entry.chinese.split(" > ") if part.strip()]
+    category_parts = [_normalize(part) for part in entry.category.split(" > ") if part.strip()]
+    category_text = _normalize(entry.category)
+    leaf_parts = [parts[-1] for parts in (english_parts, chinese_parts) if parts]
+    root_parts = [parts[0] for parts in (english_parts, chinese_parts) if len(parts) > 1]
+    category_match = bool(query and (
+        query in category_parts
+        or any(part.startswith(query) for part in category_parts)
+        or (tokens and all(token in category_text for token in tokens))
+    ))
+    leaf_exact = any(part == query for part in leaf_parts)
+    leaf_prefix = any(part.startswith(query) for part in leaf_parts)
+    leaf_contains = any(query in part for part in leaf_parts)
+    root_exact = any(part == query for part in root_parts)
+    path_text = " ".join([entry.category, entry.english])
+    leaf_word_match = any(_word_prefix_tokens_match(part, tokens) for part in leaf_parts)
+    path_word_match = _word_prefix_tokens_match(path_text, tokens)
+    root_word_match = _word_prefix_tokens_match(_path_without_leaf(entry), tokens)
+    is_primary = len(english_parts) <= 1
+    return {
+        "english": english,
+        "chinese": chinese,
+        "english_parts": english_parts,
+        "chinese_parts": chinese_parts,
+        "category_parts": category_parts,
+        "leaf_parts": leaf_parts,
+        "root_parts": root_parts,
+        "category_match": category_match,
+        "leaf_exact": leaf_exact,
+        "leaf_prefix": leaf_prefix,
+        "leaf_contains": leaf_contains,
+        "leaf_word_match": leaf_word_match,
+        "path_word_match": path_word_match,
+        "root_word_match": root_word_match,
+        "root_exact": root_exact,
+        "is_primary": is_primary,
+    }
+
+
+OFFICIALISH_QUERY_ORDER = {
+    "math": (
+        "math",
+        "vector math",
+        "boolean math",
+        "integer math",
+        "bit math",
+        "bit math > and",
+        "bit math > exclusive or",
+        "bit math > not",
+        "bit math > or",
+        "bit math > rotate",
+    ),
+    "vector": (
+        "vector",
+        "mix vector",
+        "vector math",
+        "vector curves",
+        "vector rotate",
+        "rotate vector",
+        "align rotation to vector",
+        "combine cylindrical",
+        "combine spherical",
+        "combine xyz",
+        "separate xyz",
+    ),
+    "mesh": (
+        "dual mesh",
+        "mesh line",
+        "mesh island",
+        "mesh circle",
+        "grid to mesh",
+        "extrude mesh",
+        "mesh boolean",
+        "mesh to curve",
+        "curve to mesh",
+        "mesh to points",
+    ),
+    "curve": (
+        "curve tip",
+        "rgb curves",
+        "curve root",
+        "curve info",
+        "curve tilt",
+        "fill curve",
+        "trim curve",
+        "curve line",
+        "float curve",
+        "curve to tube",
+    ),
+    "geometry": (
+        "join geometry",
+        "transform geometry",
+        "geometry input",
+        "delete geometry",
+        "smooth geometry",
+        "set geometry name",
+        "displace geometry",
+        "separate geometry",
+        "geometry proximity",
+        "geometry to instance",
+    ),
+    "position": (
+        "position",
+        "set position",
+        "set handle positions",
+        "curve handle positions",
+        "projection matrix",
+    ),
+    "color": (
+        "color",
+        "mix color > color",
+        "object info > color",
+        "volume info > color",
+        "mix color",
+        "color ramp",
+        "color burn",
+        "color dodge",
+        "invert color",
+        "combine color",
+    ),
+    "obj": (
+        "texture coordinate > object",
+        "object info",
+        "object info > object index",
+        "object info > alpha",
+        "object info > color",
+        "object info > location",
+        "object info > material index",
+        "object info > random",
+        "combine color",
+        "combine bundle",
+    ),
+    "object": (
+        "texture coordinate > object",
+        "object info",
+        "object info > object index",
+        "object info > alpha",
+        "object info > color",
+        "object info > location",
+        "object info > material index",
+        "object info > random",
+        "combine color",
+        "combine bundle",
+    ),
+    "node": (
+        "noise texture",
+        "hair curves noise",
+        "white noise texture",
+    ),
+}
+
+
+def _has_visible_output_setting(entry: NodeSearchEntry) -> bool:
+    return any(name == "visible_output" for name, _value in entry.settings)
+
+
+def _dynamic_preferred_order(entry: NodeSearchEntry, query: str) -> int:
+    match = _query_match_parts(entry, query)
+    if match["leaf_exact"]:
+        return 1_000
+    if match["is_primary"] and match["leaf_word_match"]:
+        return 1_050
+    if _has_visible_output_setting(entry) and match["root_word_match"]:
+        return 1_100
+    if _has_visible_output_setting(entry) and match["leaf_contains"]:
+        return 1_200
+    if match["is_primary"] and match["leaf_contains"]:
+        return 1_400
+    if match["leaf_prefix"]:
+        return 1_600
+    if match["leaf_contains"]:
+        return 1_800
+    if match["root_exact"]:
+        return 2_200
+    if match["path_word_match"]:
+        return 2_400
+    if match["category_match"]:
+        return 3_000
+    return 10_000
+
+
+def _officialish_preferred_order(entry: NodeSearchEntry, query: str) -> int:
+    preferred = OFFICIALISH_QUERY_ORDER.get(_normalize(query))
+    if not preferred:
+        return 10_000
+
+    english_parts = [_normalize(part) for part in entry.english.split(" > ") if part.strip()]
+    if not english_parts:
+        return 10_000
+
+    leaf = english_parts[-1]
+    full = " > ".join(english_parts)
+    for index, name in enumerate(preferred):
+        if " > " in name:
+            if full == name or full.endswith(f" > {name}"):
+                return index
+        elif leaf == name or full == name:
+            return index
+    return _dynamic_preferred_order(entry, query)
+
+
+def _officialish_sort_bucket(entry: NodeSearchEntry, query: str) -> int:
+    match = _query_match_parts(entry, query)
+    if match["is_primary"] and match["leaf_exact"]:
+        return 0
+    if match["is_primary"] and (match["category_match"] or match["leaf_contains"]):
+        return 1
+    if match["is_primary"]:
+        return 2
+    if match["root_exact"] or match["category_match"]:
+        return 3
+    if match["leaf_contains"]:
+        return 4
+    return 5
+
+
+def _primary_match_order(entry: NodeSearchEntry, query: str) -> int:
+    match = _query_match_parts(entry, query)
+    leaf = match["leaf_parts"][0] if match["leaf_parts"] else ""
+    category_parts = match["category_parts"]
+    in_leaf = query in leaf
+    in_category = query in category_parts or any(part.startswith(query) for part in category_parts)
+    if match["leaf_exact"]:
+        return 0
+    if in_category and in_leaf and not leaf.startswith(query):
+        return 1
+    if in_category and in_leaf:
+        return 2
+    if in_leaf:
+        return 3
+    if in_category:
+        return 4
+    return 5
+
+
 def _node_tree_allows_node(context, node_type: str) -> bool:
     space = context.space_data
     node_tree = getattr(space, "edit_tree", None)
@@ -590,9 +915,59 @@ def _constant_string(node):
     return None
 
 
+def _constant_string_list(node) -> list[str]:
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return []
+    values = []
+    for item in node.elts:
+        value = _constant_string(item)
+        if value:
+            values.append(value)
+    return values
+
+
+def _class_string_assignment(class_node: ast.ClassDef, name: str) -> str | None:
+    for item in class_node.body:
+        if not isinstance(item, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == name for target in item.targets):
+            continue
+        value = _constant_string(item.value)
+        if value:
+            return value
+    return None
+
+
+def _call_keyword_string(node: ast.Call, name: str) -> str | None:
+    for keyword in node.keywords:
+        if keyword.arg == name:
+            return _constant_string(keyword.value)
+    return None
+
+
+def _shader_mix_label_settings(label: str | None) -> tuple[str, tuple[tuple[str, str], ...]]:
+    if label == "Mix Color":
+        return label, (("data_type", "RGBA"),)
+    if label == "Mix Vector":
+        return label, (("data_type", "VECTOR"),)
+    if label == "Mix Rotation":
+        return label, (("data_type", "ROTATION"),)
+    return "", ()
+
+
+def _category_from_menu_path(menu_path: str | None) -> str | None:
+    if not menu_path:
+        return None
+    parts = [part.strip() for part in menu_path.split("/") if part.strip()]
+    return " > ".join(parts) if parts else None
+
+
 def _category_from_class_name(name: str) -> str:
+    if name in {"NodeMenu", "Menu"} or not name.startswith("NODE_MT_"):
+        return ""
+
     text = name
-    for prefix in ("NODE_MT_gn_", "NODE_MT_shader_node_", "NODE_MT_compositor_node_", "NODE_MT_texture_node_", "NODE_MT_category_"):
+    for prefix in ("NODE_MT_gn_", "NODE_MT_shader_node_", "NODE_MT_compositor_node_", "NODE_MT_texture_node_", "NODE_MT_category_", "NODE_MT_"):
         if text.startswith(prefix):
             text = text[len(prefix):]
             break
@@ -634,8 +1009,8 @@ def _iter_menu_entries(context):
     seen = set()
     entries = []
 
-    def add_entry(node_type, category, variant_label, settings):
-        entries.append((node_type, category, variant_label, tuple(settings)))
+    def add_entry(node_type, category, variant_label, variant_chinese, settings):
+        entries.append((node_type, category, variant_label, variant_chinese, tuple(settings)))
 
     for path in _node_menu_script_paths(context):
         try:
@@ -644,7 +1019,9 @@ def _iter_menu_entries(context):
             continue
 
         for class_node in (node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)):
-            category = _category_from_class_name(class_node.name)
+            category = _category_from_menu_path(_class_string_assignment(class_node, "menu_path")) or _category_from_class_name(class_node.name)
+            if not category:
+                continue
 
             for node in ast.walk(class_node):
                 if not isinstance(node, ast.Call):
@@ -654,18 +1031,18 @@ def _iter_menu_entries(context):
                 if not isinstance(func, ast.Attribute):
                     continue
 
-                if func.attr == "add_color_mix_node":
+                if func.attr in {"add_color_mix_node", "color_mix_node"}:
                     key = ("ShaderNodeMix", (), category)
                     if key not in seen:
                         seen.add(key)
-                        add_entry("ShaderNodeMix", category, "", ())
+                        add_entry("ShaderNodeMix", category, "Mix Color", _translation_label("Mix Color"), (("data_type", "RGBA"),))
                     for item_identifier, item_english, item_chinese in _enum_items_for_node_property("ShaderNodeMix", "blend_type"):
-                        settings = (("blend_type", item_identifier),)
+                        settings = (("data_type", "RGBA"), ("blend_type", item_identifier))
                         key = ("ShaderNodeMix", settings, category)
                         if key in seen:
                             continue
                         seen.add(key)
-                        add_entry("ShaderNodeMix", category, item_english, settings)
+                        add_entry("ShaderNodeMix", category, item_english, item_chinese, settings)
                     continue
 
                 if func.attr not in {"node_operator", "node_operator_with_outputs", "node_operator_with_searchable_enum"}:
@@ -676,10 +1053,28 @@ def _iter_menu_entries(context):
                 if not node_type:
                     continue
 
-                key = (node_type, (), category)
+                variant_label = ""
+                base_settings = ()
+                if node_type == "ShaderNodeMix" and func.attr == "node_operator":
+                    variant_label, base_settings = _shader_mix_label_settings(_call_keyword_string(node, "label"))
+
+                key = (node_type, base_settings, category)
                 if key not in seen:
                     seen.add(key)
-                    add_entry(node_type, category, "", ())
+                    add_entry(node_type, category, variant_label, _translation_label(variant_label) if variant_label else "", base_settings)
+
+                if func.attr == "node_operator_with_outputs":
+                    output_names = []
+                    for arg in node.args:
+                        output_names.extend(_constant_string_list(arg))
+                    for output_name in output_names:
+                        settings = (("visible_output", output_name),)
+                        key = (node_type, settings, category)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        add_entry(node_type, category, output_name, _translation_label(output_name), settings)
+                    continue
 
                 if func.attr != "node_operator_with_searchable_enum":
                     continue
@@ -701,7 +1096,7 @@ def _iter_menu_entries(context):
                     if key in seen:
                         continue
                     seen.add(key)
-                    add_entry(node_type, category, item_english, settings)
+                    add_entry(node_type, category, item_english, item_chinese, settings)
 
     MENU_ENTRY_CACHE[tree_id] = entries
     yield from entries
@@ -839,19 +1234,12 @@ def _iter_asset_node_groups():
 
 
 def _make_search_text(english: str, chinese: str, label: str, node_type: str) -> str:
-    node_words = _camel_words(node_type)
-    node_without_suffix = re.sub(r"Node$", "", node_type)
     pieces = [
         english,
         chinese,
         label,
-        node_type,
-        node_words,
-        _camel_words(node_without_suffix),
         english.replace(" ", ""),
         chinese.replace(" ", ""),
-        node_words.replace(" ", ""),
-        node_without_suffix,
     ]
     return _normalize(" ".join(piece for piece in pieces if piece))
 
@@ -947,7 +1335,7 @@ def _rebuild_search_entries(context):
         cacheable_entries.append(entry)
         add_entry(entry)
 
-    def add_builtin_entry(node_type: str, category: str = "Node", variant_label: str = "", settings=(), trusted_menu=False):
+    def add_builtin_entry(node_type: str, category: str = "Node", variant_label: str = "", settings=(), trusted_menu=False, variant_chinese: str = ""):
         key = (node_type, tuple(settings))
         if key in seen_keys:
             return
@@ -958,8 +1346,14 @@ def _rebuild_search_entries(context):
 
         bl_rna = bpy.types.Node.bl_rna_get_subclass(node_type)
         base_english = bl_rna.name if bl_rna and bl_rna.name else node_type
-        english = f"{base_english} > {variant_label}" if variant_label else base_english
-        chinese = _translation_label(english)
+        base_chinese = _translation_label(base_english)
+        if variant_label:
+            english = f"{base_english} > {variant_label}"
+            translated_variant = variant_chinese or _translation_label(variant_label)
+            chinese = f"{base_chinese} > {translated_variant}"
+        else:
+            english = base_english
+            chinese = base_chinese
         label = _entry_label(english, chinese)
         description = bl_rna.description if bl_rna and bl_rna.description else english
         add_cacheable_entry(
@@ -977,8 +1371,8 @@ def _rebuild_search_entries(context):
             )
         )
 
-    for node_type, category, variant_label, settings in _iter_menu_entries(context):
-        add_builtin_entry(node_type, category, variant_label, settings, trusted_menu=True)
+    for node_type, category, variant_label, variant_chinese, settings in _iter_menu_entries(context):
+        add_builtin_entry(node_type, category, variant_label, settings, trusted_menu=True, variant_chinese=variant_chinese)
 
     for cls in sorted(_iter_node_classes(), key=lambda item: getattr(item, "bl_label", "")):
         add_builtin_entry(cls.bl_idname)
@@ -998,33 +1392,30 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
     compact_query = query.replace(" ", "")
     tokens = query.split()
 
-    if all(token in text for token in tokens):
+    match = _query_match_parts(entry, query)
+    english = match["english"]
+    chinese = match["chinese"]
+    english_parts = match["english_parts"]
+    chinese_parts = match["chinese_parts"]
+    category_match = match["category_match"]
+    all_parts = english_parts + chinese_parts
+
+    preferred_order = _officialish_preferred_order(entry, query)
+    if preferred_order < 10_000:
+        score = 110
+    elif all(token in text for token in tokens):
         score = 100
+    elif category_match:
+        score = 90
     elif compact_query and compact_query in compact_text:
         score = 80
     else:
-        if len(compact_query) < 3:
-            return None
-        position = 0
-        score = 0
-        total_gap = 0
-        for char in compact_query:
-            found = compact_text.find(char, position)
-            if found < 0:
-                return None
-            gap = found - position
-            total_gap += max(0, gap)
-            score += max(1, 12 - gap)
-            position = found + 1
-        if total_gap > len(compact_query) * 3:
-            return None
+        return None
 
-    english = _normalize(entry.english)
-    chinese = _normalize(entry.chinese)
     if english == query:
-        score += 1000
+        score += 1300
     elif chinese == query:
-        score += 1000
+        score += 1300
     elif english.startswith(query):
         score += 450
     elif chinese.startswith(query):
@@ -1033,6 +1424,32 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
         score += 250
     elif query in chinese:
         score += 250
+
+    if all_parts:
+        leaf_parts = match["leaf_parts"]
+        root_parts = match["root_parts"]
+        display_depth = _entry_display_depth(entry)
+        if match["leaf_exact"]:
+            score += 760
+        elif match["leaf_prefix"]:
+            score += 260
+        elif match["root_exact"]:
+            score += 100
+        elif match["leaf_contains"]:
+            score += 180
+
+        is_primary_entry = match["is_primary"]
+        if is_primary_entry and category_match:
+            score += 520
+        elif category_match:
+            score += 40
+        if is_primary_entry and match["leaf_contains"]:
+            score += 360
+
+        if match["leaf_exact"] or match["leaf_prefix"]:
+            score += max(0, 7 - display_depth) * 95
+        elif match["leaf_contains"]:
+            score += max(0, 7 - display_depth) * 45
 
     if entry.identifier in favorites:
         score += 2000
@@ -1047,9 +1464,18 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
         score = _score_entry(entry, query, favorites)
         if score is None:
             continue
-        scored.append((score, entry.identifier in favorites, entry.english.lower(), index, entry))
+        bucket = _officialish_sort_bucket(entry, query)
+        primary_order = _primary_match_order(entry, _normalize(query))
+        preferred_order = _officialish_preferred_order(entry, query)
+        scored.append((score, entry.identifier in favorites, entry.english.lower(), index, bucket, primary_order, preferred_order, entry))
 
-    scored.sort(key=lambda item: (-item[0], not item[1], item[2], item[3]))
+    def sort_key(item):
+        entry = item[7]
+        match = _query_match_parts(entry, query)
+        output_sort = entry.english.lower() if _has_visible_output_setting(entry) and match["root_word_match"] else ""
+        return (not item[1], item[6], item[4], item[5], output_sort, item[3], -item[0], item[2])
+
+    scored.sort(key=sort_key)
     return [item[-1] for item in scored]
 
 
@@ -1093,6 +1519,10 @@ def _apply_node_settings(node, settings: tuple[tuple[str, str], ...]):
     for name, value in settings:
         try:
             if name.startswith("inputs["):
+                continue
+            if name == "visible_output":
+                if hasattr(node, "visible_output"):
+                    setattr(node, name, value)
                 continue
             setattr(node, name, value)
         except Exception:
@@ -1233,6 +1663,25 @@ def _draw_text(text: str, x: float, y: float, size: int, color: tuple[float, flo
     blf.color(FONT_ID, *color)
     blf.position(FONT_ID, x, y, 0)
     blf.draw(FONT_ID, text)
+
+
+def _draw_label_text(label: str, x: float, y: float, max_width: float, size: int):
+    if " / " not in label:
+        _draw_text(_clip_text(label, max_width, size), x, y, size, TEXT_COLOR)
+        return
+
+    primary, secondary = label.split(" / ", 1)
+    separator = " / "
+    primary_width = _text_width(primary, size)
+    separator_width = _text_width(separator, size)
+    if primary_width + separator_width >= max_width:
+        _draw_text(_clip_text(primary, max_width, size), x, y, size, TEXT_COLOR)
+        return
+
+    _draw_text(primary, x, y, size, TEXT_COLOR)
+    secondary_x = x + primary_width
+    secondary_text = _clip_text(separator + secondary, max_width - primary_width, size)
+    _draw_text(secondary_text, secondary_x, y, size, SECONDARY_TEXT_COLOR)
 
 
 def _draw_centered_text(text: str, x: float, y: float, width: float, height: float, size: int, color: tuple[float, float, float, float]):
@@ -1842,15 +2291,17 @@ class ENS_AddNodeByEnglishSearch(Operator):
             fav_x = x + width - padding - fav_width - _scaled(8, scale)
             fade_width = _scaled(46, scale)
             fade_x = fav_x - fade_width
-            category_size = _scaled(11, scale)
             label_size = _scaled(13, scale)
-            category_text = f"{entry.category} >"
+            category_size = label_size
+            display_category, display_label = _display_parts(entry)
+            category_text = f"{display_category} ▸"
+            category_text = category_text.replace(" > ", " ▸ ")
             category_text = _clip_text(category_text, max(0, fav_x - category_x), category_size)
             category_width = _text_width(category_text, category_size)
             label_x = category_x + category_width + _scaled(8, scale)
-            label_text = _clip_text(entry.label, max(0, fav_x - label_x), label_size)
-            _draw_text(category_text, category_x, row_text_y, category_size, MUTED_TEXT_COLOR)
-            _draw_text(label_text, label_x, row_text_y, label_size, TEXT_COLOR)
+            label_max_width = max(0, fav_x - label_x)
+            _draw_text(category_text, category_x, row_text_y, category_size, SECONDARY_TEXT_COLOR)
+            _draw_label_text(display_label, label_x, row_text_y, label_max_width, label_size)
             fade_color = HIGHLIGHT_COLOR if is_selected else PANEL_BACKGROUND
             _draw_horizontal_fade(fade_x, row_y + _scaled(2, scale), fade_width, row_height - _scaled(4, scale), fade_color, steps=10)
             _draw_right_rounded_fill(fav_x, row_y + _scaled(2, scale), max(0, x + width - padding - fav_x), row_height - _scaled(4, scale), max(3, radius - 2), fade_color)
