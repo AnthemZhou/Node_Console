@@ -18,13 +18,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.4"
+ADDON_VERSION = "0.8.6"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": tuple(int(part) for part in ADDON_VERSION.split(".")),
+    "version": (0, 8, 6),
     "blender": (4, 0, 0),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -1842,8 +1842,18 @@ class ENS_AddNodeByEnglishSearch(Operator):
             space.cursor_location_from_region(event.mouse_region_x, event.mouse_region_y)
         self._placing_node.location = space.cursor_location
 
+    def _start_native_node_transform(self, context) -> bool:
+        try:
+            result = bpy.ops.node.translate_attach_remove_on_cancel("INVOKE_DEFAULT")
+            return "RUNNING_MODAL" in result or "FINISHED" in result
+        except Exception:
+            return False
+
     def _begin_placement(self, context, event, node):
         self._hide_console(context)
+        if self._start_native_node_transform(context):
+            return self._finish(context, {"FINISHED"})
+
         self._placing_node = node
         self._move_placing_node(context, event)
         return {"RUNNING_MODAL"}
