@@ -18,13 +18,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.6"
+ADDON_VERSION = "0.8.9"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 6),
+    "version": (0, 8, 9),
     "blender": (4, 0, 0),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -59,6 +59,24 @@ HIGHLIGHT_BORDER_COLOR = (0.38, 0.38, 0.38, 0.85)
 TEXT_COLOR = (0.88, 0.88, 0.9, 1.0)
 MUTED_TEXT_COLOR = (0.58, 0.58, 0.6, 1.0)
 SECONDARY_TEXT_COLOR = (0.435, 0.435, 0.45, 1.0)
+CATEGORY_COLOR_FALLBACK = (0.27, 0.30, 0.34, 1.0)
+NODE_TYPE_COLORS = {
+    "attribute": (0.55, 0.36, 0.58, 1.0),
+    "color": (0.70, 0.50, 0.18, 1.0),
+    "converter": (0.20, 0.38, 0.72, 1.0),
+    "curve": (0.70, 0.42, 0.18, 1.0),
+    "geometry": (0.16, 0.48, 0.40, 1.0),
+    "group": (0.36, 0.36, 0.39, 1.0),
+    "input": (0.56, 0.28, 0.26, 1.0),
+    "math": (0.20, 0.36, 0.78, 1.0),
+    "mesh": (0.16, 0.48, 0.40, 1.0),
+    "output": (0.46, 0.30, 0.62, 1.0),
+    "shader": (0.30, 0.50, 0.22, 1.0),
+    "texture": (0.48, 0.36, 0.18, 1.0),
+    "utilities": (0.20, 0.36, 0.78, 1.0),
+    "vector": (0.23, 0.43, 0.78, 1.0),
+    "volume": (0.18, 0.44, 0.48, 1.0),
+}
 SETTINGS_FILENAME = "node_console_settings.json"
 BUNDLED_CACHE_FILENAME = "node_console_builtin_cache.json"
 
@@ -570,6 +588,43 @@ def _display_parts(entry: NodeSearchEntry) -> tuple[str, str]:
     english = english_parts[-1]
     chinese = chinese_label or english
     return category, _entry_label(english, chinese)
+
+
+def _blend_color(color: tuple[float, float, float, float], amount: float, target: tuple[float, float, float, float] = PANEL_BACKGROUND) -> tuple[float, float, float, float]:
+    amount = max(0.0, min(1.0, amount))
+    return (
+        color[0] * amount + target[0] * (1.0 - amount),
+        color[1] * amount + target[1] * (1.0 - amount),
+        color[2] * amount + target[2] * (1.0 - amount),
+        color[3],
+    )
+
+
+def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float, float]:
+    keys = []
+    category = _normalize(entry.category)
+    english = _normalize(entry.english)
+    node_type = entry.node_type or ""
+    keys.extend(category.split())
+    keys.extend(english.split())
+    keys.extend(_camel_words(node_type).split())
+
+    if node_type in {"ShaderNodeMath", "ShaderNodeVectorMath", "FunctionNodeCompare", "FunctionNodeFloatToInt", "FunctionNodeIntegerMath", "FunctionNodeBooleanMath", "FunctionNodeBitMath"}:
+        return NODE_TYPE_COLORS["math"]
+    if entry.kind == "ASSET":
+        return NODE_TYPE_COLORS["group"]
+    return next((NODE_TYPE_COLORS[key] for key in keys if key in NODE_TYPE_COLORS), CATEGORY_COLOR_FALLBACK)
+
+
+def _entry_type_colors(entry: NodeSearchEntry, active: bool = False) -> tuple[tuple[float, float, float, float], tuple[float, float, float, float]]:
+    base = _entry_base_type_color(entry)
+    fill_strength = 0.58 if active else 0.16
+    border_strength = 0.74 if active else 0.50
+    fill_alpha = 0.92 if active else 0.64
+    border_alpha = 0.92 if active else 0.82
+    fill = _blend_color(base, fill_strength)
+    border = _blend_color(base, border_strength)
+    return (fill[0], fill[1], fill[2], fill_alpha), (border[0], border[1], border[2], border_alpha)
 
 
 def _entry_display_depth(entry: NodeSearchEntry) -> int:
@@ -1476,7 +1531,7 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
             score += max(0, 7 - display_depth) * 45
 
     if entry.identifier in favorites:
-        score += 2000
+        score += 60
 
     return score
 
@@ -1497,7 +1552,7 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
         entry = item[7]
         match = _query_match_parts(entry, query)
         output_sort = entry.english.lower() if _has_visible_output_setting(entry) and match["root_word_match"] else ""
-        return (not item[1], item[6], item[4], item[5], output_sort, item[3], -item[0], item[2])
+        return (item[6], item[4], item[5], not item[1], output_sort, item[3], -item[0], item[2])
 
     scored.sort(key=sort_key)
     return [item[-1] for item in scored]
@@ -1794,6 +1849,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _shortcut_hover = None
     _shortcut_hover_started = 0.0
     _shortcut_delete_confirm = None
+    _hovered_result_index = None
+    _keyboard_selection_active = False
+    _pending_native_transform = False
     _timer = None
 
     @classmethod
@@ -1823,6 +1881,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 pass
             self._timer = None
         self._placing_node = None
+        self._pending_native_transform = False
         if context.area:
             context.area.tag_redraw()
         return result
@@ -1851,11 +1910,16 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
     def _begin_placement(self, context, event, node):
         self._hide_console(context)
+        self._placing_node = node
+        self._move_placing_node(context, event)
+
+        if event and event.type == "LEFTMOUSE" and event.value == "PRESS":
+            self._pending_native_transform = True
+            return {"RUNNING_MODAL"}
+
         if self._start_native_node_transform(context):
             return self._finish(context, {"FINISHED"})
 
-        self._placing_node = node
-        self._move_placing_node(context, event)
         return {"RUNNING_MODAL"}
 
     def _cancel_placement(self, context):
@@ -2041,6 +2105,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._shortcut_delete_confirm = None
         self._scroll_offset = 0
         self._scroll_remainder = 0.0
+        self._hovered_result_index = None
+        self._keyboard_selection_active = False
+        self._pending_native_transform = False
         self._refresh_results()
         self._draw_handler = SpaceNodeEditor.draw_handler_add(self._draw_callback, (context,), "WINDOW", "POST_PIXEL")
         self._timer = context.window_manager.event_timer_add(0.2, window=context.window)
@@ -2053,6 +2120,15 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if event.type == "TIMER":
             if context.area:
                 context.area.tag_redraw()
+            return {"RUNNING_MODAL"}
+
+        if self._placing_node and self._pending_native_transform:
+            if event.value == "PRESS" and event.type == "ESC":
+                return self._cancel_placement(context)
+            if event.type == "LEFTMOUSE" and event.value == "RELEASE":
+                self._pending_native_transform = False
+                if self._start_native_node_transform(context):
+                    return self._finish(context, {"FINISHED"})
             return {"RUNNING_MODAL"}
 
         if self._placing_node:
@@ -2075,6 +2151,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
             clipboard = getattr(context.window_manager, "clipboard", "")
             if clipboard:
                 self._query += clipboard
+                self._hovered_result_index = None
+                self._keyboard_selection_active = False
                 self._refresh_results()
                 if context.area:
                     context.area.tag_redraw()
@@ -2082,6 +2160,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
         if event.unicode and not event.ctrl and not event.alt and not event.oskey and event.type not in {"RET", "NUMPAD_ENTER", "ESC", "BACK_SPACE", "DEL"}:
             self._query += event.unicode
+            self._hovered_result_index = None
+            self._keyboard_selection_active = False
             self._refresh_results()
             if context.area:
                 context.area.tag_redraw()
@@ -2108,16 +2188,24 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
             if event.type == "UP_ARROW":
                 self._selected_index = max(0, self._selected_index - 1)
+                self._hovered_result_index = None
+                self._keyboard_selection_active = True
                 self._scroll_offset = min(self._scroll_offset, self._selected_index)
             elif event.type == "DOWN_ARROW":
                 self._selected_index = min(max(0, len(self._results) - 1), self._selected_index + 1)
+                self._hovered_result_index = None
+                self._keyboard_selection_active = True
                 if self._selected_index >= self._scroll_offset + self._visible_limit:
                     self._scroll_offset = self._selected_index - self._visible_limit + 1
             elif event.type == "BACK_SPACE":
                 self._query = self._query[:-1]
+                self._hovered_result_index = None
+                self._keyboard_selection_active = False
                 self._refresh_results()
             elif event.type == "DEL":
                 self._query = ""
+                self._hovered_result_index = None
+                self._keyboard_selection_active = False
                 self._refresh_results()
             elif event.type == "LEFTMOUSE":
                 if self._context_menu_index is not None:
@@ -2182,8 +2270,10 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     return {"RUNNING_MODAL"}
 
                 index = self._row_index_from_mouse(event)
+                self._hovered_result_index = index
                 if index is not None:
                     self._selected_index = index
+                    self._keyboard_selection_active = False
                 old_hover = self._shortcut_hover
                 self._update_shortcut_hover(event)
                 if old_hover != self._shortcut_hover and context.area:
@@ -2202,10 +2292,16 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 return {"RUNNING_MODAL"}
 
             index = self._row_index_from_mouse(event)
+            old_result_hover = self._hovered_result_index
+            self._hovered_result_index = index
+            if index is not None:
+                self._keyboard_selection_active = False
             if index is not None and index != self._selected_index:
                 self._selected_index = index
                 if context.area:
                     context.area.tag_redraw()
+            elif old_result_hover != self._hovered_result_index and context.area:
+                context.area.tag_redraw()
             old_hover = self._shortcut_hover
             self._update_shortcut_hover(event)
             if old_hover != self._shortcut_hover and context.area:
@@ -2314,9 +2410,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
             index = self._scroll_offset + visible_index
             row_y = rows_top - (visible_index + 1) * row_height
             is_selected = index == self._selected_index
+            is_hovered = index == self._hovered_result_index
+            is_emphasized = is_selected and (is_hovered or self._keyboard_selection_active)
             is_favorite = entry.identifier in self._favorites
-            if is_selected:
-                _draw_rounded_panel(x + padding, row_y + _scaled(2, scale), search_width, row_height - _scaled(4, scale), max(3, radius - 2), HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
 
             row_text_y = row_y + _scaled(7, scale)
             category_x = x + padding + _scaled(10, scale)
@@ -2332,14 +2428,28 @@ class ENS_AddNodeByEnglishSearch(Operator):
             category_text = category_text.replace(" > ", " ▸ ")
             category_text = _clip_text(category_text, max(0, fav_x - category_x), category_size)
             category_width = _text_width(category_text, category_size)
-            label_x = category_x + category_width + _scaled(8, scale)
+            label_gap = _scaled(10, scale)
+            block_gap = _scaled(7, scale)
+            label_x = category_x + category_width + label_gap
             label_max_width = max(0, fav_x - label_x)
-            muted_row_color = MUTED_TEXT_COLOR if is_selected else SECONDARY_TEXT_COLOR
+            block_y = row_y + _scaled(2, scale)
+            block_height = row_height - _scaled(4, scale)
+            block_radius = max(3, radius - 2)
+            category_block_x = x + padding
+            category_block_width = max(_scaled(36, scale), label_x - category_block_x - block_gap)
+            label_block_x = label_x - _scaled(3, scale)
+            label_block_width = max(0, x + padding + search_width - label_block_x)
+            category_fill, category_border = _entry_type_colors(entry, active=is_emphasized)
+            _draw_rounded_panel(category_block_x, block_y, category_block_width, block_height, block_radius, category_fill, category_border)
+            if is_emphasized:
+                _draw_rounded_panel(label_block_x, block_y, label_block_width, block_height, block_radius, HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
+
+            muted_row_color = MUTED_TEXT_COLOR if is_emphasized else SECONDARY_TEXT_COLOR
             _draw_text(category_text, category_x, row_text_y, category_size, muted_row_color)
             _draw_label_text(display_label, label_x, row_text_y, label_max_width, label_size, muted_row_color)
-            fade_color = HIGHLIGHT_COLOR if is_selected else PANEL_BACKGROUND
-            _draw_horizontal_fade(fade_x, row_y + _scaled(2, scale), fade_width, row_height - _scaled(4, scale), fade_color, steps=10)
-            _draw_right_rounded_fill(fav_x, row_y + _scaled(2, scale), max(0, x + width - padding - fav_x), row_height - _scaled(4, scale), max(3, radius - 2), fade_color)
+            fade_color = HIGHLIGHT_COLOR if is_emphasized else PANEL_BACKGROUND
+            _draw_horizontal_fade(fade_x, block_y, fade_width, block_height, fade_color, steps=10)
+            _draw_right_rounded_fill(fav_x, block_y, max(0, x + width - padding - fav_x), block_height, block_radius, fade_color)
             if is_favorite:
                 fav_y = row_y + (row_height - fav_height) / 2
                 _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), (0.45, 0.45, 0.46, 0.95))
