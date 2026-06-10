@@ -18,10 +18,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
+ADDON_VERSION = "0.8.4"
+
+
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 0),
+    "version": tuple(int(part) for part in ADDON_VERSION.split(".")),
     "blender": (4, 0, 0),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -170,7 +173,7 @@ def _load_preferences_from_settings():
 
     data = _load_settings()
     if data.get("settings_version", 1) < 2 and isinstance(data.get("ui_scale"), (int, float)):
-        data["ui_scale"] = max(1.0, min(2.0, float(data["ui_scale"]) / 1.7))
+        data["ui_scale"] = max(0.5, min(2.0, float(data["ui_scale"]) / 1.7))
         data["settings_version"] = 2
         _write_settings(data)
     for name in ("display_mode", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "scan_asset_libraries"):
@@ -181,11 +184,19 @@ def _load_preferences_from_settings():
                 pass
 
 
+def _resolution_scale() -> float:
+    preferences = getattr(bpy.context, "preferences", None)
+    view = getattr(preferences, "view", None) if preferences else None
+    value = getattr(view, "ui_scale", None)
+    if isinstance(value, (int, float)) and value > 0:
+        return float(value)
+    return 1.0
+
+
 def _ui_scale() -> float:
     prefs = _preferences()
-    if not prefs:
-        return 1.7
-    return max(1.0, min(2.0, prefs.ui_scale)) * 1.7
+    addon_scale = max(0.5, min(2.0, prefs.ui_scale)) if prefs else 1.0
+    return addon_scale * 1.7 * _resolution_scale()
 
 
 def _scaled(value: float, scale: float) -> float:
@@ -267,10 +278,20 @@ def _asset_index_signature() -> str:
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
 
 
+def _addon_version_string() -> str:
+    version = globals().get("ADDON_VERSION")
+    if isinstance(version, str) and version:
+        return version
+    info = globals().get("bl_info", {})
+    value = info.get("version", ()) if isinstance(info, dict) else ()
+    if value:
+        return ".".join(str(part) for part in value)
+    return "0.0.0"
+
+
 def _search_index_cache_key(context) -> str:
-    version = ".".join(str(part) for part in bl_info["version"])
     blender = ".".join(str(part) for part in bpy.app.version)
-    return f"{version}:{blender}:{_node_tree_id(context)}:{_asset_index_signature()}"
+    return f"{_addon_version_string()}:{blender}:{_node_tree_id(context)}:{_asset_index_signature()}"
 
 
 def _entry_to_cache(entry: NodeSearchEntry) -> dict:
@@ -782,7 +803,7 @@ def _dynamic_preferred_order(entry: NodeSearchEntry, query: str) -> int:
 def _officialish_preferred_order(entry: NodeSearchEntry, query: str) -> int:
     preferred = OFFICIALISH_QUERY_ORDER.get(_normalize(query))
     if not preferred:
-        return 10_000
+        return _dynamic_preferred_order(entry, query)
 
     english_parts = [_normalize(part) for part in entry.english.split(" > ") if part.strip()]
     if not english_parts:
@@ -1401,13 +1422,16 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
     all_parts = english_parts + chinese_parts
 
     preferred_order = _officialish_preferred_order(entry, query)
+    # Compact matching is intentionally narrow. Without this guard, short queries
+    # can match across word boundaries, for example "set" in "Noise Texture".
+    compact_match = bool(len(compact_query) >= 5 and " " in query and compact_query in compact_text)
     if preferred_order < 10_000:
         score = 110
     elif all(token in text for token in tokens):
         score = 100
     elif category_match:
         score = 90
-    elif compact_query and compact_query in compact_text:
+    elif compact_match:
         score = 80
     else:
         return None
@@ -1665,7 +1689,7 @@ def _draw_text(text: str, x: float, y: float, size: int, color: tuple[float, flo
     blf.draw(FONT_ID, text)
 
 
-def _draw_label_text(label: str, x: float, y: float, max_width: float, size: int):
+def _draw_label_text(label: str, x: float, y: float, max_width: float, size: int, secondary_color: tuple[float, float, float, float] = SECONDARY_TEXT_COLOR):
     if " / " not in label:
         _draw_text(_clip_text(label, max_width, size), x, y, size, TEXT_COLOR)
         return
@@ -1681,7 +1705,7 @@ def _draw_label_text(label: str, x: float, y: float, max_width: float, size: int
     _draw_text(primary, x, y, size, TEXT_COLOR)
     secondary_x = x + primary_width
     secondary_text = _clip_text(separator + secondary, max_width - primary_width, size)
-    _draw_text(secondary_text, secondary_x, y, size, SECONDARY_TEXT_COLOR)
+    _draw_text(secondary_text, secondary_x, y, size, secondary_color)
 
 
 def _draw_centered_text(text: str, x: float, y: float, width: float, height: float, size: int, color: tuple[float, float, float, float]):
@@ -2300,8 +2324,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
             category_width = _text_width(category_text, category_size)
             label_x = category_x + category_width + _scaled(8, scale)
             label_max_width = max(0, fav_x - label_x)
-            _draw_text(category_text, category_x, row_text_y, category_size, SECONDARY_TEXT_COLOR)
-            _draw_label_text(display_label, label_x, row_text_y, label_max_width, label_size)
+            muted_row_color = MUTED_TEXT_COLOR if is_selected else SECONDARY_TEXT_COLOR
+            _draw_text(category_text, category_x, row_text_y, category_size, muted_row_color)
+            _draw_label_text(display_label, label_x, row_text_y, label_max_width, label_size, muted_row_color)
             fade_color = HIGHLIGHT_COLOR if is_selected else PANEL_BACKGROUND
             _draw_horizontal_fade(fade_x, row_y + _scaled(2, scale), fade_width, row_height - _scaled(4, scale), fade_color, steps=10)
             _draw_right_rounded_fill(fav_x, row_y + _scaled(2, scale), max(0, x + width - padding - fav_x), row_height - _scaled(4, scale), max(3, radius - 2), fade_color)
@@ -2452,9 +2477,9 @@ class ENS_AddonPreferences(AddonPreferences):
         name="Console Size",
         description="Adjust the Node Console text and panel size",
         default=1.0,
-        min=1.0,
+        min=0.5,
         max=2.0,
-        soft_min=1.0,
+        soft_min=0.5,
         soft_max=2.0,
         step=10,
         update=_preference_changed,
