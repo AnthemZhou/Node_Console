@@ -18,14 +18,14 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.9"
+ADDON_VERSION = "0.8.18"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 9),
-    "blender": (4, 0, 0),
+    "version": (0, 8, 18),
+    "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
     "category": "Node",
@@ -59,23 +59,31 @@ HIGHLIGHT_BORDER_COLOR = (0.38, 0.38, 0.38, 0.85)
 TEXT_COLOR = (0.88, 0.88, 0.9, 1.0)
 MUTED_TEXT_COLOR = (0.58, 0.58, 0.6, 1.0)
 SECONDARY_TEXT_COLOR = (0.435, 0.435, 0.45, 1.0)
-CATEGORY_COLOR_FALLBACK = (0.27, 0.30, 0.34, 1.0)
 NODE_TYPE_COLORS = {
-    "attribute": (0.55, 0.36, 0.58, 1.0),
-    "color": (0.70, 0.50, 0.18, 1.0),
-    "converter": (0.20, 0.38, 0.72, 1.0),
-    "curve": (0.70, 0.42, 0.18, 1.0),
-    "geometry": (0.16, 0.48, 0.40, 1.0),
-    "group": (0.36, 0.36, 0.39, 1.0),
-    "input": (0.56, 0.28, 0.26, 1.0),
-    "math": (0.20, 0.36, 0.78, 1.0),
-    "mesh": (0.16, 0.48, 0.40, 1.0),
-    "output": (0.46, 0.30, 0.62, 1.0),
-    "shader": (0.30, 0.50, 0.22, 1.0),
-    "texture": (0.48, 0.36, 0.18, 1.0),
-    "utilities": (0.20, 0.36, 0.78, 1.0),
-    "vector": (0.23, 0.43, 0.78, 1.0),
-    "volume": (0.18, 0.44, 0.48, 1.0),
+    "attribute": (0.12, 0.17, 0.36, 1.0),
+    "input": (0.56, 0.23, 0.34, 1.0),
+    "color": (0.44, 0.46, 0.15, 1.0),
+    "output": (0.20, 0.20, 0.20, 1.0),
+    "converter": (0.21, 0.43, 0.58, 1.0),
+    "texture": (0.48, 0.27, 0.11, 1.0),
+    "geometry": (0.19, 0.50, 0.41, 1.0),
+    "vector": (0.28, 0.27, 0.58, 1.0),
+    "none": (0.24, 0.34, 0.18, 1.0),
+}
+CATEGORY_COLOR_FALLBACK = NODE_TYPE_COLORS["none"]
+GEOMETRY_COLOR_KEYS = {"geometry", "mesh", "curve", "point", "points", "volume", "instances", "instance", "hair"}
+CONVERTER_COLOR_KEYS = {"math", "utilities", "converter", "rotation", "operations", "operation"}
+VECTOR_COLOR_KEYS = {"vector", "uv"}
+NODE_COLOR_TAG_TYPES = {
+    "ATTRIBUTE": "attribute",
+    "INPUT": "input",
+    "COLOR": "color",
+    "OUTPUT": "output",
+    "CONVERTER": "converter",
+    "TEXTURE": "texture",
+    "GEOMETRY": "geometry",
+    "VECTOR": "vector",
+    "NONE": "none",
 }
 SETTINGS_FILENAME = "node_console_settings.json"
 BUNDLED_CACHE_FILENAME = "node_console_builtin_cache.json"
@@ -93,6 +101,7 @@ class NodeSearchEntry:
     node_type: str = ""
     asset_path: str = ""
     asset_name: str = ""
+    asset_color_tag: str = ""
     search_text: str = ""
     settings: tuple[tuple[str, str], ...] = ()
 
@@ -255,7 +264,7 @@ def _load_favorite_meta() -> dict[str, str]:
     return {key: value for key, value in raw.items() if isinstance(key, str) and isinstance(value, str)}
 
 
-def _load_asset_index() -> list[tuple[str, str]]:
+def _load_asset_index() -> list[dict]:
     raw = _load_settings().get("asset_index", [])
     if not isinstance(raw, list):
         return []
@@ -263,23 +272,41 @@ def _load_asset_index() -> list[tuple[str, str]]:
     entries = []
     seen = set()
     for item in raw:
-        if not isinstance(item, dict):
+        if isinstance(item, dict):
+            blend_path = item.get("path")
+            name = item.get("name")
+            category = item.get("category", "Asset")
+            color_tag = item.get("color_tag", "")
+            description = item.get("description", "")
+            tree_type = item.get("tree_type", "")
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            blend_path, name = item[:2]
+            category = "Asset"
+            color_tag = ""
+            description = ""
+            tree_type = ""
+        else:
             continue
-        blend_path = item.get("path")
-        name = item.get("name")
         if not isinstance(blend_path, str) or not isinstance(name, str):
             continue
         key = (blend_path, name)
         if key in seen:
             continue
         seen.add(key)
-        entries.append(key)
+        entries.append({
+            "path": blend_path,
+            "name": name,
+            "category": category if isinstance(category, str) and category else "Asset",
+            "color_tag": color_tag if isinstance(color_tag, str) else "",
+            "description": description if isinstance(description, str) else "",
+            "tree_type": tree_type if isinstance(tree_type, str) else "",
+        })
     return entries
 
 
-def _save_asset_index(entries: list[tuple[str, str]]):
+def _save_asset_index(entries: list[dict]):
     data = _load_settings()
-    data["asset_index"] = [{"path": blend_path, "name": name} for blend_path, name in entries]
+    data["asset_index"] = entries
     _write_settings(data)
 
 
@@ -323,6 +350,7 @@ def _entry_to_cache(entry: NodeSearchEntry) -> dict:
         "node_type": entry.node_type,
         "asset_path": entry.asset_path,
         "asset_name": entry.asset_name,
+        "asset_color_tag": entry.asset_color_tag,
         "settings": [list(item) for item in entry.settings],
     }
 
@@ -345,6 +373,7 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
             node_type=node_type,
             asset_path=str(item.get("asset_path", "")),
             asset_name=str(item.get("asset_name", "")),
+            asset_color_tag=str(item.get("asset_color_tag", "")),
             search_text=_make_search_text(english, chinese, label, node_type),
             settings=settings,
         )
@@ -601,19 +630,55 @@ def _blend_color(color: tuple[float, float, float, float], amount: float, target
 
 
 def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float, float]:
-    keys = []
-    category = _normalize(entry.category)
-    english = _normalize(entry.english)
-    node_type = entry.node_type or ""
-    keys.extend(category.split())
-    keys.extend(english.split())
-    keys.extend(_camel_words(node_type).split())
+    category_parts = [_normalize(part) for part in entry.category.split(" > ") if part.strip()]
+    english_parts = [_normalize(part) for part in entry.english.split(" > ") if part.strip()]
+    node_type_words = _camel_words(entry.node_type or "").split()
+    keys = category_parts + english_parts + node_type_words
+    first_category = category_parts[0] if category_parts else ""
 
-    if node_type in {"ShaderNodeMath", "ShaderNodeVectorMath", "FunctionNodeCompare", "FunctionNodeFloatToInt", "FunctionNodeIntegerMath", "FunctionNodeBooleanMath", "FunctionNodeBitMath"}:
-        return NODE_TYPE_COLORS["math"]
+    if entry.node_type == "NodeGroupInput":
+        return NODE_TYPE_COLORS["input"]
+    if entry.asset_color_tag:
+        tag_type = NODE_COLOR_TAG_TYPES.get(entry.asset_color_tag.upper())
+        if tag_type:
+            return NODE_TYPE_COLORS[tag_type]
+    if entry.node_type == "NodeGroupOutput":
+        return NODE_TYPE_COLORS["output"]
+    normalized_english = _normalize(entry.english or "")
+    if entry.node_type == "NodeEvaluateClosure" or normalized_english == "evaluate closure":
+        return NODE_TYPE_COLORS["converter"]
+    if normalized_english == "closure" or entry.node_type in {"NodeClosureInput", "NodeClosureOutput"}:
+        return NODE_TYPE_COLORS["none"]
+    if normalized_english == "smooth by angle" or normalized_english == "get geometry bundle":
+        return NODE_TYPE_COLORS["geometry"]
+    if entry.node_type in {"GeometryNodeSetGreasePencilColor", "GeometryNodeSetGreasePencilDepth", "GeometryNodeSetGreasePencilSoftness"}:
+        return NODE_TYPE_COLORS["geometry"]
+    if normalized_english in {"instance rotation", "uv tangent"}:
+        return NODE_TYPE_COLORS["input"]
+    if normalized_english in {"pack uv islands", "uv unwrap", "index of nearest"}:
+        return NODE_TYPE_COLORS["converter"]
+    if normalized_english == "radial tiling":
+        return NODE_TYPE_COLORS["vector"]
+    if entry.node_type in {"ShaderNodeVectorRotate", "ShaderNodeVectorMath", "ShaderNodeVectorCurve"}:
+        return NODE_TYPE_COLORS["vector"]
+    settings = dict(entry.settings)
+    if entry.node_type == "ShaderNodeMix" and (settings.get("data_type") == "VECTOR" or "mix vector" in normalized_english):
+        return NODE_TYPE_COLORS["vector"]
+    if entry.node_type in {"FunctionNodeAlignEulerToVector", "FunctionNodeRotateVector", "FunctionNodeRotateRotation"}:
+        return NODE_TYPE_COLORS["converter"]
+    if "read" in category_parts:
+        return NODE_TYPE_COLORS["input"]
+    if first_category in {"attribute", "input", "color", "output", "texture", "geometry", "vector"}:
+        return NODE_TYPE_COLORS[first_category]
+    if first_category in CONVERTER_COLOR_KEYS or any(key in CONVERTER_COLOR_KEYS for key in keys):
+        return NODE_TYPE_COLORS["converter"]
+    if first_category in GEOMETRY_COLOR_KEYS or any(key in GEOMETRY_COLOR_KEYS for key in keys):
+        return NODE_TYPE_COLORS["geometry"]
+    if first_category in VECTOR_COLOR_KEYS or any(key in VECTOR_COLOR_KEYS for key in keys):
+        return NODE_TYPE_COLORS["vector"]
     if entry.kind == "ASSET":
-        return NODE_TYPE_COLORS["group"]
-    return next((NODE_TYPE_COLORS[key] for key in keys if key in NODE_TYPE_COLORS), CATEGORY_COLOR_FALLBACK)
+        return NODE_TYPE_COLORS["none"]
+    return CATEGORY_COLOR_FALLBACK
 
 
 def _entry_type_colors(entry: NodeSearchEntry, active: bool = False) -> tuple[tuple[float, float, float, float], tuple[float, float, float, float]]:
@@ -1204,18 +1269,63 @@ def _external_asset_node_directories() -> list[Path]:
     return directories
 
 
-def _read_asset_node_groups(blend_path: Path) -> list[str]:
+def _asset_category_from_catalog(catalog_name: str, blend_path: Path) -> str:
+    if catalog_name.strip().lower() == "instances":
+        return "Instance"
+
+    if catalog_name:
+        normalized = catalog_name.replace("-", " > ").replace("/", " > ")
+        parts = [part.strip() for part in normalized.split(">") if part.strip()]
+        if parts:
+            return " > ".join(parts)
+
+    stem = blend_path.stem.replace("_nodes_essentials", "").replace("_", " ").strip().title()
+    return stem or "Asset"
+
+
+def _read_asset_node_groups(blend_path: Path) -> list[dict]:
+    loaded_groups = []
     try:
-        with bpy.data.libraries.load(str(blend_path), assets_only=True) as (data_from, _data_to):
-            return list(getattr(data_from, "node_groups", ()))
+        with bpy.data.libraries.load(str(blend_path), assets_only=True) as (data_from, data_to):
+            names = list(getattr(data_from, "node_groups", ()))
+            data_to.node_groups = names
+            loaded_groups = data_to.node_groups
     except TypeError:
         try:
-            with bpy.data.libraries.load(str(blend_path)) as (data_from, _data_to):
-                return list(getattr(data_from, "node_groups", ()))
+            with bpy.data.libraries.load(str(blend_path)) as (data_from, data_to):
+                names = list(getattr(data_from, "node_groups", ()))
+                data_to.node_groups = names
+                loaded_groups = data_to.node_groups
         except Exception:
             return []
     except Exception:
         return []
+
+    entries = []
+    for node_group in loaded_groups:
+        if not node_group:
+            continue
+        asset_data = getattr(node_group, "asset_data", None)
+        catalog_name = str(getattr(asset_data, "catalog_simple_name", "") or "") if asset_data else ""
+        description = str(getattr(asset_data, "description", "") or "") if asset_data else ""
+        color_tag = str(getattr(node_group, "color_tag", "") or "")
+        entries.append({
+            "path": str(blend_path),
+            "name": node_group.name,
+            "category": _asset_category_from_catalog(catalog_name, blend_path),
+            "color_tag": color_tag,
+            "description": description,
+            "tree_type": str(getattr(node_group, "bl_idname", "") or ""),
+        })
+
+    for node_group in loaded_groups:
+        if node_group:
+            try:
+                bpy.data.node_groups.remove(node_group)
+            except Exception:
+                pass
+
+    return entries
 
 
 def _iter_asset_blend_paths(directories: list[Path]):
@@ -1226,17 +1336,17 @@ def _iter_asset_blend_paths(directories: list[Path]):
             continue
 
 
-def _scan_asset_node_groups(directories: list[Path]) -> list[tuple[str, str]]:
+def _scan_asset_node_groups(directories: list[Path]) -> list[dict]:
     seen = set()
     entries = []
 
     for blend_path in _iter_asset_blend_paths(directories):
-        for name in _read_asset_node_groups(blend_path):
-            key = (str(blend_path), name)
+        for item in _read_asset_node_groups(blend_path):
+            key = (item["path"], item["name"])
             if key in seen:
                 continue
             seen.add(key)
-            entries.append(key)
+            entries.append(item)
 
     return entries
 
@@ -1258,12 +1368,12 @@ def _background_asset_index_step():
             BACKGROUND_ASSET_INDEX = None
             return None
 
-        for name in _read_asset_node_groups(blend_path):
-            key = (str(blend_path), name)
+        for item in _read_asset_node_groups(blend_path):
+            key = (item["path"], item["name"])
             if key in state["seen"]:
                 continue
             state["seen"].add(key)
-            state["entries"].append(key)
+            state["entries"].append(item)
         processed += 1
 
     return 0.75
@@ -1305,8 +1415,8 @@ def _iter_asset_node_groups():
     if prefs and not prefs.scan_asset_libraries:
         return
 
-    for blend_path, name in _load_asset_index():
-        yield Path(blend_path), name
+    for item in _load_asset_index():
+        yield Path(item["path"]), item
 
 
 def _make_search_text(english: str, chinese: str, label: str, node_type: str) -> str:
@@ -1347,7 +1457,8 @@ def _rebuild_search_entries(context):
                 continue
             asset_name = node_group.name
             key = ("LOCAL_GROUP", asset_name)
-            if key in seen_keys:
+            name_key = _normalize(asset_name)
+            if key in seen_keys or any(_normalize(entry.english) == name_key for entry in NODE_SEARCH_ENTRIES):
                 continue
             seen_keys.add(key)
             chinese = _translation_label(asset_name)
@@ -1373,34 +1484,79 @@ def _rebuild_search_entries(context):
         if not edit_tree or edit_tree.bl_idname != "GeometryNodeTree":
             return
 
-        for blend_path, asset_name in _iter_asset_node_groups():
+        for blend_path, asset_item in _iter_asset_node_groups():
+            tree_type = asset_item.get("tree_type", "")
+            if tree_type and tree_type != edit_tree.bl_idname:
+                continue
+            asset_name = asset_item["name"]
             key = ("ASSET", str(blend_path), asset_name)
             if key in seen_keys:
                 continue
             seen_keys.add(key)
             chinese = _translation_label(asset_name)
             label = _entry_label(asset_name, chinese)
+            description = asset_item.get("description") or f"Node group asset: {asset_name}"
             entry = NodeSearchEntry(
                 identifier=_safe_identifier("A", asset_name, str(blend_path)),
-                category="Asset",
+                category=asset_item.get("category") or "Asset",
                 english=asset_name,
                 chinese=chinese,
                 label=label,
-                description=f"Node group asset: {asset_name}",
+                description=description,
                 kind="ASSET",
                 asset_path=str(blend_path),
                 asset_name=asset_name,
+                asset_color_tag=asset_item.get("color_tag", ""),
                 search_text=_make_search_text(asset_name, chinese, label, ""),
             )
             if cacheable_entries is not None:
                 cacheable_entries.append(entry)
             add_entry(entry)
 
+    def add_zone_entries():
+        space = context.space_data
+        edit_tree = getattr(space, "edit_tree", None)
+        if not edit_tree or edit_tree.bl_idname != "GeometryNodeTree":
+            return
+
+        zones = (
+            ("Simulation", "GeometryNodeSimulationInput", "GeometryNodeSimulationOutput", "node.add_zone", "Simulation zone", True),
+            ("Repeat", "GeometryNodeRepeatInput", "GeometryNodeRepeatOutput", "node.add_zone", "Repeat zone", True),
+            ("For Each Element", "GeometryNodeForeachGeometryElementInput", "GeometryNodeForeachGeometryElementOutput", "node.add_zone", "For Each Element zone", False),
+            ("Closure", "NodeClosureInput", "NodeClosureOutput", "node.add_zone", "Closure zone", False),
+        )
+        for english, input_type, output_type, operator_id, description, add_default_geometry_link in zones:
+            key = ("ZONE", input_type, output_type)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            chinese = _translation_label(english)
+            label = _entry_label(english, chinese)
+            add_entry(
+                NodeSearchEntry(
+                    identifier=_safe_identifier("Z", english, input_type, output_type),
+                    category="Simulation" if english != "Closure" else "Utilities > Closure",
+                    english=english,
+                    chinese=chinese,
+                    label=label,
+                    description=description,
+                    kind="ZONE",
+                    node_type=operator_id,
+                    search_text=_make_search_text(english, chinese, label, input_type),
+                    settings=(
+                        ("input_node_type", input_type),
+                        ("output_node_type", output_type),
+                        ("add_default_geometry_link", add_default_geometry_link),
+                    ),
+                )
+            )
+
     cached_entries = _load_search_index_cache(context) or _load_bundled_search_index(context)
     if cached_entries is not None:
         for entry in cached_entries:
             add_entry(entry)
             remember_key(entry)
+        add_zone_entries()
         add_asset_library_entries()
         add_local_groups()
         return
@@ -1453,6 +1609,7 @@ def _rebuild_search_entries(context):
     for cls in sorted(_iter_node_classes(), key=lambda item: getattr(item, "bl_label", "")):
         add_builtin_entry(cls.bl_idname)
 
+    add_zone_entries()
     add_asset_library_entries(cacheable_entries)
     _save_search_index_cache(context, cacheable_entries)
     add_local_groups()
@@ -1552,7 +1709,7 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
         entry = item[7]
         match = _query_match_parts(entry, query)
         output_sort = entry.english.lower() if _has_visible_output_setting(entry) and match["root_word_match"] else ""
-        return (item[6], item[4], item[5], not item[1], output_sort, item[3], -item[0], item[2])
+        return (not item[1], item[6], item[4], item[5], output_sort, item[3], -item[0], item[2])
 
     scored.sort(key=sort_key)
     return [item[-1] for item in scored]
@@ -1645,6 +1802,17 @@ def _add_asset_node(context, entry: NodeSearchEntry):
     edit_tree.nodes.active = node
 
     return node
+
+
+def _add_zone(context, entry: NodeSearchEntry):
+    kwargs = {name: value for name, value in entry.settings}
+    try:
+        result = bpy.ops.node.add_zone("EXEC_DEFAULT", **kwargs)
+    except Exception:
+        return None
+    if "FINISHED" not in result:
+        return None
+    return getattr(context.space_data.edit_tree.nodes, "active", None)
 
 
 def _draw_rect(x: float, y: float, width: float, height: float, color: tuple[float, float, float, float]):
@@ -1847,8 +2015,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _shortcut_rects: list[tuple[str, tuple[float, float, float, float]]] = []
     _shortcut_delete_rects: list[tuple[str, tuple[float, float, float, float]]] = []
     _shortcut_hover = None
+    _shortcut_delete_hover = None
     _shortcut_hover_started = 0.0
-    _shortcut_delete_confirm = None
     _hovered_result_index = None
     _keyboard_selection_active = False
     _pending_native_transform = False
@@ -1953,6 +2121,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
             self.report({"ERROR"}, f"Unable to add asset node: {entry.asset_name}")
             return self._finish(context, {"CANCELLED"})
 
+        if entry.kind == "ZONE":
+            result = _add_zone(context, entry)
+            if result:
+                return self._begin_placement(context, event, result)
+
+            self.report({"ERROR"}, f"Unable to add zone: {entry.english}")
+            return self._finish(context, {"CANCELLED"})
+
         return self._finish(context, {"CANCELLED"})
 
     def _row_index_from_mouse(self, event):
@@ -1986,7 +2162,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
         return None
 
     def _update_shortcut_hover(self, event):
+        delete_identifier = self._shortcut_delete_identifier_from_mouse(event)
         identifier = self._shortcut_identifier_from_mouse(event)
+        self._shortcut_delete_hover = delete_identifier
         if identifier != self._shortcut_hover:
             self._shortcut_hover = identifier
             self._shortcut_hover_started = time.monotonic() if identifier else 0.0
@@ -2102,7 +2280,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._favorite_meta = _load_favorite_meta()
         self._shortcuts = _load_shortcuts()
         self._shortcut_hover_started = 0.0
-        self._shortcut_delete_confirm = None
         self._scroll_offset = 0
         self._scroll_remainder = 0.0
         self._hovered_result_index = None
@@ -2236,22 +2413,19 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 if index is not None:
                     self._selected_index = index
                     return self._confirm(context, event)
+
                 shortcut_delete_identifier = self._shortcut_delete_identifier_from_mouse(event)
                 if shortcut_delete_identifier:
-                    if self._shortcut_delete_confirm == shortcut_delete_identifier:
-                        _remove_shortcut(shortcut_delete_identifier)
-                        self._shortcuts = _load_shortcuts()
-                        self._shortcut_delete_confirm = None
-                        self._shortcut_hover = None
-                    else:
-                        self._shortcut_delete_confirm = shortcut_delete_identifier
+                    _remove_shortcut(shortcut_delete_identifier)
+                    self._shortcuts = _load_shortcuts()
+                    self._shortcut_hover = None
+                    self._shortcut_delete_hover = None
                     if context.area:
                         context.area.tag_redraw()
                     return {"RUNNING_MODAL"}
 
                 shortcut_identifier = self._shortcut_identifier_from_mouse(event)
                 if shortcut_identifier:
-                    self._shortcut_delete_confirm = None
                     entry = self._entry_from_identifier(shortcut_identifier)
                     if entry:
                         self._results = [entry]
@@ -2259,7 +2433,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         return self._confirm(context, event)
                 if not self._mouse_in_panel(event):
                     return self._finish(context, {"CANCELLED"})
-                self._shortcut_delete_confirm = None
             elif event.type == "RIGHTMOUSE":
                 self._open_context_menu(event, self._row_index_from_mouse(event))
             elif event.type == "MOUSEMOVE":
@@ -2275,8 +2448,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     self._selected_index = index
                     self._keyboard_selection_active = False
                 old_hover = self._shortcut_hover
+                old_delete_hover = self._shortcut_delete_hover
                 self._update_shortcut_hover(event)
-                if old_hover != self._shortcut_hover and context.area:
+                if (old_hover != self._shortcut_hover or old_delete_hover != self._shortcut_delete_hover) and context.area:
                     context.area.tag_redraw()
 
             if context.area:
@@ -2303,8 +2477,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
             elif old_result_hover != self._hovered_result_index and context.area:
                 context.area.tag_redraw()
             old_hover = self._shortcut_hover
+            old_delete_hover = self._shortcut_delete_hover
             self._update_shortcut_hover(event)
-            if old_hover != self._shortcut_hover and context.area:
+            if (old_hover != self._shortcut_hover or old_delete_hover != self._shortcut_delete_hover) and context.area:
                 context.area.tag_redraw()
 
         return {"RUNNING_MODAL"}
@@ -2318,7 +2493,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         padding = _scaled(PANEL_PADDING, scale)
         search_height = _scaled(SEARCH_HEIGHT, scale)
         row_height = _scaled(ROW_HEIGHT, scale)
-        gap = _scaled(12, scale)
+        gap = _scaled(6, scale)
         shortcut_height = _scaled(SHORTCUT_HEIGHT, scale)
         shortcut_gap = _scaled(SHORTCUT_GAP, scale)
         radius = _scaled(5, scale)
@@ -2376,24 +2551,30 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 item_x = x + padding + index * (item_width + item_gap)
                 rect = (item_x, shortcuts_y, item_width, shortcut_height)
                 self._shortcut_rects.append((identifier, rect))
-                _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, max(3, radius - 1), FIELD_BACKGROUND, BORDER_COLOR)
                 entry = NODE_ENTRY_BY_ID[identifier]
+                shortcut_hovered = self._shortcut_hover == identifier
+                shortcut_fill, shortcut_border = _entry_type_colors(entry, active=shortcut_hovered)
+                shortcut_fill = _blend_color(shortcut_fill, 1.0, FIELD_BACKGROUND)
+                _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, max(3, radius - 1), shortcut_fill, shortcut_border)
                 shortcut_text_size = _scaled(11, scale)
                 delete_size = max(_scaled(13, scale), 11)
                 delete_x = item_x + item_width - delete_size - _scaled(4, scale)
                 delete_y = shortcuts_y + shortcut_height - delete_size - _scaled(4, scale)
-                delete_visible = self._shortcut_hover == identifier or self._shortcut_delete_confirm == identifier
+                delete_visible = self._shortcut_hover == identifier
+                delete_hovered = False
                 if delete_visible:
-                    self._shortcut_delete_rects.append((identifier, (delete_x, delete_y, delete_size, delete_size)))
+                    delete_rect = (delete_x, delete_y, delete_size, delete_size)
+                    self._shortcut_delete_rects.append((identifier, delete_rect))
                 shortcut_text = _fit_text(_abbreviate_label(_entry_primary_label(entry)), item_width - _scaled(18, scale), shortcut_text_size)
                 _draw_text_vcenter(shortcut_text, item_x + _scaled(7, scale), shortcuts_y, shortcut_height, shortcut_text_size, TEXT_COLOR)
                 if delete_visible:
-                    x_size = max(9, _scaled(9, scale))
-                    if self._shortcut_delete_confirm == identifier:
+                    x_size = max(10, _scaled(10, scale))
+                    delete_hovered = self._shortcut_delete_hover == identifier
+                    if delete_hovered:
                         _draw_rounded_rect(delete_x, delete_y, delete_size, delete_size, delete_size / 2, (0.42, 0.42, 0.44, 0.96))
                         x_color = (0.92, 0.92, 0.94, 1.0)
                     else:
-                        x_color = (0.68, 0.68, 0.70, 0.92)
+                        x_color = (0.50, 0.50, 0.52, 0.82)
                     _draw_centered_text("x", delete_x, delete_y, delete_size, delete_size, x_size, x_color)
 
         rows_top = search_y - shortcuts_height - gap
