@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.25"
+ADDON_VERSION = "0.8.32"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 25),
+    "version": (0, 8, 32),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -50,7 +50,7 @@ SEARCH_HEIGHT = 23
 ROW_HEIGHT = 26
 PANEL_PADDING = 8
 SHORTCUT_HEIGHT = 23
-SHORTCUT_GAP = 4
+SHORTCUT_GAP = 6
 CONTEXT_MENU_WIDTH = 190
 CONTEXT_MENU_ROW_HEIGHT = 30
 PANEL_BACKGROUND = (0.095, 0.095, 0.1, 0.98)
@@ -89,6 +89,27 @@ NODE_COLOR_TAG_TYPES = {
 }
 SETTINGS_FILENAME = "node_console_settings.json"
 BUNDLED_CACHE_FILENAME = "node_console_builtin_cache.json"
+
+UI_TEXT_ZH = {
+    "Search nodes...": "搜索节点...",
+    "No results found": "没有找到结果",
+    "Add Favorite": "添加收藏",
+    "Remove Favorite": "移除收藏",
+    "Add Shortcut": "添加快捷节点",
+    "Search Result Display": "搜索结果显示",
+    "Enable Chinese Fuzzy Match": "启用中文模糊检索",
+    "May slightly slow live search": "可能会略微降低实时搜索速度",
+    "Show Cached Asset Nodes": "显示缓存的资产节点",
+    "Cached Assets": "已缓存资产",
+    "Console Size": "搜索窗口大小",
+    "Refresh Asset Index": "刷新资产索引",
+    "Shortcut": "快捷键",
+    "Command": "Command",
+    "Favorites": "收藏",
+    "No favorite nodes": "没有收藏节点",
+    "Shortcuts": "快捷节点",
+    "No node shortcuts": "没有快捷节点",
+}
 
 
 @dataclass(frozen=True)
@@ -1139,6 +1160,28 @@ def _translation_label(text: str, translation_context: str | None = None) -> str
     return translated
 
 
+def _is_chinese_interface() -> bool:
+    try:
+        view = bpy.context.preferences.view
+        return bool(view.use_translate_interface and str(view.language).startswith("zh"))
+    except Exception:
+        return False
+
+
+def _ui_text(text: str) -> str:
+    if _is_chinese_interface():
+        return UI_TEXT_ZH.get(text, text)
+    return text
+
+
+def _display_category_label(category: str) -> str:
+    if not _is_chinese_interface():
+        return category
+
+    parts = [part.strip() for part in category.split(" > ") if part.strip()]
+    return " > ".join(_translation_label(part) for part in parts) if parts else category
+
+
 def _display_mode() -> str:
     prefs = _preferences()
     return prefs.display_mode if prefs else "ENGLISH_CHINESE"
@@ -1228,6 +1271,11 @@ def _blend_color(color: tuple[float, float, float, float], amount: float, target
     )
 
 
+def _multiply_color(color: tuple[float, float, float, float], amount: float) -> tuple[float, float, float, float]:
+    amount = max(0.0, min(1.0, amount))
+    return (color[0] * amount, color[1] * amount, color[2] * amount, color[3])
+
+
 def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float, float]:
     category_parts = [_normalize(part) for part in entry.category.split(" > ") if part.strip()]
     english_parts = [_normalize(part) for part in entry.english.split(" > ") if part.strip()]
@@ -1284,6 +1332,8 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
 
 def _entry_type_colors(entry: NodeSearchEntry, active: bool = False) -> tuple[tuple[float, float, float, float], tuple[float, float, float, float]]:
     base = _entry_base_type_color(entry)
+    if active and base == NODE_TYPE_COLORS["output"]:
+        base = (0.32, 0.32, 0.33, 1.0)
     fill_strength = 0.58 if active else 0.16
     border_strength = 0.74 if active else 0.50
     fill_alpha = 0.92 if active else 0.64
@@ -3165,7 +3215,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         row_height = _scaled(ROW_HEIGHT, scale)
         gap = _scaled(6, scale)
         shortcut_height = _scaled(SHORTCUT_HEIGHT, scale)
-        shortcut_gap = _scaled(SHORTCUT_GAP, scale)
+        shortcut_gap = gap
         radius = _scaled(5, scale)
         width = min(_scaled(PANEL_WIDTH, scale), region.width - _scaled(12, scale))
         has_query = bool(_normalize(self._query))
@@ -3187,7 +3237,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._visible_limit = visible_limit
         rows = min(visible_limit, max(0, len(self._results) - self._scroll_offset)) if has_query else 0
         empty_rows = 1 if has_query and not self._results else 0
-        shortcuts_height = shortcut_rows * (shortcut_gap + shortcut_height)
+        shortcut_visual_offset = _scaled(2, scale)
+        shortcuts_height = shortcut_rows * (shortcut_gap + shortcut_visual_offset + shortcut_height)
         height = padding * 2 + search_height + shortcuts_height + (gap + max(rows, empty_rows) * row_height if has_query else 0) + (_scaled(12, scale) if has_query and len(self._results) > rows else 0)
         y = search_y + search_height + padding - height
         self._panel_rect = (x, y, width, height)
@@ -3198,16 +3249,16 @@ class ENS_AddNodeByEnglishSearch(Operator):
         _draw_rounded_panel(x, y, width, height, radius, PANEL_BACKGROUND)
         _draw_rounded_panel(x + padding, search_y, search_width, search_height, max(4, radius - 1), FIELD_BACKGROUND, BORDER_COLOR)
 
-        placeholder = "搜索节点..." if _display_mode() in {"CHINESE", "CHINESE_ENGLISH"} else "Search nodes..."
+        placeholder = _ui_text("Search nodes...")
         query_text = self._query if self._query else placeholder
-        query_color = TEXT_COLOR if self._query else MUTED_TEXT_COLOR
+        query_color = TEXT_COLOR if self._query else SECONDARY_TEXT_COLOR
         query_size = _scaled(13, scale)
         search_text_y = search_y + (search_height - _scaled(13, scale)) / 2 + _scaled(1, scale)
-        _draw_text("⌕", x + padding + _scaled(10, scale), search_text_y - _scaled(2, scale), _scaled(18, scale), MUTED_TEXT_COLOR)
-        query_x = x + padding + _scaled(34, scale)
+        _draw_text("⌕", x + padding + _scaled(10, scale), search_text_y - _scaled(1, scale), _scaled(20, scale), MUTED_TEXT_COLOR)
+        query_x = x + padding + _scaled(32, scale)
         text_x = query_x if self._query else query_x + _scaled(9, scale)
         clear_size = max(_scaled(13, scale), 12)
-        clear_x = x + padding + search_width - clear_size - _scaled(9, scale)
+        clear_x = x + padding + search_width - clear_size - _scaled(8, scale)
         clear_y = search_y + (search_height - clear_size) / 2
         if self._query:
             self._clear_button_rect = (clear_x - _scaled(4, scale), clear_y - _scaled(4, scale), clear_size + _scaled(8, scale), clear_size + _scaled(8, scale))
@@ -3220,12 +3271,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
             cursor_x = query_x + min(_text_width(self._query, query_size), text_max_width) + _scaled(2, scale)
             _draw_rect(cursor_x, search_y + _scaled(5, scale), max(1, _scaled(1, scale)), search_height - _scaled(10, scale), TEXT_COLOR)
         if self._query:
-            _draw_rounded_rect(clear_x, clear_y, clear_size, clear_size, clear_size / 2, (0.27, 0.27, 0.29, 0.90))
-            _draw_centered_text("x", clear_x, clear_y, clear_size, clear_size, max(9, _scaled(9, scale)), (0.62, 0.62, 0.64, 0.95))
+            _draw_rounded_rect(clear_x, clear_y, clear_size, clear_size, clear_size / 2, (0.235, 0.235, 0.25, 0.86))
+            _draw_centered_text("x", clear_x, clear_y, clear_size, clear_size, max(9, _scaled(9, scale)), (0.52, 0.52, 0.54, 0.90))
 
         self._shortcut_rects = []
         self._shortcut_delete_rects = []
-        shortcuts_y = search_y - shortcut_gap - shortcut_height
+        shortcuts_y = search_y - shortcut_gap - shortcut_visual_offset - shortcut_height
         if active_shortcuts and not has_query:
             item_gap = _scaled(5, scale)
             item_width = (search_width - item_gap * (min(len(active_shortcuts), 10) - 1)) / min(len(active_shortcuts), 10)
@@ -3238,7 +3289,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 shortcut_fill, shortcut_border = _entry_type_colors(entry, active=shortcut_hovered)
                 shortcut_fill = _blend_color(shortcut_fill, 1.0, FIELD_BACKGROUND)
                 _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, max(3, radius - 1), shortcut_fill, shortcut_border)
-                shortcut_text_size = _scaled(11, scale)
+                shortcut_text_size = _scaled(13, scale)
                 delete_size = max(_scaled(13, scale), 11)
                 delete_x = item_x + item_width - delete_size - _scaled(4, scale)
                 delete_y = shortcuts_y + shortcut_height - delete_size - _scaled(4, scale)
@@ -3247,8 +3298,11 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 if delete_visible:
                     delete_rect = (delete_x, delete_y, delete_size, delete_size)
                     self._shortcut_delete_rects.append((identifier, delete_rect))
-                shortcut_text = _fit_text(_abbreviate_label(_entry_primary_label(entry)), item_width - _scaled(18, scale), shortcut_text_size)
-                _draw_text_vcenter(shortcut_text, item_x + _scaled(7, scale), shortcuts_y, shortcut_height, shortcut_text_size, TEXT_COLOR)
+                shortcut_text_x = item_x + _scaled(10, scale)
+                shortcut_text_y = shortcuts_y + _scaled(7, scale)
+                shortcut_text = _fit_text(_abbreviate_label(_entry_primary_label(entry)), item_width - _scaled(21, scale), shortcut_text_size)
+                shortcut_text_color = MUTED_TEXT_COLOR if shortcut_hovered else SECONDARY_TEXT_COLOR
+                _draw_text(shortcut_text, shortcut_text_x, shortcut_text_y, shortcut_text_size, shortcut_text_color)
                 if delete_visible:
                     x_size = max(10, _scaled(10, scale))
                     delete_hovered = self._shortcut_delete_hover == identifier
@@ -3265,7 +3319,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             return
 
         if not self._results:
-            _draw_text("No results found", x + padding + _scaled(8, scale), rows_top - _scaled(20, scale), _scaled(13, scale), TEXT_COLOR)
+            _draw_text(_ui_text("No results found"), x + padding + _scaled(8, scale), rows_top - _scaled(20, scale), _scaled(13, scale), TEXT_COLOR)
             return
 
         visible_results = self._results[self._scroll_offset:self._scroll_offset + visible_limit]
@@ -3287,6 +3341,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             label_size = _scaled(13, scale)
             category_size = label_size
             display_category, display_label = _display_parts(entry)
+            display_category = _display_category_label(display_category)
             category_text = f"{display_category} ▸"
             category_text = category_text.replace(" > ", " ▸ ")
             category_text = _clip_text(category_text, max(0, fav_x - category_x), category_size)
@@ -3315,8 +3370,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
             _draw_right_rounded_fill(fav_x, block_y, max(0, x + width - padding - fav_x), block_height, block_radius, fade_color)
             if is_favorite:
                 fav_y = row_y + (row_height - fav_height) / 2
-                fav_color = (0.30, 0.30, 0.31, 0.86) if is_emphasized else (0.15, 0.15, 0.155, 0.78)
-                _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), fav_color)
+                favorite_strength = 0.66 if is_emphasized else 0.5
+                _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), _multiply_color(muted_row_color, favorite_strength))
 
         if has_query and len(self._results) > self._scroll_offset + rows:
             _draw_text("▼", x + width / 2 - _scaled(4, scale), y + _scaled(4, scale), _scaled(12, scale), TEXT_COLOR)
@@ -3325,7 +3380,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             menu_x, menu_y, menu_width, menu_height = self._context_menu_rect
             menu_row_height = menu_height / 3
             _draw_rounded_panel(menu_x, menu_y, menu_width, menu_height, radius, PANEL_BACKGROUND)
-            labels = (("FAVORITE", "Add Favorite"), ("UNFAVORITE", "Remove Favorite"), ("SHORTCUT", "Add Shortcut"))
+            labels = (("FAVORITE", _ui_text("Add Favorite")), ("UNFAVORITE", _ui_text("Remove Favorite")), ("SHORTCUT", _ui_text("Add Shortcut")))
             for index, (action, label) in enumerate(labels):
                 row_y = menu_y + menu_height - (index + 1) * menu_row_height
                 if self._context_menu_hover == action:
@@ -3489,26 +3544,33 @@ class ENS_AddonPreferences(AddonPreferences):
 
     def draw(self, _context):
         layout = self.layout
-        top = layout.split(factor=0.76)
-        left_grid = top.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=False, align=True)
-        left_grid.label(text="Search Result Display")
-        left_grid.prop(self, "display_mode", text="")
-        left_grid.prop(self, "chinese_fuzzy_match", text="Enable Chinese Fuzzy Match")
-        left_grid.label(text="May slightly slow live search")
-        left_grid.prop(self, "scan_asset_libraries", text="Show Cached Asset Nodes")
-        left_grid.label(text=f"Cached Assets: {len(_load_asset_index())}")
+        top = layout.split(factor=0.667, align=False)
+        left_middle = top.split(factor=0.5, align=False)
+        left_col = left_middle.column(align=True)
+        left_col.label(text=_ui_text("Search Result Display"))
+        left_col.prop(self, "scan_asset_libraries", text=_ui_text("Show Cached Asset Nodes"))
+        left_col.prop(self, "chinese_fuzzy_match", text=_ui_text("Enable Chinese Fuzzy Match"))
+
+        middle_col = left_middle.column(align=True)
+        middle_col.prop(self, "display_mode", text="")
+        middle_col.label(text=f"{_ui_text('Cached Assets')}: {len(_load_asset_index())}")
+        middle_col.label(text=_ui_text("May slightly slow live search"))
+
         right_col = top.column(align=False)
-        right_col.prop(self, "ui_scale")
-        right_col.separator(factor=0.35)
-        right_col.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="Refresh Asset Index")
+        size_row = right_col.split(factor=0.45, align=True)
+        size_row.label(text=_ui_text("Console Size"))
+        size_row.prop(self, "ui_scale", text="", slider=True)
+        refresh_row = right_col.split(factor=0.45, align=True)
+        refresh_row.label(text=_ui_text("Refresh Asset Index"))
+        refresh_row.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="")
 
         box = layout.box()
-        box.label(text="Shortcut")
+        box.label(text=_ui_text("Shortcut"))
         row = box.row(align=False)
         row.prop(self, "shortcut_key", text="", translate=False)
         row.separator(factor=1.0)
         if sys.platform == "darwin":
-            row.prop(self, "shortcut_oskey", text="Command", toggle=True, translate=False)
+            row.prop(self, "shortcut_oskey", text=_ui_text("Command"), toggle=True, translate=False)
             row.separator(factor=0.45)
         row.prop(self, "shortcut_ctrl", text="Ctrl", toggle=True, translate=False)
         row.separator(factor=0.45)
@@ -3517,14 +3579,14 @@ class ENS_AddonPreferences(AddonPreferences):
         row.prop(self, "shortcut_alt", text="Alt", toggle=True, translate=False)
 
         favorite_meta = _load_favorite_meta()
-        lists = layout.row(align=False)
+        lists = layout.split(factor=0.5, align=False)
 
         favorites = _load_favorites()
         left_col = lists.column()
         box = left_col.box()
-        box.label(text="Favorites")
+        box.label(text=_ui_text("Favorites"))
         if not favorites:
-            box.label(text="No favorite nodes")
+            box.label(text=_ui_text("No favorite nodes"))
         else:
             for identifier in sorted(favorites, key=lambda item: _entry_display_label(item, favorite_meta.get(item, item)).lower()):
                 row = box.row(align=True)
@@ -3533,12 +3595,11 @@ class ENS_AddonPreferences(AddonPreferences):
                 remove_op.identifier = identifier
 
         shortcuts = _load_shortcuts()
-        lists.separator(factor=0.8)
         right_col = lists.column()
         box = right_col.box()
-        box.label(text="Shortcuts")
+        box.label(text=_ui_text("Shortcuts"))
         if not shortcuts:
-            box.label(text="No node shortcuts")
+            box.label(text=_ui_text("No node shortcuts"))
         else:
             for identifier in shortcuts:
                 row = box.row(align=True)
