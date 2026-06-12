@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import ctypes
+import ctypes.util
 import hashlib
 import json
 import math
@@ -18,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.18"
+ADDON_VERSION = "0.8.25"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 18),
+    "version": (0, 8, 25),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -71,8 +73,8 @@ NODE_TYPE_COLORS = {
     "none": (0.24, 0.34, 0.18, 1.0),
 }
 CATEGORY_COLOR_FALLBACK = NODE_TYPE_COLORS["none"]
-GEOMETRY_COLOR_KEYS = {"geometry", "mesh", "curve", "point", "points", "volume", "instances", "instance", "hair"}
-CONVERTER_COLOR_KEYS = {"math", "utilities", "converter", "rotation", "operations", "operation"}
+GEOMETRY_COLOR_KEYS = {"geometry", "mesh", "curve", "point", "points", "volume", "instances", "instance", "hair", "grease", "pencil", "grease pencil"}
+CONVERTER_COLOR_KEYS = {"math", "utilities", "converter", "rotation"}
 VECTOR_COLOR_KEYS = {"vector", "uv"}
 NODE_COLOR_TAG_TYPES = {
     "ATTRIBUTE": "attribute",
@@ -136,6 +138,597 @@ def _compact(text: str) -> str:
     return _normalize(text).replace(" ", "")
 
 
+PINYIN_TEXT_CACHE: dict[str, str] = {}
+PINYIN_TRANSFORM_READY: bool | None = None
+PINYIN_CF = None
+PINYIN_MANDARIN_LATIN = None
+PINYIN_STRIP_MARKS = None
+PINYIN_CHAR_TABLE = {'三': 'san',
+ '上': 'shang',
+ '下': 'xia',
+ '不': 'bu',
+ '与': 'yu',
+ '世': 'shi',
+ '个': 'ge',
+ '中': 'zhong',
+ '串': 'chuan',
+ '临': 'lin',
+ '为': 'wei',
+ '义': 'yi',
+ '乒': 'ping',
+ '乓': 'pang',
+ '乘': 'cheng',
+ '二': 'er',
+ '于': 'yu',
+ '云': 'yun',
+ '五': 'wu',
+ '交': 'jiao',
+ '产': 'chan',
+ '亮': 'liang',
+ '件': 'jian',
+ '伊': 'yi',
+ '传': 'chuan',
+ '估': 'gu',
+ '伽': 'jia',
+ '位': 'wei',
+ '体': 'ti',
+ '何': 'he',
+ '余': 'yu',
+ '例': 'li',
+ '信': 'xin',
+ '修': 'xiu',
+ '倍': 'bei',
+ '倒': 'dao',
+ '值': 'zhi',
+ '倾': 'qing',
+ '偏': 'pian',
+ '偶': 'ou',
+ '储': 'chu',
+ '像': 'xiang',
+ '元': 'yuan',
+ '充': 'chong',
+ '光': 'guang',
+ '入': 'ru',
+ '公': 'gong',
+ '具': 'ju',
+ '内': 'nei',
+ '再': 'zai',
+ '减': 'jian',
+ '几': 'ji',
+ '凸': 'tu',
+ '凹': 'ao',
+ '出': 'chu',
+ '分': 'fen',
+ '切': 'qie',
+ '列': 'lie',
+ '删': 'shan',
+ '到': 'dao',
+ '制': 'zhi',
+ '前': 'qian',
+ '剪': 'jian',
+ '功': 'gong',
+ '加': 'jia',
+ '动': 'dong',
+ '包': 'bao',
+ '化': 'hua',
+ '匹': 'pi',
+ '区': 'qu',
+ '半': 'ban',
+ '单': 'dan',
+ '卡': 'ka',
+ '卷': 'juan',
+ '厚': 'hou',
+ '原': 'yuan',
+ '去': 'qu',
+ '参': 'can',
+ '叉': 'cha',
+ '双': 'shuang',
+ '反': 'fan',
+ '发': 'fa',
+ '取': 'qu',
+ '变': 'bian',
+ '叠': 'die',
+ '口': 'kou',
+ '号': 'hao',
+ '合': 'he',
+ '名': 'ming',
+ '后': 'hou',
+ '向': 'xiang',
+ '否': 'fou',
+ '含': 'han',
+ '启': 'qi',
+ '吸': 'xi',
+ '告': 'gao',
+ '周': 'zhou',
+ '命': 'ming',
+ '和': 'he',
+ '哈': 'ha',
+ '喜': 'xi',
+ '器': 'qi',
+ '噪': 'zao',
+ '四': 'si',
+ '围': 'wei',
+ '图': 'tu',
+ '圆': 'yuan',
+ '在': 'zai',
+ '场': 'chang',
+ '均': 'jun',
+ '坐': 'zuo',
+ '块': 'kuai',
+ '坦': 'tan',
+ '型': 'xing',
+ '域': 'yu',
+ '塞': 'sai',
+ '填': 'tian',
+ '境': 'jing',
+ '墙': 'qiang',
+ '壳': 'ke',
+ '处': 'chu',
+ '复': 'fu',
+ '大': 'da',
+ '天': 'tian',
+ '头': 'tou',
+ '夹': 'jia',
+ '奇': 'qi',
+ '始': 'shi',
+ '子': 'zi',
+ '字': 'zi',
+ '存': 'cun',
+ '孤': 'gu',
+ '定': 'ding',
+ '实': 'shi',
+ '宽': 'kuan',
+ '密': 'mi',
+ '对': 'dui',
+ '导': 'dao',
+ '射': 'she',
+ '小': 'xiao',
+ '尔': 'er',
+ '尖': 'jian',
+ '层': 'ceng',
+ '屏': 'ping',
+ '展': 'zhan',
+ '属': 'shu',
+ '岛': 'dao',
+ '工': 'gong',
+ '差': 'cha',
+ '已': 'yi',
+ '布': 'bu',
+ '希': 'xi',
+ '帧': 'zhen',
+ '幕': 'mu',
+ '平': 'ping',
+ '年': 'nian',
+ '并': 'bing',
+ '幻': 'huan',
+ '序': 'xu',
+ '库': 'ku',
+ '底': 'di',
+ '度': 'du',
+ '开': 'kai',
+ '异': 'yi',
+ '式': 'shi',
+ '引': 'yin',
+ '弦': 'xian',
+ '弧': 'hu',
+ '形': 'xing',
+ '彩': 'cai',
+ '影': 'ying',
+ '径': 'jing',
+ '循': 'xun',
+ '快': 'kuai',
+ '性': 'xing',
+ '息': 'xi',
+ '感': 'gan',
+ '成': 'cheng',
+ '或': 'huo',
+ '截': 'jie',
+ '户': 'hu',
+ '所': 'suo',
+ '扑': 'pu',
+ '找': 'zhao',
+ '投': 'tou',
+ '抗': 'kang',
+ '折': 'zhe',
+ '抠': 'kou',
+ '拆': 'chai',
+ '拉': 'la',
+ '拐': 'guai',
+ '拓': 'ta',
+ '择': 'ze',
+ '拼': 'pin',
+ '指': 'zhi',
+ '按': 'an',
+ '挤': 'ji',
+ '捆': 'kun',
+ '捉': 'zhuo',
+ '捕': 'bu',
+ '换': 'huan',
+ '据': 'ju',
+ '捷': 'jie',
+ '排': 'pai',
+ '接': 'jie',
+ '控': 'kong',
+ '描': 'miao',
+ '插': 'cha',
+ '搜': 'sou',
+ '摄': 'she',
+ '操': 'cao',
+ '收': 'shou',
+ '放': 'fang',
+ '效': 'xiao',
+ '散': 'san',
+ '数': 'shu',
+ '整': 'zheng',
+ '文': 'wen',
+ '斑': 'ban',
+ '斜': 'xie',
+ '断': 'duan',
+ '斯': 'si',
+ '方': 'fang',
+ '旋': 'xuan',
+ '旧': 'jiu',
+ '时': 'shi',
+ '明': 'ming',
+ '星': 'xing',
+ '映': 'ying',
+ '是': 'shi',
+ '显': 'xian',
+ '普': 'pu',
+ '景': 'jing',
+ '暗': 'an',
+ '曝': 'pu',
+ '曲': 'qu',
+ '替': 'ti',
+ '最': 'zui',
+ '朝': 'chao',
+ '期': 'qi',
+ '木': 'mu',
+ '本': 'ben',
+ '机': 'ji',
+ '权': 'quan',
+ '材': 'cai',
+ '束': 'shu',
+ '条': 'tiao',
+ '板': 'ban',
+ '极': 'ji',
+ '果': 'guo',
+ '柄': 'bing',
+ '染': 'ran',
+ '柔': 'rou',
+ '查': 'cha',
+ '柱': 'zhu',
+ '栅': 'zha',
+ '标': 'biao',
+ '校': 'xiao',
+ '样': 'yang',
+ '根': 'gen',
+ '格': 'ge',
+ '框': 'kuang',
+ '桑': 'sang',
+ '梯': 'ti',
+ '棋': 'qi',
+ '棱': 'leng',
+ '椭': 'tuo',
+ '模': 'mo',
+ '次': 'ci',
+ '欢': 'huan',
+ '欧': 'ou',
+ '正': 'zheng',
+ '殊': 'shu',
+ '段': 'duan',
+ '每': 'mei',
+ '比': 'bi',
+ '毛': 'mao',
+ '氏': 'shi',
+ '沃': 'wo',
+ '沿': 'yan',
+ '法': 'fa',
+ '波': 'bo',
+ '泽': 'ze',
+ '活': 'huo',
+ '流': 'liu',
+ '测': 'ce',
+ '浪': 'lang',
+ '浮': 'fu',
+ '涅': 'nie',
+ '淡': 'dan',
+ '深': 'shen',
+ '混': 'hun',
+ '渐': 'jian',
+ '温': 'wen',
+ '渲': 'xuan',
+ '游': 'you',
+ '溢': 'yi',
+ '滑': 'hua',
+ '滤': 'lu',
+ '漫': 'man',
+ '火': 'huo',
+ '灯': 'deng',
+ '点': 'dian',
+ '烘': 'hong',
+ '焙': 'bei',
+ '焦': 'jiao',
+ '焰': 'yan',
+ '片': 'pian',
+ '版': 'ban',
+ '物': 'wu',
+ '特': 'te',
+ '率': 'lu',
+ '玛': 'ma',
+ '环': 'huan',
+ '现': 'xian',
+ '玻': 'bo',
+ '球': 'qiu',
+ '理': 'li',
+ '瑕': 'xia',
+ '璃': 'li',
+ '生': 'sheng',
+ '用': 'yong',
+ '画': 'hua',
+ '界': 'jie',
+ '畸': 'ji',
+ '疵': 'ci',
+ '白': 'bai',
+ '的': 'de',
+ '盘': 'pan',
+ '目': 'mu',
+ '直': 'zhi',
+ '相': 'xiang',
+ '真': 'zhen',
+ '着': 'zhe',
+ '矢': 'shi',
+ '矩': 'ju',
+ '短': 'duan',
+ '石': 'shi',
+ '砖': 'zhuan',
+ '示': 'shi',
+ '离': 'li',
+ '秒': 'miao',
+ '积': 'ji',
+ '称': 'cheng',
+ '移': 'yi',
+ '程': 'cheng',
+ '稳': 'wen',
+ '空': 'kong',
+ '窗': 'chuang',
+ '立': 'li',
+ '端': 'duan',
+ '笔': 'bi',
+ '符': 'fu',
+ '等': 'deng',
+ '简': 'jian',
+ '算': 'suan',
+ '类': 'lei',
+ '粒': 'li',
+ '精': 'jing',
+ '糊': 'hu',
+ '系': 'xi',
+ '素': 'su',
+ '索': 'suo',
+ '累': 'lei',
+ '絮': 'xu',
+ '约': 'yue',
+ '级': 'ji',
+ '纬': 'wei',
+ '纹': 'wen',
+ '线': 'xian',
+ '组': 'zu',
+ '细': 'xi',
+ '经': 'jing',
+ '结': 'jie',
+ '绝': 'jue',
+ '统': 'tong',
+ '维': 'wei',
+ '编': 'bian',
+ '缘': 'yuan',
+ '缩': 'suo',
+ '网': 'wang',
+ '罗': 'luo',
+ '罩': 'zhao',
+ '置': 'zhi',
+ '翻': 'fan',
+ '胀': 'zhang',
+ '背': 'bei',
+ '能': 'neng',
+ '脚': 'jiao',
+ '腐': 'fu',
+ '膨': 'peng',
+ '自': 'zi',
+ '至': 'zhi',
+ '舍': 'she',
+ '色': 'se',
+ '节': 'jie',
+ '范': 'fan',
+ '获': 'huo',
+ '菜': 'cai',
+ '菲': 'fei',
+ '蔽': 'bi',
+ '蕴': 'yun',
+ '藏': 'cang',
+ '蚀': 'shi',
+ '蜡': 'la',
+ '螺': 'luo',
+ '行': 'xing',
+ '衡': 'heng',
+ '表': 'biao',
+ '衰': 'shuai',
+ '裁': 'cai',
+ '规': 'gui',
+ '视': 'shi',
+ '览': 'lan',
+ '角': 'jiao',
+ '解': 'jie',
+ '警': 'jing',
+ '计': 'ji',
+ '设': 'she',
+ '评': 'ping',
+ '试': 'shi',
+ '误': 'wu',
+ '说': 'shuo',
+ '诺': 'nuo',
+ '调': 'diao',
+ '贝': 'bei',
+ '负': 'fu',
+ '质': 'zhi',
+ '贴': 'tie',
+ '资': 'zi',
+ '距': 'ju',
+ '路': 'lu',
+ '踪': 'zong',
+ '身': 'shen',
+ '转': 'zhuan',
+ '轴': 'zhou',
+ '较': 'jiao',
+ '辑': 'ji',
+ '输': 'shu',
+ '边': 'bian',
+ '运': 'yun',
+ '近': 'jin',
+ '述': 'shu',
+ '迷': 'mi',
+ '追': 'zhui',
+ '送': 'song',
+ '逆': 'ni',
+ '选': 'xuan',
+ '透': 'tou',
+ '通': 'tong',
+ '速': 'su',
+ '道': 'dao',
+ '遮': 'zhe',
+ '邻': 'lin',
+ '配': 'pei',
+ '采': 'cai',
+ '重': 'zhong',
+ '量': 'liang',
+ '金': 'jin',
+ '钳': 'qian',
+ '铺': 'pu',
+ '锐': 'rui',
+ '错': 'cuo',
+ '锥': 'zhui',
+ '锯': 'ju',
+ '镜': 'jing',
+ '长': 'zhang',
+ '门': 'men',
+ '闭': 'bi',
+ '间': 'jian',
+ '阴': 'yin',
+ '阵': 'zhen',
+ '阻': 'zu',
+ '附': 'fu',
+ '降': 'jiang',
+ '除': 'chu',
+ '随': 'sui',
+ '隔': 'ge',
+ '集': 'ji',
+ '非': 'fei',
+ '面': 'mian',
+ '顶': 'ding',
+ '项': 'xiang',
+ '预': 'yu',
+ '颜': 'yan',
+ '饱': 'bao',
+ '马': 'ma',
+ '骨': 'gu',
+ '骼': 'ge',
+ '高': 'gao',
+ '黑': 'hei',
+ '鼠': 'shu',
+ '齐': 'qi',
+ '齿': 'chi',
+ '龄': 'ling'}
+
+
+def _init_pinyin_transform() -> bool:
+    global PINYIN_TRANSFORM_READY, PINYIN_CF, PINYIN_MANDARIN_LATIN, PINYIN_STRIP_MARKS
+    if PINYIN_TRANSFORM_READY is not None:
+        return PINYIN_TRANSFORM_READY
+    PINYIN_TRANSFORM_READY = False
+    if sys.platform != "darwin":
+        return False
+    path = ctypes.util.find_library("CoreFoundation")
+    if not path:
+        return False
+    try:
+        cf = ctypes.CDLL(path)
+        cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+        cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+        cf.CFStringCreateMutableCopy.argtypes = [ctypes.c_void_p, ctypes.c_long, ctypes.c_void_p]
+        cf.CFStringCreateMutableCopy.restype = ctypes.c_void_p
+        cf.CFStringTransform.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
+        cf.CFStringTransform.restype = ctypes.c_bool
+        cf.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
+        cf.CFStringGetCString.restype = ctypes.c_bool
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        cf.CFRelease.restype = None
+        PINYIN_MANDARIN_LATIN = ctypes.c_void_p.in_dll(cf, "kCFStringTransformMandarinLatin")
+        PINYIN_STRIP_MARKS = ctypes.c_void_p.in_dll(cf, "kCFStringTransformStripCombiningMarks")
+    except Exception:
+        return False
+    PINYIN_CF = cf
+    PINYIN_TRANSFORM_READY = True
+    return True
+
+
+def _system_pinyin(text: str) -> str:
+    if not text or not _init_pinyin_transform():
+        return ""
+    source = mutable = None
+    try:
+        source = PINYIN_CF.CFStringCreateWithCString(None, text.encode("utf-8"), 0x08000100)
+        if not source:
+            return ""
+        mutable = PINYIN_CF.CFStringCreateMutableCopy(None, 0, source)
+        if not mutable:
+            return ""
+        if not PINYIN_CF.CFStringTransform(mutable, None, PINYIN_MANDARIN_LATIN, False):
+            return ""
+        PINYIN_CF.CFStringTransform(mutable, None, PINYIN_STRIP_MARKS, False)
+        buffer = ctypes.create_string_buffer(max(1024, len(text.encode("utf-8")) * 12 + 64))
+        if not PINYIN_CF.CFStringGetCString(mutable, buffer, len(buffer), 0x08000100):
+            return ""
+        return buffer.value.decode("utf-8", "ignore")
+    except Exception:
+        return ""
+    finally:
+        if mutable:
+            PINYIN_CF.CFRelease(mutable)
+        if source:
+            PINYIN_CF.CFRelease(source)
+
+
+def _fallback_pinyin(text: str) -> str:
+    parts = []
+    for char in text:
+        pinyin = PINYIN_CHAR_TABLE.get(char)
+        if pinyin:
+            parts.append(pinyin)
+        elif char.isascii() and char.isalnum():
+            parts.append(char.lower())
+        elif parts and parts[-1] != " ":
+            parts.append(" ")
+    return " ".join(part for part in parts if part and part != " ")
+
+
+def _pinyin_search_text(text: str) -> str:
+    if not text or not re.search(r"[\u4e00-\u9fff]", text):
+        return ""
+    cached = PINYIN_TEXT_CACHE.get(text)
+    if cached is not None:
+        return cached
+    raw = _normalize(_system_pinyin(text) or _fallback_pinyin(text))
+    if not raw:
+        PINYIN_TEXT_CACHE[text] = ""
+        return ""
+    syllables = raw.split()
+    compact = "".join(syllables)
+    initials = "".join(part[0] for part in syllables if part)
+    value = _normalize(" ".join([raw, compact, initials]))
+    PINYIN_TEXT_CACHE[text] = value
+    return value
+
+
 def _preferences():
     addon = bpy.context.preferences.addons.get(ADDON_ID)
     return addon.preferences if addon else None
@@ -180,6 +773,7 @@ def _save_preference_settings():
     data.update(
         {
             "display_mode": prefs.display_mode,
+            "chinese_fuzzy_match": prefs.chinese_fuzzy_match,
             "ui_scale": prefs.ui_scale,
             "shortcut_key": prefs.shortcut_key,
             "shortcut_shift": prefs.shortcut_shift,
@@ -203,7 +797,7 @@ def _load_preferences_from_settings():
         data["ui_scale"] = max(0.5, min(2.0, float(data["ui_scale"]) / 1.7))
         data["settings_version"] = 2
         _write_settings(data)
-    for name in ("display_mode", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "scan_asset_libraries"):
+    for name in ("display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "scan_asset_libraries"):
         if name in data:
             try:
                 setattr(prefs, name, data[name])
@@ -550,6 +1144,11 @@ def _display_mode() -> str:
     return prefs.display_mode if prefs else "ENGLISH_CHINESE"
 
 
+def _chinese_fuzzy_match_enabled() -> bool:
+    prefs = _preferences()
+    return bool(prefs and prefs.chinese_fuzzy_match)
+
+
 def _entry_label(english: str, chinese: str) -> str:
     display_mode = _display_mode()
 
@@ -637,7 +1236,7 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
     first_category = category_parts[0] if category_parts else ""
 
     if entry.node_type == "NodeGroupInput":
-        return NODE_TYPE_COLORS["input"]
+        return NODE_TYPE_COLORS["output"]
     if entry.asset_color_tag:
         tag_type = NODE_COLOR_TAG_TYPES.get(entry.asset_color_tag.upper())
         if tag_type:
@@ -651,9 +1250,11 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
         return NODE_TYPE_COLORS["none"]
     if normalized_english == "smooth by angle" or normalized_english == "get geometry bundle":
         return NODE_TYPE_COLORS["geometry"]
+    if normalized_english == "separate color":
+        return NODE_TYPE_COLORS["color"]
     if entry.node_type in {"GeometryNodeSetGreasePencilColor", "GeometryNodeSetGreasePencilDepth", "GeometryNodeSetGreasePencilSoftness"}:
         return NODE_TYPE_COLORS["geometry"]
-    if normalized_english in {"instance rotation", "uv tangent"}:
+    if normalized_english in {"instance rotation", "uv tangent", "special characters"}:
         return NODE_TYPE_COLORS["input"]
     if normalized_english in {"pack uv islands", "uv unwrap", "index of nearest"}:
         return NODE_TYPE_COLORS["converter"]
@@ -670,12 +1271,12 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
         return NODE_TYPE_COLORS["input"]
     if first_category in {"attribute", "input", "color", "output", "texture", "geometry", "vector"}:
         return NODE_TYPE_COLORS[first_category]
+    if first_category in GEOMETRY_COLOR_KEYS or any(key in GEOMETRY_COLOR_KEYS for key in category_parts[:1]):
+        return NODE_TYPE_COLORS["geometry"]
+    if first_category in VECTOR_COLOR_KEYS or any(key in VECTOR_COLOR_KEYS for key in category_parts[:1]):
+        return NODE_TYPE_COLORS["vector"]
     if first_category in CONVERTER_COLOR_KEYS or any(key in CONVERTER_COLOR_KEYS for key in keys):
         return NODE_TYPE_COLORS["converter"]
-    if first_category in GEOMETRY_COLOR_KEYS or any(key in GEOMETRY_COLOR_KEYS for key in keys):
-        return NODE_TYPE_COLORS["geometry"]
-    if first_category in VECTOR_COLOR_KEYS or any(key in VECTOR_COLOR_KEYS for key in keys):
-        return NODE_TYPE_COLORS["vector"]
     if entry.kind == "ASSET":
         return NODE_TYPE_COLORS["none"]
     return CATEGORY_COLOR_FALLBACK
@@ -726,6 +1327,22 @@ def _word_prefix_tokens_match(text: str, tokens: list[str]) -> bool:
     return all(any(_token_matches_word_prefix(token, word) for word in words) for token in tokens)
 
 
+def _ordered_chars_match(needle: str, haystack: str) -> bool:
+    needle = _compact(needle)
+    haystack = _compact(haystack)
+    if len(needle) < 4 or not haystack:
+        return False
+    position = 0
+    skipped = 0
+    for char in needle:
+        found = haystack.find(char, position)
+        if found < 0:
+            return False
+        skipped += max(0, found - position)
+        position = found + 1
+    return skipped <= max(4, len(needle) * 2)
+
+
 def _path_without_leaf(entry: NodeSearchEntry) -> str:
     english_parts = [part.strip() for part in entry.english.split(" > ") if part.strip()]
     if len(english_parts) > 1:
@@ -757,6 +1374,13 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     leaf_word_match = any(_word_prefix_tokens_match(part, tokens) for part in leaf_parts)
     path_word_match = _word_prefix_tokens_match(path_text, tokens)
     root_word_match = _word_prefix_tokens_match(_path_without_leaf(entry), tokens)
+    if _chinese_fuzzy_match_enabled():
+        chinese_search_text = _make_chinese_search_text(entry.chinese, entry.label)
+        ordered_leaf_match = any(_ordered_chars_match(query, part) for part in chinese_parts[-1:])
+        ordered_search_match = _ordered_chars_match(query, chinese_search_text)
+    else:
+        ordered_leaf_match = False
+        ordered_search_match = False
     is_primary = len(english_parts) <= 1
     return {
         "english": english,
@@ -773,6 +1397,8 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
         "leaf_word_match": leaf_word_match,
         "path_word_match": path_word_match,
         "root_word_match": root_word_match,
+        "ordered_leaf_match": ordered_leaf_match,
+        "ordered_search_match": ordered_search_match,
         "root_exact": root_exact,
         "is_primary": is_primary,
     }
@@ -911,6 +1537,8 @@ def _dynamic_preferred_order(entry: NodeSearchEntry, query: str) -> int:
         return 1_600
     if match["leaf_contains"]:
         return 1_800
+    if match["ordered_leaf_match"]:
+        return 2_000
     if match["root_exact"]:
         return 2_200
     if match["path_word_match"]:
@@ -1419,13 +2047,30 @@ def _iter_asset_node_groups():
         yield Path(item["path"]), item
 
 
-def _make_search_text(english: str, chinese: str, label: str, node_type: str) -> str:
+def _make_english_search_text(english: str, node_type: str = "") -> str:
     pieces = [
         english,
+        english.replace(" ", ""),
+        _camel_words(node_type),
+    ]
+    return _normalize(" ".join(piece for piece in pieces if piece))
+
+
+def _make_chinese_search_text(chinese: str, label: str) -> str:
+    pieces = [
         chinese,
         label,
-        english.replace(" ", ""),
         chinese.replace(" ", ""),
+        _pinyin_search_text(chinese),
+        _pinyin_search_text(label),
+    ]
+    return _normalize(" ".join(piece for piece in pieces if piece))
+
+
+def _make_search_text(english: str, chinese: str, label: str, node_type: str) -> str:
+    pieces = [
+        _make_english_search_text(english, node_type),
+        _make_chinese_search_text(chinese, label),
     ]
     return _normalize(" ".join(piece for piece in pieces if piece))
 
@@ -1645,6 +2290,8 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
         score = 90
     elif compact_match:
         score = 80
+    elif match["ordered_leaf_match"] or match["ordered_search_match"]:
+        score = 72
     else:
         return None
 
@@ -1673,6 +2320,10 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
             score += 100
         elif match["leaf_contains"]:
             score += 180
+        elif match["ordered_leaf_match"]:
+            score += 130
+        elif match["ordered_search_match"]:
+            score += 70
 
         is_primary_entry = match["is_primary"]
         if is_primary_entry and category_match:
@@ -1684,7 +2335,7 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
 
         if match["leaf_exact"] or match["leaf_prefix"]:
             score += max(0, 7 - display_depth) * 95
-        elif match["leaf_contains"]:
+        elif match["leaf_contains"] or match["ordered_leaf_match"]:
             score += max(0, 7 - display_depth) * 45
 
     if entry.identifier in favorites:
@@ -2000,6 +2651,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _row_height = ROW_HEIGHT
     _padding = PANEL_PADDING
     _search_height = SEARCH_HEIGHT
+    _clear_button_rect = (0, 0, 0, 0)
     _context_menu_index = None
     _context_menu_rect = (0, 0, 0, 0)
     _context_menu_hover = None
@@ -2175,6 +2827,21 @@ class ENS_AddNodeByEnglishSearch(Operator):
     def _mouse_in_panel(self, event):
         x, y, width, height = self._panel_rect
         return x <= event.mouse_region_x <= x + width and y <= event.mouse_region_y <= y + height
+
+    def _clear_button_from_mouse(self, event) -> bool:
+        if not self._query:
+            return False
+        x, y, width, height = self._clear_button_rect
+        return x <= event.mouse_region_x <= x + width and y <= event.mouse_region_y <= y + height
+
+    def _clear_query(self):
+        self._query = ""
+        self._selected_index = 0
+        self._scroll_offset = 0
+        self._scroll_remainder = 0.0
+        self._hovered_result_index = None
+        self._keyboard_selection_active = False
+        self._refresh_results()
 
     def _context_menu_action_from_mouse(self, event):
         x, y, width, height = self._context_menu_rect
@@ -2380,10 +3047,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 self._keyboard_selection_active = False
                 self._refresh_results()
             elif event.type == "DEL":
-                self._query = ""
-                self._hovered_result_index = None
-                self._keyboard_selection_active = False
-                self._refresh_results()
+                self._clear_query()
             elif event.type == "LEFTMOUSE":
                 if self._context_menu_index is not None:
                     action = self._context_menu_action_from_mouse(event)
@@ -2405,6 +3069,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         self._context_menu_index = None
                         if not self._mouse_in_panel(event):
                             return self._finish(context, {"CANCELLED"})
+                    if context.area:
+                        context.area.tag_redraw()
+                    return {"RUNNING_MODAL"}
+
+                if self._clear_button_from_mouse(event):
+                    self._clear_query()
                     if context.area:
                         context.area.tag_redraw()
                     return {"RUNNING_MODAL"}
@@ -2534,12 +3204,24 @@ class ENS_AddNodeByEnglishSearch(Operator):
         query_size = _scaled(13, scale)
         search_text_y = search_y + (search_height - _scaled(13, scale)) / 2 + _scaled(1, scale)
         _draw_text("⌕", x + padding + _scaled(10, scale), search_text_y - _scaled(2, scale), _scaled(18, scale), MUTED_TEXT_COLOR)
-        query_x = x + padding + _scaled(36, scale)
+        query_x = x + padding + _scaled(34, scale)
         text_x = query_x if self._query else query_x + _scaled(9, scale)
-        _draw_text(query_text, text_x, search_text_y, query_size, query_color)
+        clear_size = max(_scaled(13, scale), 12)
+        clear_x = x + padding + search_width - clear_size - _scaled(9, scale)
+        clear_y = search_y + (search_height - clear_size) / 2
+        if self._query:
+            self._clear_button_rect = (clear_x - _scaled(4, scale), clear_y - _scaled(4, scale), clear_size + _scaled(8, scale), clear_size + _scaled(8, scale))
+            text_max_width = max(0, clear_x - text_x - _scaled(10, scale))
+        else:
+            self._clear_button_rect = (0, 0, 0, 0)
+            text_max_width = search_width - (text_x - (x + padding)) - _scaled(8, scale)
+        _draw_text(_clip_text(query_text, text_max_width, query_size), text_x, search_text_y, query_size, query_color)
         if int(time.monotonic() * 2) % 2 == 0:
-            cursor_x = query_x + (_text_width(self._query, query_size) if self._query else 0) + _scaled(2, scale)
+            cursor_x = query_x + min(_text_width(self._query, query_size), text_max_width) + _scaled(2, scale)
             _draw_rect(cursor_x, search_y + _scaled(5, scale), max(1, _scaled(1, scale)), search_height - _scaled(10, scale), TEXT_COLOR)
+        if self._query:
+            _draw_rounded_rect(clear_x, clear_y, clear_size, clear_size, clear_size / 2, (0.27, 0.27, 0.29, 0.90))
+            _draw_centered_text("x", clear_x, clear_y, clear_size, clear_size, max(9, _scaled(9, scale)), (0.62, 0.62, 0.64, 0.95))
 
         self._shortcut_rects = []
         self._shortcut_delete_rects = []
@@ -2633,7 +3315,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
             _draw_right_rounded_fill(fav_x, block_y, max(0, x + width - padding - fav_x), block_height, block_radius, fade_color)
             if is_favorite:
                 fav_y = row_y + (row_height - fav_height) / 2
-                _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), (0.45, 0.45, 0.46, 0.95))
+                fav_color = (0.30, 0.30, 0.31, 0.86) if is_emphasized else (0.15, 0.15, 0.155, 0.78)
+                _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), fav_color)
 
         if has_query and len(self._results) > self._scroll_offset + rows:
             _draw_text("▼", x + width / 2 - _scaled(4, scale), y + _scaled(4, scale), _scaled(12, scale), TEXT_COLOR)
@@ -2733,6 +3416,12 @@ class ENS_AddonPreferences(AddonPreferences):
         default="ENGLISH_CHINESE",
         update=_preference_changed,
     )
+    chinese_fuzzy_match: BoolProperty(
+        name="Enable Chinese Fuzzy Match",
+        description="Allow sparse Chinese/pinyin matching such as '设置法向' matching '设置曲线法向'. May make searching slightly slower.",
+        default=False,
+        update=_preference_changed,
+    )
     shortcut_key: EnumProperty(
         name="Shortcut Key",
         description="Keyboard key used to open Node Console in the node editor",
@@ -2804,6 +3493,8 @@ class ENS_AddonPreferences(AddonPreferences):
         left_grid = top.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=False, align=True)
         left_grid.label(text="Search Result Display")
         left_grid.prop(self, "display_mode", text="")
+        left_grid.prop(self, "chinese_fuzzy_match", text="Enable Chinese Fuzzy Match")
+        left_grid.label(text="May slightly slow live search")
         left_grid.prop(self, "scan_asset_libraries", text="Show Cached Asset Nodes")
         left_grid.label(text=f"Cached Assets: {len(_load_asset_index())}")
         right_col = top.column(align=False)
