@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.32"
+ADDON_VERSION = "0.8.33"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 32),
+    "version": (0, 8, 33),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -42,6 +42,8 @@ SEARCH_INDEX_MEMORY_KEYS: set[str] = set()
 TRANSLATION_LABEL_CACHE: dict[tuple[str, str | None], str] = {}
 NODE_CLASS_CACHE: list[type] | None = None
 BACKGROUND_ASSET_INDEX = None
+GPU_UNIFORM_SHADER = None
+TEXT_WIDTH_CACHE: dict[tuple[str, int], float] = {}
 
 FONT_ID = 0
 MAX_RESULTS = 12
@@ -1109,6 +1111,11 @@ def _preference_changed(_self, _context):
     _save_preference_settings()
 
 
+def _visual_preference_changed(_self, _context):
+    TEXT_WIDTH_CACHE.clear()
+    _save_preference_settings()
+
+
 def _shortcut_changed(_self, _context):
     _save_preference_settings()
     refresh_keymap()
@@ -1298,11 +1305,11 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
         return NODE_TYPE_COLORS["none"]
     if normalized_english == "smooth by angle" or normalized_english == "get geometry bundle":
         return NODE_TYPE_COLORS["geometry"]
-    if normalized_english == "separate color":
-        return NODE_TYPE_COLORS["color"]
+    if normalized_english in {"combine color", "separate color"}:
+        return NODE_TYPE_COLORS["converter"]
     if entry.node_type in {"GeometryNodeSetGreasePencilColor", "GeometryNodeSetGreasePencilDepth", "GeometryNodeSetGreasePencilSoftness"}:
         return NODE_TYPE_COLORS["geometry"]
-    if normalized_english in {"instance rotation", "uv tangent", "special characters"}:
+    if normalized_english in {"instance rotation", "uv tangent", "special characters"} or normalized_english.endswith("material index"):
         return NODE_TYPE_COLORS["input"]
     if normalized_english in {"pack uv islands", "uv unwrap", "index of nearest"}:
         return NODE_TYPE_COLORS["converter"]
@@ -2332,9 +2339,10 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
     # Compact matching is intentionally narrow. Without this guard, short queries
     # can match across word boundaries, for example "set" in "Noise Texture".
     compact_match = bool(len(compact_query) >= 5 and " " in query and compact_query in compact_text)
+    broad_text_match = bool(tokens and all(len(token) >= 4 and token in text for token in tokens))
     if preferred_order < 10_000:
         score = 110
-    elif all(token in text for token in tokens):
+    elif broad_text_match:
         score = 100
     elif category_match:
         score = 90
@@ -2410,7 +2418,7 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
         entry = item[7]
         match = _query_match_parts(entry, query)
         output_sort = entry.english.lower() if _has_visible_output_setting(entry) and match["root_word_match"] else ""
-        return (not item[1], item[6], item[4], item[5], output_sort, item[3], -item[0], item[2])
+        return (item[6], item[4], item[5], output_sort, not item[1], item[3], -item[0], item[2])
 
     scored.sort(key=sort_key)
     return [item[-1] for item in scored]
@@ -2516,8 +2524,15 @@ def _add_zone(context, entry: NodeSearchEntry):
     return getattr(context.space_data.edit_tree.nodes, "active", None)
 
 
+def _uniform_shader():
+    global GPU_UNIFORM_SHADER
+    if GPU_UNIFORM_SHADER is None:
+        GPU_UNIFORM_SHADER = gpu.shader.from_builtin("UNIFORM_COLOR")
+    return GPU_UNIFORM_SHADER
+
+
 def _draw_rect(x: float, y: float, width: float, height: float, color: tuple[float, float, float, float]):
-    shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+    shader = _uniform_shader()
     vertices = ((x, y), (x + width, y), (x + width, y + height), (x, y + height))
     batch = batch_for_shader(shader, "TRI_FAN", {"pos": vertices})
     shader.bind()
@@ -2586,7 +2601,7 @@ def _draw_rounded_rect(
     radius: float,
     color: tuple[float, float, float, float],
 ):
-    shader = gpu.shader.from_builtin("UNIFORM_COLOR")
+    shader = _uniform_shader()
     batch = batch_for_shader(shader, "TRI_FAN", {"pos": _rounded_rect_vertices(x, y, width, height, radius)})
     shader.bind()
     shader.uniform_float("color", color)
@@ -2645,8 +2660,16 @@ def _draw_text_vcenter(text: str, x: float, y: float, height: float, size: int, 
 
 
 def _text_width(text: str, size: int) -> float:
+    cache_key = (text, int(size))
+    cached = TEXT_WIDTH_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     blf.size(FONT_ID, size)
-    return blf.dimensions(FONT_ID, text)[0]
+    width = blf.dimensions(FONT_ID, text)[0]
+    if len(TEXT_WIDTH_CACHE) > 4096:
+        TEXT_WIDTH_CACHE.clear()
+    TEXT_WIDTH_CACHE[cache_key] = width
+    return width
 
 
 def _abbreviate_label(label: str, max_chars: int = 12) -> str:
@@ -3527,7 +3550,7 @@ class ENS_AddonPreferences(AddonPreferences):
         soft_min=0.5,
         soft_max=2.0,
         step=10,
-        update=_preference_changed,
+        update=_visual_preference_changed,
     )
     favorites_json: StringProperty(
         name="Favorite Nodes",
