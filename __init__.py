@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.33"
+ADDON_VERSION = "0.8.34"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 33),
+    "version": (0, 8, 34),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -102,6 +102,7 @@ UI_TEXT_ZH = {
     "Enable Chinese Fuzzy Match": "启用中文模糊检索",
     "May slightly slow live search": "可能会略微降低实时搜索速度",
     "Show Cached Asset Nodes": "显示缓存的资产节点",
+    "Show Category Color Tags": "显示类目颜色标签",
     "Cached Assets": "已缓存资产",
     "Console Size": "搜索窗口大小",
     "Refresh Asset Index": "刷新资产索引",
@@ -804,6 +805,7 @@ def _save_preference_settings():
             "shortcut_alt": prefs.shortcut_alt,
             "shortcut_oskey": prefs.shortcut_oskey,
             "scan_asset_libraries": prefs.scan_asset_libraries,
+            "show_category_color_tags": prefs.show_category_color_tags,
             "settings_version": 2,
         }
     )
@@ -820,7 +822,7 @@ def _load_preferences_from_settings():
         data["ui_scale"] = max(0.5, min(2.0, float(data["ui_scale"]) / 1.7))
         data["settings_version"] = 2
         _write_settings(data)
-    for name in ("display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "scan_asset_libraries"):
+    for name in ("display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "scan_asset_libraries", "show_category_color_tags"):
         if name in data:
             try:
                 setattr(prefs, name, data[name])
@@ -1199,6 +1201,11 @@ def _chinese_fuzzy_match_enabled() -> bool:
     return bool(prefs and prefs.chinese_fuzzy_match)
 
 
+def _category_color_tags_enabled() -> bool:
+    prefs = _preferences()
+    return bool(not prefs or prefs.show_category_color_tags)
+
+
 def _entry_label(english: str, chinese: str) -> str:
     display_mode = _display_mode()
 
@@ -1421,11 +1428,12 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     category_match = bool(query and (
         query in category_parts
         or any(part.startswith(query) for part in category_parts)
-        or (tokens and all(token in category_text for token in tokens))
+        or _word_prefix_tokens_match(category_text, tokens)
+        or (tokens and all(len(token) >= 4 and token in category_text for token in tokens))
     ))
     leaf_exact = any(part == query for part in leaf_parts)
     leaf_prefix = any(part.startswith(query) for part in leaf_parts)
-    leaf_contains = any(query in part for part in leaf_parts)
+    leaf_contains = any(query in part for part in leaf_parts) if len(query) >= 4 else False
     root_exact = any(part == query for part in root_parts)
     path_text = " ".join([entry.category, entry.english])
     leaf_word_match = any(_word_prefix_tokens_match(part, tokens) for part in leaf_parts)
@@ -1603,6 +1611,48 @@ def _dynamic_preferred_order(entry: NodeSearchEntry, query: str) -> int:
     if match["category_match"]:
         return 3_000
     return 10_000
+
+
+def _category_sort_priority(entry: NodeSearchEntry) -> int:
+    category = _normalize(entry.category)
+    english = _normalize(entry.english)
+    if "math" in category and "integer math" not in category and "vector math" not in category:
+        return 0
+    if "integer math" in category:
+        return 1
+    if "vector math" in category:
+        return 2
+    if "matrix" in category or "matrix" in english:
+        return 3
+    if "color" in category:
+        return 4
+    if "simulation" in category:
+        return 8
+    return 5
+
+
+def _leaf_prefix_sort_key(entry: NodeSearchEntry, query: str) -> tuple[int, int, int, int, int]:
+    query = _normalize(query)
+    tokens = query.split()
+    match = _query_match_parts(entry, query)
+    leaf = match["leaf_parts"][0] if match["leaf_parts"] else ""
+    leaf_words = leaf.split()
+    if not tokens or not leaf_words:
+        return (9, 99, 99, 99, 99)
+
+    if match["leaf_exact"]:
+        tier = 0
+    elif leaf.startswith(query):
+        tier = 1
+    elif any(_token_matches_word_prefix(tokens[0], word) for word in leaf_words):
+        tier = 2
+    elif match["leaf_contains"]:
+        tier = 3
+    else:
+        tier = 9
+
+    first_hit = next((index for index, word in enumerate(leaf_words) if _token_matches_word_prefix(tokens[0], word)), 99)
+    return (tier, len(leaf_words), first_hit, len(leaf), _category_sort_priority(entry))
 
 
 def _officialish_preferred_order(entry: NodeSearchEntry, query: str) -> int:
@@ -2409,16 +2459,25 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
         score = _score_entry(entry, query, favorites)
         if score is None:
             continue
+        match = _query_match_parts(entry, query)
+        strong_favorite = entry.identifier in favorites and (
+            match["leaf_exact"]
+            or match["leaf_prefix"]
+            or match["leaf_contains"]
+            or match["leaf_word_match"]
+            or match["root_exact"]
+        )
         bucket = _officialish_sort_bucket(entry, query)
         primary_order = _primary_match_order(entry, _normalize(query))
         preferred_order = _officialish_preferred_order(entry, query)
-        scored.append((score, entry.identifier in favorites, entry.english.lower(), index, bucket, primary_order, preferred_order, entry))
+        scored.append((score, entry.identifier in favorites, strong_favorite, entry.english.lower(), index, bucket, primary_order, preferred_order, entry))
 
     def sort_key(item):
-        entry = item[7]
+        entry = item[8]
         match = _query_match_parts(entry, query)
         output_sort = entry.english.lower() if _has_visible_output_setting(entry) and match["root_word_match"] else ""
-        return (item[6], item[4], item[5], output_sort, not item[1], item[3], -item[0], item[2])
+        leaf_sort = _leaf_prefix_sort_key(entry, query)
+        return (not item[2], item[7], leaf_sort, item[5], item[6], output_sort, not item[1], item[4], -item[0], item[3])
 
     scored.sort(key=sort_key)
     return [item[-1] for item in scored]
@@ -3345,6 +3404,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             _draw_text(_ui_text("No results found"), x + padding + _scaled(8, scale), rows_top - _scaled(20, scale), _scaled(13, scale), TEXT_COLOR)
             return
 
+        show_category_tags = _category_color_tags_enabled()
         visible_results = self._results[self._scroll_offset:self._scroll_offset + visible_limit]
         for visible_index, entry in enumerate(visible_results):
             index = self._scroll_offset + visible_index
@@ -3380,10 +3440,13 @@ class ENS_AddNodeByEnglishSearch(Operator):
             category_block_width = max(_scaled(36, scale), label_x - category_block_x - block_gap)
             label_block_x = label_x - _scaled(3, scale)
             label_block_width = max(0, x + padding + search_width - label_block_x)
-            category_fill, category_border = _entry_type_colors(entry, active=is_emphasized)
-            _draw_rounded_panel(category_block_x, block_y, category_block_width, block_height, block_radius, category_fill, category_border)
-            if is_emphasized:
+            if show_category_tags:
+                category_fill, category_border = _entry_type_colors(entry, active=is_emphasized)
+                _draw_rounded_panel(category_block_x, block_y, category_block_width, block_height, block_radius, category_fill, category_border)
+            if is_emphasized and show_category_tags:
                 _draw_rounded_panel(label_block_x, block_y, label_block_width, block_height, block_radius, HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
+            elif is_emphasized:
+                _draw_rounded_panel(category_block_x, block_y, search_width, block_height, block_radius, HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
 
             muted_row_color = MUTED_TEXT_COLOR if is_emphasized else SECONDARY_TEXT_COLOR
             _draw_text(category_text, category_x, row_text_y, category_size, muted_row_color)
@@ -3541,6 +3604,12 @@ class ENS_AddonPreferences(AddonPreferences):
         default=True,
         update=_preference_changed,
     )
+    show_category_color_tags: BoolProperty(
+        name="Show Category Color Tags",
+        description="Show colored category backgrounds in Node Console search results",
+        default=True,
+        update=_visual_preference_changed,
+    )
     ui_scale: FloatProperty(
         name="Console Size",
         description="Adjust the Node Console text and panel size",
@@ -3572,6 +3641,7 @@ class ENS_AddonPreferences(AddonPreferences):
         left_col = left_middle.column(align=True)
         left_col.label(text=_ui_text("Search Result Display"))
         left_col.prop(self, "scan_asset_libraries", text=_ui_text("Show Cached Asset Nodes"))
+        left_col.prop(self, "show_category_color_tags", text=_ui_text("Show Category Color Tags"))
         left_col.prop(self, "chinese_fuzzy_match", text=_ui_text("Enable Chinese Fuzzy Match"))
 
         middle_col = left_middle.column(align=True)
