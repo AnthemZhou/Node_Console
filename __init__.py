@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.41"
+ADDON_VERSION = "0.8.42"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 41),
+    "version": (0, 8, 42),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -1437,6 +1437,8 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
         return NODE_TYPE_COLORS["none"]
     if normalized_english == "smooth by angle" or normalized_english == "get geometry bundle":
         return NODE_TYPE_COLORS["geometry"]
+    if normalized_english == "string to curve":
+        return NODE_TYPE_COLORS["geometry"]
     if normalized_english in {"combine color", "separate color"}:
         return NODE_TYPE_COLORS["converter"]
     if entry.node_type in {"GeometryNodeSetGreasePencilColor", "GeometryNodeSetGreasePencilDepth", "GeometryNodeSetGreasePencilSoftness"}:
@@ -1454,6 +1456,8 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
         return NODE_TYPE_COLORS["vector"]
     if entry.node_type in {"FunctionNodeAlignEulerToVector", "FunctionNodeRotateVector", "FunctionNodeRotateRotation"}:
         return NODE_TYPE_COLORS["converter"]
+    if first_category == "curve" and "topology" in category_parts:
+        return NODE_TYPE_COLORS["geometry"]
     if "read" in category_parts:
         return NODE_TYPE_COLORS["input"]
     if first_category in {"attribute", "input", "color", "output", "texture", "geometry", "vector"}:
@@ -3444,7 +3448,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         has_query = bool(_normalize(self._query))
         search_width = width - padding * 2
         active_shortcuts = [identifier for identifier in self._shortcuts if identifier in NODE_ENTRY_BY_ID]
-        shortcut_rows = 1 if active_shortcuts and not has_query else 0
+        show_shortcuts = bool(active_shortcuts and not has_query)
 
         if self._panel_x is None:
             self._panel_x = self._anchor_x - padding - search_width * 0.75
@@ -3460,9 +3464,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._visible_limit = visible_limit
         rows = min(visible_limit, max(0, len(self._results) - self._scroll_offset)) if has_query else 0
         empty_rows = 1 if has_query and not self._results else 0
-        shortcut_visual_offset = _scaled(2, scale)
-        shortcuts_height = shortcut_rows * (shortcut_gap + shortcut_visual_offset + shortcut_height)
-        height = padding * 2 + search_height + shortcuts_height + (gap + max(rows, empty_rows) * row_height if has_query else 0) + (_scaled(12, scale) if has_query and len(self._results) > rows else 0)
+        height = padding * 2 + search_height + (gap + max(rows, empty_rows) * row_height if has_query else 0) + (_scaled(12, scale) if has_query and len(self._results) > rows else 0)
         y = search_y + search_height + padding - height
         self._panel_rect = (x, y, width, height)
         self._padding = padding
@@ -3499,10 +3501,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
         self._shortcut_rects = []
         self._shortcut_delete_rects = []
-        shortcuts_y = search_y - shortcut_gap - shortcut_visual_offset - shortcut_height
-        if active_shortcuts and not has_query:
+        shortcuts_y = y - shortcut_gap - shortcut_height
+        if show_shortcuts:
             item_gap = _scaled(5, scale)
-            item_width = (search_width - item_gap * (min(len(active_shortcuts), 10) - 1)) / min(len(active_shortcuts), 10)
+            visible_shortcuts = active_shortcuts[:10]
+            layout_slots = max(4, len(visible_shortcuts))
+            item_width = (search_width - item_gap * (layout_slots - 1)) / layout_slots
             for index, identifier in enumerate(active_shortcuts[:10]):
                 item_x = x + padding + index * (item_width + item_gap)
                 rect = (item_x, shortcuts_y, item_width, shortcut_height)
@@ -3536,7 +3540,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         x_color = (0.50, 0.50, 0.52, 0.82)
                     _draw_centered_text("x", delete_x, delete_y, delete_size, delete_size, x_size, x_color)
 
-        rows_top = search_y - shortcuts_height - gap
+        rows_top = search_y - gap
         self._rows_top = rows_top
         if not has_query:
             return
