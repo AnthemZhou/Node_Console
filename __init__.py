@@ -117,6 +117,25 @@ UI_TEXT_ZH = {
     "No node shortcuts": "没有快捷节点",
 }
 
+TRANSLATIONS = {
+    "zh_HANS": {
+        ("*", "Color Line"): "颜色竖线",
+        ("*", "Color Block"): "颜色底块",
+        ("*", "Off"): "关闭",
+        ("*", "Show a slim category color line at the left edge"): "在左侧显示一条类目颜色竖线",
+        ("*", "Show colored category backgrounds"): "显示类目颜色底块",
+        ("*", "Hide category color decorations"): "关闭类目颜色装饰",
+    },
+    "zh_CN": {
+        ("*", "Color Line"): "颜色竖线",
+        ("*", "Color Block"): "颜色底块",
+        ("*", "Off"): "关闭",
+        ("*", "Show a slim category color line at the left edge"): "在左侧显示一条类目颜色竖线",
+        ("*", "Show colored category backgrounds"): "显示类目颜色底块",
+        ("*", "Hide category color decorations"): "关闭类目颜色装饰",
+    },
+}
+
 
 @dataclass(frozen=True)
 class NodeSearchEntry:
@@ -3721,9 +3740,9 @@ class ENS_AddonPreferences(AddonPreferences):
         name="Category Color Display",
         description="How category colors are shown in Node Console search results",
         items=(
-            ("LINE", "颜色竖线 / Color Line", "Show a slim category color line at the left edge"),
-            ("BLOCK", "颜色底块 / Color Block", "Show colored category backgrounds"),
-            ("OFF", "关闭 / Off", "Hide category color decorations"),
+            ("LINE", "Color Line", "Show a slim category color line at the left edge"),
+            ("BLOCK", "Color Block", "Show colored category backgrounds"),
+            ("OFF", "Off", "Hide category color decorations"),
         ),
         default="LINE",
         update=_visual_preference_changed,
@@ -3779,7 +3798,7 @@ class ENS_AddonPreferences(AddonPreferences):
         asset_left_middle = asset_top.split(factor=0.5, align=False)
         asset_left_middle.prop(self, "scan_asset_libraries", text=_ui_text("Show Cached Asset Nodes"))
         asset_left_middle.label(text=f"{_ui_text('Cached Assets')}: {len(_load_asset_index())}")
-        refresh_row = asset_top.split(factor=0.45, align=True)
+        refresh_row = asset_top.split(factor=0.72, align=True)
         refresh_row.label(text=_ui_text("Refresh Asset Index"))
         refresh_row.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="")
 
@@ -3909,6 +3928,11 @@ def unregister_keymap():
 
 
 def register():
+    try:
+        bpy.app.translations.unregister(ADDON_ID)
+    except Exception:
+        pass
+    bpy.app.translations.register(ADDON_ID, TRANSLATIONS)
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -3923,3 +3947,7 @@ def unregister():
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+    try:
+        bpy.app.translations.unregister(ADDON_ID)
+    except Exception:
+        pass
