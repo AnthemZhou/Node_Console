@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.37"
+ADDON_VERSION = "0.8.38"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 37),
+    "version": (0, 8, 38),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -3651,8 +3651,8 @@ class ENS_AddonPreferences(AddonPreferences):
     def draw(self, _context):
         layout = self.layout
 
-        display_box = layout.box()
-        display_top = display_box.split(factor=0.667, align=False)
+        settings_box = layout.box()
+        display_top = settings_box.split(factor=0.667, align=False)
         display_left_middle = display_top.split(factor=0.5, align=False)
         display_left = display_left_middle.column(align=True)
         display_left.label(text=_ui_text("Search Result Display"))
@@ -3668,15 +3668,15 @@ class ENS_AddonPreferences(AddonPreferences):
         refresh_row.label(text=_ui_text("Refresh Asset Index"))
         refresh_row.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="")
 
-        fuzzy_box = layout.box()
-        fuzzy_top = fuzzy_box.split(factor=0.667, align=False)
+        settings_box.separator(type="LINE")
+        fuzzy_top = settings_box.split(factor=0.667, align=False)
         fuzzy_left_middle = fuzzy_top.split(factor=0.5, align=False)
         fuzzy_left_middle.prop(self, "chinese_fuzzy_match", text=_ui_text("Enable Chinese Fuzzy Match"))
         fuzzy_left_middle.label(text=_ui_text("May slightly slow live search"))
         fuzzy_top.label(text="")
 
-        category_box = layout.box()
-        category_top = category_box.split(factor=0.667, align=False)
+        settings_box.separator(type="LINE")
+        category_top = settings_box.split(factor=0.667, align=False)
         category_left_middle = category_top.split(factor=0.5, align=False)
         category_left_middle.label(text=_ui_text("Category Color Display"))
         category_left_middle.prop(self, "category_color_mode", text="")
