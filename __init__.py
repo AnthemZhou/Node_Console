@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.38"
+ADDON_VERSION = "0.8.39"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 38),
+    "version": (0, 8, 39),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -3656,15 +3656,22 @@ class ENS_AddonPreferences(AddonPreferences):
         display_left_middle = display_top.split(factor=0.5, align=False)
         display_left = display_left_middle.column(align=True)
         display_left.label(text=_ui_text("Search Result Display"))
-        display_left.prop(self, "scan_asset_libraries", text=_ui_text("Show Cached Asset Nodes"))
+        display_left.label(text=_ui_text("Category Color Display"))
         display_middle = display_left_middle.column(align=True)
         display_middle.prop(self, "display_mode", text="")
-        display_middle.label(text=f"{_ui_text('Cached Assets')}: {len(_load_asset_index())}")
+        display_middle.prop(self, "category_color_mode", text="")
         right_col = display_top.column(align=False)
         size_row = right_col.split(factor=0.45, align=True)
         size_row.label(text=_ui_text("Console Size"))
         size_row.prop(self, "ui_scale", text="", slider=True)
-        refresh_row = right_col.split(factor=0.45, align=True)
+        right_col.label(text="")
+
+        settings_box.separator(type="LINE")
+        asset_top = settings_box.split(factor=0.667, align=False)
+        asset_left_middle = asset_top.split(factor=0.5, align=False)
+        asset_left_middle.prop(self, "scan_asset_libraries", text=_ui_text("Show Cached Asset Nodes"))
+        asset_left_middle.label(text=f"{_ui_text('Cached Assets')}: {len(_load_asset_index())}")
+        refresh_row = asset_top.split(factor=0.45, align=True)
         refresh_row.label(text=_ui_text("Refresh Asset Index"))
         refresh_row.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="")
 
@@ -3674,13 +3681,6 @@ class ENS_AddonPreferences(AddonPreferences):
         fuzzy_left_middle.prop(self, "chinese_fuzzy_match", text=_ui_text("Enable Chinese Fuzzy Match"))
         fuzzy_left_middle.label(text=_ui_text("May slightly slow live search"))
         fuzzy_top.label(text="")
-
-        settings_box.separator(type="LINE")
-        category_top = settings_box.split(factor=0.667, align=False)
-        category_left_middle = category_top.split(factor=0.5, align=False)
-        category_left_middle.label(text=_ui_text("Category Color Display"))
-        category_left_middle.prop(self, "category_color_mode", text="")
-        category_top.label(text="")
 
         box = layout.box()
         box.label(text=_ui_text("Shortcut"))
