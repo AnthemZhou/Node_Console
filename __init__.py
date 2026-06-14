@@ -1547,40 +1547,6 @@ def _pinyin_text_for_parts(parts: list[str]) -> str:
     return _normalize(" ".join(_pinyin_search_text(part) for part in parts if part))
 
 
-def _pinyin_syllables(text: str) -> list[str]:
-    if not text or not re.search(r"[\u4e00-\u9fff]", text):
-        return []
-    raw = _normalize(_system_pinyin(text) or _fallback_pinyin(text))
-    return [part for part in raw.split() if part]
-
-
-def _pinyin_match_level(parts: list[str], query: str) -> int:
-    compact_query = _compact(query)
-    if len(compact_query) < 4:
-        return 0
-
-    best = 0
-    for part in parts:
-        syllables = _pinyin_syllables(part)
-        if not syllables:
-            continue
-
-        compact = "".join(syllables)
-        if compact_query == compact:
-            best = max(best, 2)
-            continue
-
-        if compact.startswith(compact_query):
-            boundary = 0
-            for syllable in syllables:
-                boundary += len(syllable)
-                if boundary == len(compact_query):
-                    best = max(best, 1)
-                    break
-
-    return best
-
-
 def _is_plain_ascii_query(query: str) -> bool:
     compact = query.replace(" ", "")
     return bool(compact and re.fullmatch(r"[a-z0-9]+", compact))
@@ -1613,10 +1579,8 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     root_word_match = _word_prefix_tokens_match(_path_without_leaf(entry), tokens)
     leaf_pinyin_text = _pinyin_text_for_parts(chinese_parts[-1:])
     root_pinyin_text = _pinyin_text_for_parts(chinese_parts[:-1])
-    leaf_pinyin_level = _pinyin_match_level(chinese_parts[-1:], query)
-    root_pinyin_level = _pinyin_match_level(chinese_parts[:-1], query)
-    leaf_pinyin_match = leaf_pinyin_level > 0
-    root_pinyin_match = root_pinyin_level > 0
+    leaf_pinyin_match = bool(tokens and all(len(token) >= 4 and token in leaf_pinyin_text for token in tokens))
+    root_pinyin_match = bool(tokens and all(len(token) >= 4 and token in root_pinyin_text for token in tokens))
     if _chinese_fuzzy_match_enabled():
         chinese_search_text = _make_chinese_search_text(entry.chinese, entry.label)
         ordered_leaf_match = any(_ordered_chars_match(query, part) for part in chinese_parts[-1:])
@@ -1638,9 +1602,7 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
         "leaf_prefix": leaf_prefix,
         "leaf_contains": leaf_contains,
         "leaf_pinyin_match": leaf_pinyin_match,
-        "leaf_pinyin_level": leaf_pinyin_level,
         "root_pinyin_match": root_pinyin_match,
-        "root_pinyin_level": root_pinyin_level,
         "leaf_word_match": leaf_word_match,
         "path_word_match": path_word_match,
         "root_word_match": root_word_match,
