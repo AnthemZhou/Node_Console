@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.42"
+ADDON_VERSION = "0.8.43"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 42),
+    "version": (0, 8, 43),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -1543,6 +1543,15 @@ def _path_without_leaf(entry: NodeSearchEntry) -> str:
     return entry.english
 
 
+def _pinyin_text_for_parts(parts: list[str]) -> str:
+    return _normalize(" ".join(_pinyin_search_text(part) for part in parts if part))
+
+
+def _is_plain_ascii_query(query: str) -> bool:
+    compact = query.replace(" ", "")
+    return bool(compact and re.fullmatch(r"[a-z0-9]+", compact))
+
+
 def _query_match_parts(entry: NodeSearchEntry, query: str):
     query = _normalize(query)
     tokens = query.split()
@@ -1568,6 +1577,10 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     leaf_word_match = any(_word_prefix_tokens_match(part, tokens) for part in leaf_parts)
     path_word_match = _word_prefix_tokens_match(path_text, tokens)
     root_word_match = _word_prefix_tokens_match(_path_without_leaf(entry), tokens)
+    leaf_pinyin_text = _pinyin_text_for_parts(chinese_parts[-1:])
+    root_pinyin_text = _pinyin_text_for_parts(chinese_parts[:-1])
+    leaf_pinyin_match = bool(tokens and all(len(token) >= 4 and token in leaf_pinyin_text for token in tokens))
+    root_pinyin_match = bool(tokens and all(len(token) >= 4 and token in root_pinyin_text for token in tokens))
     if _chinese_fuzzy_match_enabled():
         chinese_search_text = _make_chinese_search_text(entry.chinese, entry.label)
         ordered_leaf_match = any(_ordered_chars_match(query, part) for part in chinese_parts[-1:])
@@ -1588,6 +1601,8 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
         "leaf_exact": leaf_exact,
         "leaf_prefix": leaf_prefix,
         "leaf_contains": leaf_contains,
+        "leaf_pinyin_match": leaf_pinyin_match,
+        "root_pinyin_match": root_pinyin_match,
         "leaf_word_match": leaf_word_match,
         "path_word_match": path_word_match,
         "root_word_match": root_word_match,
@@ -2534,7 +2549,10 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
     # Compact matching is intentionally narrow. Without this guard, short queries
     # can match across word boundaries, for example "set" in "Noise Texture".
     compact_match = bool(len(compact_query) >= 5 and " " in query and compact_query in compact_text)
+    plain_ascii_query = _is_plain_ascii_query(query)
     broad_text_match = bool(tokens and all(len(token) >= 4 and token in text for token in tokens))
+    if plain_ascii_query:
+        broad_text_match = match["leaf_pinyin_match"] or bool(tokens and all(len(token) >= 4 and token in " ".join(match["leaf_parts"]) for token in tokens))
     if preferred_order < 10_000:
         score = 110
     elif broad_text_match:
@@ -2545,6 +2563,8 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
         score = 80
     elif match["ordered_leaf_match"] or match["ordered_search_match"]:
         score = 72
+    elif plain_ascii_query and match["root_pinyin_match"]:
+        score = 54
     else:
         return None
 
@@ -2571,7 +2591,7 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
             score += 260
         elif match["root_exact"]:
             score += 100
-        elif match["leaf_contains"]:
+        elif match["leaf_contains"] or match["leaf_pinyin_match"]:
             score += 180
         elif match["ordered_leaf_match"]:
             score += 130
@@ -3464,7 +3484,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._visible_limit = visible_limit
         rows = min(visible_limit, max(0, len(self._results) - self._scroll_offset)) if has_query else 0
         empty_rows = 1 if has_query and not self._results else 0
-        height = padding * 2 + search_height + (gap + max(rows, empty_rows) * row_height if has_query else 0) + (_scaled(12, scale) if has_query and len(self._results) > rows else 0)
+        shortcut_visual_offset = _scaled(2, scale)
+        shortcuts_height = (shortcut_gap + shortcut_visual_offset + shortcut_height) if show_shortcuts else 0
+        height = padding * 2 + search_height + shortcuts_height + (gap + max(rows, empty_rows) * row_height if has_query else 0) + (_scaled(12, scale) if has_query and len(self._results) > rows else 0)
         y = search_y + search_height + padding - height
         self._panel_rect = (x, y, width, height)
         self._padding = padding
@@ -3501,7 +3523,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
         self._shortcut_rects = []
         self._shortcut_delete_rects = []
-        shortcuts_y = y - shortcut_gap - shortcut_height
+        shortcuts_y = search_y - shortcut_gap - shortcut_visual_offset - shortcut_height
         if show_shortcuts:
             item_gap = _scaled(5, scale)
             visible_shortcuts = active_shortcuts[:10]
@@ -3540,7 +3562,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         x_color = (0.50, 0.50, 0.52, 0.82)
                     _draw_centered_text("x", delete_x, delete_y, delete_size, delete_size, x_size, x_color)
 
-        rows_top = search_y - gap
+        rows_top = search_y - shortcuts_height - gap
         self._rows_top = rows_top
         if not has_query:
             return
