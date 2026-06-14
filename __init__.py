@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.35"
+ADDON_VERSION = "0.8.36"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 35),
+    "version": (0, 8, 36),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -2235,7 +2235,7 @@ def _rebuild_search_entries(context):
     def add_asset_library_entries(cacheable_entries: list[NodeSearchEntry] | None = None):
         space = context.space_data
         edit_tree = getattr(space, "edit_tree", None)
-        if not edit_tree or edit_tree.bl_idname != "GeometryNodeTree":
+        if not edit_tree:
             return
 
         for blend_path, asset_item in _iter_asset_node_groups():
@@ -3655,7 +3655,6 @@ class ENS_AddonPreferences(AddonPreferences):
         left_col = left_middle.column(align=True)
         left_col.label(text=_ui_text("Search Result Display"))
         left_col.prop(self, "scan_asset_libraries", text=_ui_text("Show Cached Asset Nodes"))
-        left_col.prop(self, "category_color_mode", text=_ui_text("Category Color Display"))
         left_col.prop(self, "chinese_fuzzy_match", text=_ui_text("Enable Chinese Fuzzy Match"))
 
         middle_col = left_middle.column(align=True)
@@ -3670,6 +3669,12 @@ class ENS_AddonPreferences(AddonPreferences):
         refresh_row = right_col.split(factor=0.45, align=True)
         refresh_row.label(text=_ui_text("Refresh Asset Index"))
         refresh_row.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="")
+
+        category_row = layout.split(factor=0.34, align=True)
+        category_row.label(text=_ui_text("Category Color Display"))
+        category_value = category_row.split(factor=0.42, align=True)
+        category_value.prop(self, "category_color_mode", text="")
+        category_value.label(text="")
 
         box = layout.box()
         box.label(text=_ui_text("Shortcut"))
