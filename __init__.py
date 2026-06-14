@@ -1224,14 +1224,6 @@ def _visual_preference_changed(_self, _context):
     _save_preference_settings()
 
 
-def _category_color_mode_items(_self, _context):
-    return (
-        ("LINE", _ui_text("Color Line"), "Show a slim category color line at the left edge"),
-        ("BLOCK", _ui_text("Color Block"), "Show colored category backgrounds"),
-        ("OFF", _ui_text("Off"), "Hide category color decorations"),
-    )
-
-
 def _shortcut_changed(_self, _context):
     _save_preference_settings()
     refresh_keymap()
@@ -3728,7 +3720,11 @@ class ENS_AddonPreferences(AddonPreferences):
     category_color_mode: EnumProperty(
         name="Category Color Display",
         description="How category colors are shown in Node Console search results",
-        items=_category_color_mode_items,
+        items=(
+            ("LINE", "颜色竖线 / Color Line", "Show a slim category color line at the left edge"),
+            ("BLOCK", "颜色底块 / Color Block", "Show colored category backgrounds"),
+            ("OFF", "关闭 / Off", "Hide category color decorations"),
+        ),
         default="LINE",
         update=_visual_preference_changed,
     )
