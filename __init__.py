@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.43"
+ADDON_VERSION = "0.8.44"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 43),
+    "version": (0, 8, 44),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -2563,8 +2563,6 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
         score = 80
     elif match["ordered_leaf_match"] or match["ordered_search_match"]:
         score = 72
-    elif plain_ascii_query and match["root_pinyin_match"]:
-        score = 54
     else:
         return None
 
