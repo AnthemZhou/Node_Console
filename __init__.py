@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.40"
+ADDON_VERSION = "0.8.41"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 40),
+    "version": (0, 8, 41),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -2143,6 +2143,13 @@ def _asset_category_from_catalog(catalog_name: str, blend_path: Path) -> str:
     return stem or "Asset"
 
 
+def _asset_category_from_color_tag(color_tag: str) -> str:
+    tag_type = NODE_COLOR_TAG_TYPES.get(str(color_tag or "").upper())
+    if not tag_type or tag_type == "none":
+        return ""
+    return tag_type.title()
+
+
 def _read_asset_node_groups(blend_path: Path) -> list[dict]:
     loaded_groups = []
     try:
@@ -2338,19 +2345,28 @@ def _rebuild_search_entries(context):
             if key in seen_keys or any(_normalize(entry.english) == name_key for entry in NODE_SEARCH_ENTRIES):
                 continue
             seen_keys.add(key)
+            asset_data = getattr(node_group, "asset_data", None)
+            catalog_name = str(getattr(asset_data, "catalog_simple_name", "") or "") if asset_data else ""
+            color_tag = str(getattr(node_group, "color_tag", "") or "")
+            category = (
+                _asset_category_from_catalog(catalog_name, Path(asset_name))
+                if catalog_name
+                else _asset_category_from_color_tag(color_tag) or "Group"
+            )
             chinese = _translation_label(asset_name)
             label = _entry_label(asset_name, chinese)
             identifier = _safe_identifier("G", asset_name)
             add_entry(
                 NodeSearchEntry(
                     identifier=identifier,
-                    category="Group",
+                    category=category,
                     english=asset_name,
                     chinese=chinese,
                     label=label,
                     description=f"Node group: {asset_name}",
                     kind="ASSET",
                     asset_name=asset_name,
+                    asset_color_tag=color_tag,
                     search_text=_make_search_text(asset_name, chinese, label, ""),
                 )
             )
@@ -3580,16 +3596,16 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 line_color = _blend_color(base_color, 0.95 if is_emphasized else 0.82, PANEL_BACKGROUND)
                 _draw_rounded_rect(category_block_x, line_y, line_width, line_height, max(1, line_width / 2), (line_color[0], line_color[1], line_color[2], 0.95))
 
-            muted_row_color = MUTED_TEXT_COLOR if is_emphasized else SECONDARY_TEXT_COLOR
-            _draw_text(category_text, category_x, row_text_y, category_size, muted_row_color)
-            _draw_label_text(display_label, label_x, row_text_y, label_max_width, label_size, muted_row_color)
+            secondary_row_color = MUTED_TEXT_COLOR if is_emphasized else SECONDARY_TEXT_COLOR
+            _draw_text(category_text, category_x, row_text_y, category_size, secondary_row_color)
+            _draw_label_text(display_label, label_x, row_text_y, label_max_width, label_size, secondary_row_color)
             fade_color = HIGHLIGHT_COLOR if is_emphasized else PANEL_BACKGROUND
             _draw_horizontal_fade(fade_x, block_y, fade_width, block_height, fade_color, steps=10)
             _draw_right_rounded_fill(fav_x, block_y, max(0, x + width - padding - fav_x), block_height, block_radius, fade_color)
             if is_favorite:
                 fav_y = row_y + (row_height - fav_height) / 2
                 favorite_strength = 0.66 if is_emphasized else 0.5
-                _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), _multiply_color(muted_row_color, favorite_strength))
+                _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), _multiply_color(secondary_row_color, favorite_strength))
 
         if has_query and len(self._results) > self._scroll_offset + rows:
             _draw_text("▼", x + width / 2 - _scaled(4, scale), y + _scaled(4, scale), _scaled(12, scale), TEXT_COLOR)
