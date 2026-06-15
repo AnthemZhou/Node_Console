@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.3"
+ADDON_VERSION = "0.9.4"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 3),
+    "version": (0, 9, 4),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -37,6 +37,7 @@ bl_info = {
 ADDON_ID = __name__
 KEYMAP_ITEMS = []
 NODE_SEARCH_ENTRIES: list["NodeSearchEntry"] = []
+ACTIVE_CONSOLE_OPERATOR = None
 MENU_ENTRY_CACHE: dict[str, list[tuple[str, str, str, str, tuple[tuple[str, str], ...]]]] = {}
 SEARCH_INDEX_MEMORY_KEYS: set[str] = set()
 TRANSLATION_LABEL_CACHE: dict[tuple[str, str | None], str] = {}
@@ -1402,8 +1403,12 @@ def _display_mode() -> str:
 
 
 def _chinese_fuzzy_match_enabled() -> bool:
-    prefs = _preferences()
-    return bool(prefs and prefs.chinese_fuzzy_match)
+    # Temporarily disabled for the 0.9.x pinyin search work. Keep the preference
+    # and implementation in place so the sparse Chinese matcher can be restored
+    # without breaking existing user settings.
+    return False
+    # prefs = _preferences()
+    # return bool(prefs and prefs.chinese_fuzzy_match)
 
 
 def _category_color_mode() -> str:
@@ -2335,6 +2340,10 @@ def _asset_category_from_color_tag(color_tag: str) -> str:
     return tag_type.title()
 
 
+def _is_hidden_asset_name(name: str) -> bool:
+    return str(name or "").strip().startswith(".")
+
+
 def _read_asset_node_groups(blend_path: Path) -> list[dict]:
     loaded_groups = []
     try:
@@ -2356,6 +2365,8 @@ def _read_asset_node_groups(blend_path: Path) -> list[dict]:
     entries = []
     for node_group in loaded_groups:
         if not node_group:
+            continue
+        if _is_hidden_asset_name(node_group.name):
             continue
         asset_data = getattr(node_group, "asset_data", None)
         catalog_name = str(getattr(asset_data, "catalog_simple_name", "") or "") if asset_data else ""
@@ -2525,6 +2536,8 @@ def _rebuild_search_entries(context):
             if node_group == edit_tree or node_group.bl_idname != edit_tree.bl_idname:
                 continue
             asset_name = node_group.name
+            if _is_hidden_asset_name(asset_name):
+                continue
             key = ("LOCAL_GROUP", asset_name)
             name_key = _normalize(asset_name)
             if key in seen_keys or any(_normalize(entry.english) == name_key for entry in NODE_SEARCH_ENTRIES):
@@ -2567,6 +2580,8 @@ def _rebuild_search_entries(context):
             if tree_type and tree_type != edit_tree.bl_idname:
                 continue
             asset_name = asset_item["name"]
+            if _is_hidden_asset_name(asset_name):
+                continue
             key = ("ASSET", str(blend_path), asset_name)
             if key in seen_keys:
                 continue
@@ -3154,6 +3169,11 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _keyboard_selection_active = False
     _pending_native_transform = False
     _timer = None
+    _owner_window = None
+    _owner_area = None
+    _owner_region = None
+    _owner_space = None
+    _owner_tree = None
 
     @classmethod
     def poll(cls, context):
@@ -3171,7 +3191,34 @@ class ENS_AddNodeByEnglishSearch(Operator):
             return
         self._selected_index = max(0, min(self._selected_index, len(self._results) - 1))
 
+    def _capture_context_owner(self, context):
+        self._owner_window = context.window.as_pointer() if context.window else None
+        self._owner_area = context.area.as_pointer() if context.area else None
+        self._owner_region = context.region.as_pointer() if context.region else None
+        self._owner_space = context.space_data.as_pointer() if context.space_data else None
+        tree = getattr(context.space_data, "edit_tree", None) or getattr(context.space_data, "node_tree", None)
+        self._owner_tree = tree.as_pointer() if tree else None
+
+    def _owns_context(self, context) -> bool:
+        if self._owner_window and (not context.window or context.window.as_pointer() != self._owner_window):
+            return False
+        if self._owner_area and (not context.area or context.area.as_pointer() != self._owner_area):
+            return False
+        if self._owner_region and (not context.region or context.region.as_pointer() != self._owner_region):
+            return False
+        if self._owner_space and (not context.space_data or context.space_data.as_pointer() != self._owner_space):
+            return False
+        tree = getattr(context.space_data, "edit_tree", None) or getattr(context.space_data, "node_tree", None) if context.space_data else None
+        if self._owner_tree and (not tree or tree.as_pointer() != self._owner_tree):
+            return False
+        return True
+
+    def _tag_owner_redraw(self, context):
+        if context.area and (not self._owner_area or context.area.as_pointer() == self._owner_area):
+            context.area.tag_redraw()
+
     def _finish(self, context, result):
+        global ACTIVE_CONSOLE_OPERATOR
         if self._draw_handler is not None:
             SpaceNodeEditor.draw_handler_remove(self._draw_handler, "WINDOW")
             self._draw_handler = None
@@ -3183,16 +3230,16 @@ class ENS_AddNodeByEnglishSearch(Operator):
             self._timer = None
         self._placing_node = None
         self._pending_native_transform = False
-        if context.area:
-            context.area.tag_redraw()
+        if ACTIVE_CONSOLE_OPERATOR is self:
+            ACTIVE_CONSOLE_OPERATOR = None
+        self._tag_owner_redraw(context)
         return result
 
     def _hide_console(self, context):
         if self._draw_handler is not None:
             SpaceNodeEditor.draw_handler_remove(self._draw_handler, "WINDOW")
             self._draw_handler = None
-        if context.area:
-            context.area.tag_redraw()
+        self._tag_owner_redraw(context)
 
     def _move_placing_node(self, context, event):
         if not self._placing_node:
@@ -3409,12 +3456,21 @@ class ENS_AddNodeByEnglishSearch(Operator):
         return 0
 
     def invoke(self, context, event):
+        global ACTIVE_CONSOLE_OPERATOR
+        active = ACTIVE_CONSOLE_OPERATOR
+        if active is not None and active is not self:
+            try:
+                active._finish(context, {"CANCELLED"})
+            except Exception:
+                pass
+        ACTIVE_CONSOLE_OPERATOR = self
+        self._capture_context_owner(context)
         _store_cursor_location(context, event)
         _rebuild_search_entries(context)
 
         if not NODE_SEARCH_ENTRIES:
             self.report({"WARNING"}, "No addable nodes found for the current node tree")
-            return {"CANCELLED"}
+            return self._finish(context, {"CANCELLED"})
 
         self._query = ""
         self._selected_index = 0
@@ -3437,14 +3493,21 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._draw_handler = SpaceNodeEditor.draw_handler_add(self._draw_callback, (context,), "WINDOW", "POST_PIXEL")
         self._timer = context.window_manager.event_timer_add(0.2, window=context.window)
         context.window_manager.modal_handler_add(self)
-        if context.area:
-            context.area.tag_redraw()
+        self._tag_owner_redraw(context)
         return {"RUNNING_MODAL"}
 
     def modal(self, context, event):
+        if ACTIVE_CONSOLE_OPERATOR is not self:
+            return self._finish(context, {"CANCELLED"})
+        if not self._owns_context(context):
+            if event.type == "TIMER":
+                return {"RUNNING_MODAL"}
+            if event.type == "LEFTMOUSE" and event.value == "PRESS":
+                return self._finish(context, {"CANCELLED"})
+            return {"PASS_THROUGH"}
+
         if event.type == "TIMER":
-            if context.area:
-                context.area.tag_redraw()
+            self._tag_owner_redraw(context)
             return {"RUNNING_MODAL"}
 
         if self._placing_node and self._pending_native_transform:
@@ -3636,6 +3699,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
         return {"RUNNING_MODAL"}
 
     def _draw_callback(self, context):
+        if ACTIVE_CONSOLE_OPERATOR is not self or not self._owns_context(context):
+            return
         region = context.region
         if not region:
             return
@@ -4028,12 +4093,14 @@ class ENS_AddonPreferences(AddonPreferences):
         refresh_row.label(text=_ui_text("Refresh Asset Index"))
         refresh_row.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="")
 
-        settings_box.separator(type="LINE")
-        fuzzy_top = settings_box.split(factor=0.667, align=False)
-        fuzzy_left_middle = fuzzy_top.split(factor=0.5, align=False)
-        fuzzy_left_middle.prop(self, "chinese_fuzzy_match", text=_ui_text("Enable Chinese Fuzzy Match"))
-        fuzzy_left_middle.label(text=_ui_text("May slightly slow live search"))
-        fuzzy_top.label(text="")
+        # Chinese fuzzy match is intentionally hidden during the 0.9.x pinyin
+        # search rewrite. The property remains registered for compatibility.
+        # settings_box.separator(type="LINE")
+        # fuzzy_top = settings_box.split(factor=0.667, align=False)
+        # fuzzy_left_middle = fuzzy_top.split(factor=0.5, align=False)
+        # fuzzy_left_middle.prop(self, "chinese_fuzzy_match", text=_ui_text("Enable Chinese Fuzzy Match"))
+        # fuzzy_left_middle.label(text=_ui_text("May slightly slow live search"))
+        # fuzzy_top.label(text="")
 
         box = layout.box()
         box.label(text=_ui_text("Shortcut"))
