@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.8.44"
+ADDON_VERSION = "0.9.3"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 8, 44),
+    "version": (0, 9, 3),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -151,7 +151,26 @@ class NodeSearchEntry:
     asset_name: str = ""
     asset_color_tag: str = ""
     search_text: str = ""
+    leaf_pinyin_compact: str = ""
+    leaf_pinyin_boundaries: tuple[int, ...] = ()
+    leaf_pinyin_initials: str = ""
+    root_pinyin_compact: str = ""
+    root_pinyin_boundaries: tuple[int, ...] = ()
+    root_pinyin_initials: str = ""
     settings: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self):
+        if self.leaf_pinyin_compact or self.root_pinyin_compact:
+            return
+        chinese_parts = [_normalize(part) for part in self.chinese.split(" > ") if part.strip()]
+        leaf_compact, leaf_boundaries, leaf_initials, _leaf_text = _pinyin_profile_for_parts(chinese_parts[-1:])
+        root_compact, root_boundaries, root_initials, _root_text = _pinyin_profile_for_parts(chinese_parts[:-1])
+        object.__setattr__(self, "leaf_pinyin_compact", leaf_compact)
+        object.__setattr__(self, "leaf_pinyin_boundaries", leaf_boundaries)
+        object.__setattr__(self, "leaf_pinyin_initials", leaf_initials)
+        object.__setattr__(self, "root_pinyin_compact", root_compact)
+        object.__setattr__(self, "root_pinyin_boundaries", root_boundaries)
+        object.__setattr__(self, "root_pinyin_initials", root_initials)
 
 
 NODE_ENTRY_BY_ID: dict[str, NodeSearchEntry] = {}
@@ -185,6 +204,11 @@ def _compact(text: str) -> str:
 
 
 PINYIN_TEXT_CACHE: dict[str, str] = {}
+PINYIN_PROFILE_CACHE: dict[str, tuple[str, tuple[int, ...], str, str]] = {}
+PINYIN_SEQUENCE_CACHE: dict[str, bool] = {}
+PINYIN_PHRASE_TABLE = {
+    "着色器": "zhuo se qi",
+}
 PINYIN_TRANSFORM_READY: bool | None = None
 PINYIN_CF = None
 PINYIN_MANDARIN_LATIN = None
@@ -847,7 +871,19 @@ def _gbk_pinyin(char: str) -> str:
 
 def _fallback_pinyin(text: str) -> str:
     parts = []
-    for char in text:
+    phrases = sorted(PINYIN_PHRASE_TABLE.items(), key=lambda item: len(item[0]), reverse=True)
+    index = 0
+    while index < len(text):
+        matched = False
+        for phrase, pinyin in phrases:
+            if text.startswith(phrase, index):
+                parts.extend(pinyin.split())
+                index += len(phrase)
+                matched = True
+                break
+        if matched:
+            continue
+        char = text[index]
         pinyin = PINYIN_CHAR_TABLE.get(char) or _gbk_pinyin(char)
         if pinyin:
             parts.append(pinyin)
@@ -855,7 +891,14 @@ def _fallback_pinyin(text: str) -> str:
             parts.append(char.lower())
         elif parts and parts[-1] != " ":
             parts.append(" ")
+        index += 1
     return " ".join(part for part in parts if part and part != " ")
+
+
+def _source_pinyin(text: str) -> str:
+    if any(phrase in text for phrase in PINYIN_PHRASE_TABLE):
+        return _fallback_pinyin(text)
+    return _system_pinyin(text) or _fallback_pinyin(text)
 
 
 def _pinyin_search_text(text: str) -> str:
@@ -864,7 +907,7 @@ def _pinyin_search_text(text: str) -> str:
     cached = PINYIN_TEXT_CACHE.get(text)
     if cached is not None:
         return cached
-    raw = _normalize(_system_pinyin(text) or _fallback_pinyin(text))
+    raw = _normalize(_source_pinyin(text))
     if not raw:
         PINYIN_TEXT_CACHE[text] = ""
         return ""
@@ -873,6 +916,31 @@ def _pinyin_search_text(text: str) -> str:
     initials = "".join(part[0] for part in syllables if part)
     value = _normalize(" ".join([raw, compact, initials]))
     PINYIN_TEXT_CACHE[text] = value
+    return value
+
+
+def _pinyin_profile(text: str) -> tuple[str, tuple[int, ...], str, str]:
+    if not text or not re.search(r"[\u4e00-\u9fff]", text):
+        return "", (), "", ""
+    cached = PINYIN_PROFILE_CACHE.get(text)
+    if cached is not None:
+        return cached
+    raw = _normalize(_source_pinyin(text))
+    if not raw:
+        value = ("", (), "", "")
+        PINYIN_PROFILE_CACHE[text] = value
+        return value
+    syllables = raw.split()
+    compact = "".join(syllables)
+    boundaries = []
+    position = 0
+    for syllable in syllables:
+        position += len(syllable)
+        boundaries.append(position)
+    initials = "".join(part[0] for part in syllables if part)
+    search_text = _normalize(" ".join([raw, compact, initials]))
+    value = (compact, tuple(boundaries), initials, search_text)
+    PINYIN_PROFILE_CACHE[text] = value
     return value
 
 
@@ -1095,6 +1163,12 @@ def _entry_to_cache(entry: NodeSearchEntry) -> dict:
         "asset_path": entry.asset_path,
         "asset_name": entry.asset_name,
         "asset_color_tag": entry.asset_color_tag,
+        "leaf_pinyin_compact": entry.leaf_pinyin_compact,
+        "leaf_pinyin_boundaries": list(entry.leaf_pinyin_boundaries),
+        "leaf_pinyin_initials": entry.leaf_pinyin_initials,
+        "root_pinyin_compact": entry.root_pinyin_compact,
+        "root_pinyin_boundaries": list(entry.root_pinyin_boundaries),
+        "root_pinyin_initials": entry.root_pinyin_initials,
         "settings": [list(item) for item in entry.settings],
     }
 
@@ -1119,6 +1193,12 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
             asset_name=str(item.get("asset_name", "")),
             asset_color_tag=str(item.get("asset_color_tag", "")),
             search_text=_make_search_text(english, chinese, label, node_type),
+            leaf_pinyin_compact=str(item.get("leaf_pinyin_compact", "")),
+            leaf_pinyin_boundaries=tuple(int(value) for value in item.get("leaf_pinyin_boundaries", [])),
+            leaf_pinyin_initials=str(item.get("leaf_pinyin_initials", "")),
+            root_pinyin_compact=str(item.get("root_pinyin_compact", "")),
+            root_pinyin_boundaries=tuple(int(value) for value in item.get("root_pinyin_boundaries", [])),
+            root_pinyin_initials=str(item.get("root_pinyin_initials", "")),
             settings=settings,
         )
     except Exception:
@@ -1547,6 +1627,52 @@ def _pinyin_text_for_parts(parts: list[str]) -> str:
     return _normalize(" ".join(_pinyin_search_text(part) for part in parts if part))
 
 
+def _pinyin_profile_for_parts(parts: list[str]) -> tuple[str, tuple[int, ...], str, str]:
+    text = " ".join(part for part in parts if part)
+    return _pinyin_profile(text)
+
+
+def _pinyin_match_level(query: str, compact: str, boundaries: tuple[int, ...], initials: str) -> int:
+    compact_query = query.replace(" ", "")
+    if not compact_query or not compact:
+        return 0
+    if compact == compact_query:
+        return 5
+    if len(compact_query) >= 3 and compact.startswith(compact_query) and len(compact_query) in boundaries:
+        return 4
+    if len(compact_query) >= 4 and compact.startswith(compact_query) and not _is_complete_pinyin_sequence(compact_query):
+        return 3
+    if len(compact_query) >= 2 and compact.startswith(compact_query):
+        return 2
+    if len(compact_query) >= 2 and initials and initials.startswith(compact_query):
+        return 2
+    return 0
+
+
+def _pinyin_syllable_set() -> set[str]:
+    return {value for value in PINYIN_CHAR_TABLE.values() if value} | {value for _start, value in PINYIN_GBK_RANGES if value}
+
+
+def _is_complete_pinyin_sequence(text: str) -> bool:
+    compact = text.replace(" ", "")
+    if not compact:
+        return False
+    cached = PINYIN_SEQUENCE_CACHE.get(compact)
+    if cached is not None:
+        return cached
+    syllables = _pinyin_syllable_set()
+    reachable = [False] * (len(compact) + 1)
+    reachable[0] = True
+    for start in range(len(compact)):
+        if not reachable[start]:
+            continue
+        for end in range(start + 1, min(len(compact), start + 6) + 1):
+            if compact[start:end] in syllables:
+                reachable[end] = True
+    PINYIN_SEQUENCE_CACHE[compact] = reachable[-1]
+    return reachable[-1]
+
+
 def _is_plain_ascii_query(query: str) -> bool:
     compact = query.replace(" ", "")
     return bool(compact and re.fullmatch(r"[a-z0-9]+", compact))
@@ -1563,6 +1689,8 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     category_text = _normalize(entry.category)
     leaf_parts = [parts[-1] for parts in (english_parts, chinese_parts) if parts]
     root_parts = [parts[0] for parts in (english_parts, chinese_parts) if len(parts) > 1]
+    compact_query = query.replace(" ", "")
+    compact_leaf_parts = [part.replace(" ", "") for part in leaf_parts]
     category_match = bool(query and (
         query in category_parts
         or any(part.startswith(query) for part in category_parts)
@@ -1572,15 +1700,28 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     leaf_exact = any(part == query for part in leaf_parts)
     leaf_prefix = any(part.startswith(query) for part in leaf_parts)
     leaf_contains = any(query in part for part in leaf_parts) if len(query) >= 4 else False
+    leaf_compact_exact = bool(compact_query and any(part == compact_query for part in compact_leaf_parts))
+    leaf_compact_prefix = bool(compact_query and any(part.startswith(compact_query) for part in compact_leaf_parts))
+    leaf_compact_contains = bool(len(compact_query) >= 4 and any(compact_query in part for part in compact_leaf_parts))
     root_exact = any(part == query for part in root_parts)
     path_text = " ".join([entry.category, entry.english])
     leaf_word_match = any(_word_prefix_tokens_match(part, tokens) for part in leaf_parts)
     path_word_match = _word_prefix_tokens_match(path_text, tokens)
     root_word_match = _word_prefix_tokens_match(_path_without_leaf(entry), tokens)
-    leaf_pinyin_text = _pinyin_text_for_parts(chinese_parts[-1:])
-    root_pinyin_text = _pinyin_text_for_parts(chinese_parts[:-1])
-    leaf_pinyin_match = bool(tokens and all(len(token) >= 4 and token in leaf_pinyin_text for token in tokens))
-    root_pinyin_match = bool(tokens and all(len(token) >= 4 and token in root_pinyin_text for token in tokens))
+    leaf_pinyin_level = _pinyin_match_level(
+        compact_query,
+        entry.leaf_pinyin_compact,
+        entry.leaf_pinyin_boundaries,
+        entry.leaf_pinyin_initials,
+    )
+    root_pinyin_level = _pinyin_match_level(
+        compact_query,
+        entry.root_pinyin_compact,
+        entry.root_pinyin_boundaries,
+        entry.root_pinyin_initials,
+    )
+    leaf_pinyin_match = leaf_pinyin_level >= 4
+    root_pinyin_match = root_pinyin_level >= 4
     if _chinese_fuzzy_match_enabled():
         chinese_search_text = _make_chinese_search_text(entry.chinese, entry.label)
         ordered_leaf_match = any(_ordered_chars_match(query, part) for part in chinese_parts[-1:])
@@ -1601,8 +1742,13 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
         "leaf_exact": leaf_exact,
         "leaf_prefix": leaf_prefix,
         "leaf_contains": leaf_contains,
+        "leaf_compact_exact": leaf_compact_exact,
+        "leaf_compact_prefix": leaf_compact_prefix,
+        "leaf_compact_contains": leaf_compact_contains,
         "leaf_pinyin_match": leaf_pinyin_match,
+        "leaf_pinyin_level": leaf_pinyin_level,
         "root_pinyin_match": root_pinyin_match,
+        "root_pinyin_level": root_pinyin_level,
         "leaf_word_match": leaf_word_match,
         "path_word_match": path_word_match,
         "root_word_match": root_word_match,
@@ -1732,20 +1878,26 @@ def _has_visible_output_setting(entry: NodeSearchEntry) -> bool:
 
 def _dynamic_preferred_order(entry: NodeSearchEntry, query: str) -> int:
     match = _query_match_parts(entry, query)
-    if match["leaf_exact"]:
+    if match["leaf_exact"] or match["leaf_compact_exact"]:
         return 1_000
-    if match["is_primary"] and match["leaf_word_match"]:
+    if match["is_primary"] and (match["leaf_word_match"] or match["leaf_compact_prefix"]):
         return 1_050
     if _has_visible_output_setting(entry) and match["root_word_match"]:
         return 1_100
-    if _has_visible_output_setting(entry) and match["leaf_contains"]:
+    if _has_visible_output_setting(entry) and (match["leaf_contains"] or match["leaf_compact_contains"]):
         return 1_200
-    if match["is_primary"] and match["leaf_contains"]:
+    if match["is_primary"] and (match["leaf_contains"] or match["leaf_compact_contains"]):
         return 1_400
-    if match["leaf_prefix"]:
+    if match["leaf_prefix"] or match["leaf_compact_prefix"]:
         return 1_600
-    if match["leaf_contains"]:
+    if match["leaf_contains"] or match["leaf_compact_contains"]:
         return 1_800
+    if match["leaf_pinyin_level"] >= 5:
+        return 1_850
+    if match["leaf_pinyin_level"] >= 4:
+        return 1_900
+    if match["leaf_pinyin_level"] >= 3:
+        return 1_950
     if match["ordered_leaf_match"]:
         return 2_000
     if match["root_exact"]:
@@ -1784,14 +1936,20 @@ def _leaf_prefix_sort_key(entry: NodeSearchEntry, query: str) -> tuple[int, int,
     if not tokens or not leaf_words:
         return (9, 99, 99, 99, 99)
 
-    if match["leaf_exact"]:
+    if match["leaf_exact"] or match["leaf_compact_exact"]:
         tier = 0
-    elif leaf.startswith(query):
+    elif leaf.startswith(query) or match["leaf_compact_prefix"]:
         tier = 1
     elif any(_token_matches_word_prefix(tokens[0], word) for word in leaf_words):
         tier = 2
-    elif match["leaf_contains"]:
+    elif match["leaf_pinyin_level"] >= 5:
         tier = 3
+    elif match["leaf_pinyin_level"] >= 4:
+        tier = 4
+    elif match["leaf_pinyin_level"] >= 3:
+        tier = 5
+    elif match["leaf_contains"] or match["leaf_compact_contains"]:
+        tier = 6
     else:
         tier = 9
 
@@ -1821,15 +1979,17 @@ def _officialish_preferred_order(entry: NodeSearchEntry, query: str) -> int:
 
 def _officialish_sort_bucket(entry: NodeSearchEntry, query: str) -> int:
     match = _query_match_parts(entry, query)
-    if match["is_primary"] and match["leaf_exact"]:
+    if match["is_primary"] and (match["leaf_exact"] or match["leaf_compact_exact"]):
         return 0
-    if match["is_primary"] and (match["category_match"] or match["leaf_contains"]):
+    if match["is_primary"] and (match["category_match"] or match["leaf_contains"] or match["leaf_compact_contains"] or match["leaf_pinyin_level"] >= 3):
         return 1
     if match["is_primary"]:
         return 2
     if match["root_exact"] or match["category_match"]:
         return 3
-    if match["leaf_contains"]:
+    if match["leaf_contains"] or match["leaf_compact_contains"]:
+        return 4
+    if match["leaf_pinyin_level"] >= 3:
         return 4
     return 5
 
@@ -1838,19 +1998,25 @@ def _primary_match_order(entry: NodeSearchEntry, query: str) -> int:
     match = _query_match_parts(entry, query)
     leaf = match["leaf_parts"][0] if match["leaf_parts"] else ""
     category_parts = match["category_parts"]
-    in_leaf = query in leaf
+    in_leaf = query in leaf or match["leaf_compact_contains"]
     in_category = query in category_parts or any(part.startswith(query) for part in category_parts)
-    if match["leaf_exact"]:
+    if match["leaf_exact"] or match["leaf_compact_exact"]:
         return 0
-    if in_category and in_leaf and not leaf.startswith(query):
+    if match["leaf_pinyin_level"] >= 5:
         return 1
-    if in_category and in_leaf:
+    if match["leaf_pinyin_level"] >= 4:
         return 2
-    if in_leaf:
+    if match["leaf_pinyin_level"] >= 3:
         return 3
-    if in_category:
+    if in_category and in_leaf and not leaf.startswith(query):
         return 4
-    return 5
+    if in_category and in_leaf:
+        return 5
+    if in_leaf:
+        return 6
+    if in_category:
+        return 7
+    return 8
 
 
 def _node_tree_allows_node(context, node_type: str) -> bool:
@@ -2527,7 +2693,7 @@ def _rebuild_search_entries(context):
     add_local_groups()
 
 
-def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int | None:
+def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str], allow_weak_pinyin: bool = False) -> int | None:
     query = _normalize(query)
     if not query:
         return None
@@ -2552,10 +2718,11 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
     plain_ascii_query = _is_plain_ascii_query(query)
     broad_text_match = bool(tokens and all(len(token) >= 4 and token in text for token in tokens))
     if plain_ascii_query:
-        broad_text_match = match["leaf_pinyin_match"] or bool(tokens and all(len(token) >= 4 and token in " ".join(match["leaf_parts"]) for token in tokens))
+        pinyin_threshold = 2 if allow_weak_pinyin else 3
+        broad_text_match = match["leaf_pinyin_level"] >= pinyin_threshold or bool(tokens and all(len(token) >= 4 and token in " ".join(match["leaf_parts"]) for token in tokens))
     if preferred_order < 10_000:
         score = 110
-    elif broad_text_match:
+    elif match["leaf_compact_exact"] or match["leaf_compact_prefix"] or match["leaf_compact_contains"] or broad_text_match:
         score = 100
     elif category_match:
         score = 90
@@ -2583,14 +2750,22 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
         leaf_parts = match["leaf_parts"]
         root_parts = match["root_parts"]
         display_depth = _entry_display_depth(entry)
-        if match["leaf_exact"]:
+        if match["leaf_exact"] or match["leaf_compact_exact"]:
             score += 760
-        elif match["leaf_prefix"]:
+        elif match["leaf_prefix"] or match["leaf_compact_prefix"]:
             score += 260
         elif match["root_exact"]:
             score += 100
-        elif match["leaf_contains"] or match["leaf_pinyin_match"]:
+        elif match["leaf_contains"] or match["leaf_compact_contains"] or match["leaf_pinyin_match"] or match["leaf_pinyin_level"] >= (2 if allow_weak_pinyin else 3):
             score += 180
+            if match["leaf_pinyin_level"] >= 5:
+                score += 40
+            elif match["leaf_pinyin_level"] >= 4:
+                score += 20
+            elif match["leaf_pinyin_level"] >= 3:
+                score += 10
+            elif match["leaf_pinyin_level"] >= 2:
+                score += 4
         elif match["ordered_leaf_match"]:
             score += 130
         elif match["ordered_search_match"]:
@@ -2601,13 +2776,15 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
             score += 520
         elif category_match:
             score += 40
-        if is_primary_entry and match["leaf_contains"]:
+        if is_primary_entry and (match["leaf_contains"] or match["leaf_compact_contains"]):
             score += 360
 
-        if match["leaf_exact"] or match["leaf_prefix"]:
+        if match["leaf_exact"] or match["leaf_prefix"] or match["leaf_compact_exact"] or match["leaf_compact_prefix"]:
             score += max(0, 7 - display_depth) * 95
-        elif match["leaf_contains"] or match["ordered_leaf_match"]:
+        elif match["leaf_contains"] or match["leaf_compact_contains"] or match["ordered_leaf_match"]:
             score += max(0, 7 - display_depth) * 45
+        elif match["leaf_pinyin_level"] >= (2 if allow_weak_pinyin else 3):
+            score += max(0, 7 - display_depth) * 40
 
     if entry.identifier in favorites:
         score += 60
@@ -2616,24 +2793,33 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str]) -> int
 
 
 def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
-    scored = []
+    def collect(allow_weak_pinyin: bool = False):
+        scored_entries = []
+        for index, entry in enumerate(NODE_SEARCH_ENTRIES):
+            score = _score_entry(entry, query, favorites, allow_weak_pinyin=allow_weak_pinyin)
+            if score is None:
+                continue
+            match = _query_match_parts(entry, query)
+            strong_favorite = entry.identifier in favorites and (
+                match["leaf_exact"]
+                or match["leaf_prefix"]
+                or match["leaf_contains"]
+                or match["leaf_compact_exact"]
+                or match["leaf_compact_prefix"]
+                or match["leaf_compact_contains"]
+                or match["leaf_word_match"]
+                or match["leaf_pinyin_level"] >= (2 if allow_weak_pinyin else 3)
+                or match["root_exact"]
+            )
+            bucket = _officialish_sort_bucket(entry, query)
+            primary_order = _primary_match_order(entry, _normalize(query))
+            preferred_order = _officialish_preferred_order(entry, query)
+            scored_entries.append((score, entry.identifier in favorites, strong_favorite, entry.english.lower(), index, bucket, primary_order, preferred_order, entry))
+        return scored_entries
 
-    for index, entry in enumerate(NODE_SEARCH_ENTRIES):
-        score = _score_entry(entry, query, favorites)
-        if score is None:
-            continue
-        match = _query_match_parts(entry, query)
-        strong_favorite = entry.identifier in favorites and (
-            match["leaf_exact"]
-            or match["leaf_prefix"]
-            or match["leaf_contains"]
-            or match["leaf_word_match"]
-            or match["root_exact"]
-        )
-        bucket = _officialish_sort_bucket(entry, query)
-        primary_order = _primary_match_order(entry, _normalize(query))
-        preferred_order = _officialish_preferred_order(entry, query)
-        scored.append((score, entry.identifier in favorites, strong_favorite, entry.english.lower(), index, bucket, primary_order, preferred_order, entry))
+    scored = collect()
+    if not scored and _is_plain_ascii_query(query):
+        scored = collect(allow_weak_pinyin=True)
 
     def sort_key(item):
         entry = item[8]
