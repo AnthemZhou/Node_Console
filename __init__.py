@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.4"
+ADDON_VERSION = "0.9.5"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 4),
+    "version": (0, 9, 5),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -56,10 +56,10 @@ SHORTCUT_HEIGHT = 23
 SHORTCUT_GAP = 6
 CONTEXT_MENU_WIDTH = 190
 CONTEXT_MENU_ROW_HEIGHT = 30
-PANEL_BACKGROUND = (0.095, 0.095, 0.1, 0.98)
+PANEL_BACKGROUND = (0.095, 0.095, 0.1, 1.0)
 FIELD_BACKGROUND = (0.12, 0.12, 0.125, 1.0)
 BORDER_COLOR = (0.24, 0.24, 0.25, 0.92)
-HIGHLIGHT_COLOR = (0.31, 0.31, 0.31, 0.98)
+HIGHLIGHT_COLOR = (0.31, 0.31, 0.31, 1.0)
 HIGHLIGHT_BORDER_COLOR = (0.38, 0.38, 0.38, 0.85)
 TEXT_COLOR = (0.88, 0.88, 0.9, 1.0)
 MUTED_TEXT_COLOR = (0.58, 0.58, 0.6, 1.0)
@@ -73,12 +73,28 @@ NODE_TYPE_COLORS = {
     "texture": (0.48, 0.27, 0.11, 1.0),
     "geometry": (0.19, 0.50, 0.41, 1.0),
     "vector": (0.28, 0.27, 0.58, 1.0),
+    "compositor_filter": (0.36, 0.22, 0.48, 1.0),
+    "compositor_mask": (0.46, 0.24, 0.24, 1.0),
+    "compositor_distort": (0.28, 0.52, 0.52, 1.0),
     "none": (0.24, 0.34, 0.18, 1.0),
 }
 CATEGORY_COLOR_FALLBACK = NODE_TYPE_COLORS["none"]
 GEOMETRY_COLOR_KEYS = {"geometry", "mesh", "curve", "point", "points", "volume", "instances", "instance", "hair", "grease", "pencil", "grease pencil"}
 CONVERTER_COLOR_KEYS = {"math", "utilities", "converter", "rotation"}
 VECTOR_COLOR_KEYS = {"vector", "uv"}
+COMPOSITOR_CATEGORY_ZH = {
+    "camera & lens effects": "摄像机 & 镜头效果",
+    "color": "颜色",
+    "creative": "创意",
+    "distort": "畸变",
+    "filter": "滤镜",
+    "keying": "抠像",
+    "mask": "蒙版",
+    "matte": "蒙版",
+    "tracking": "追踪",
+    "transform": "变换",
+    "utilities": "实用工具",
+}
 NODE_COLOR_TAG_TYPES = {
     "ATTRIBUTE": "attribute",
     "INPUT": "input",
@@ -209,6 +225,12 @@ PINYIN_PROFILE_CACHE: dict[str, tuple[str, tuple[int, ...], str, str]] = {}
 PINYIN_SEQUENCE_CACHE: dict[str, bool] = {}
 PINYIN_PHRASE_TABLE = {
     "着色器": "zhuo se qi",
+    "眩光": "xuan guang",
+    "创意": "chuang yi",
+    "蒙版": "meng ban",
+    "色差": "se cha",
+    "暗角": "an jiao",
+    "传感器噪点": "chuan gan qi zao dian",
 }
 PINYIN_TRANSFORM_READY: bool | None = None
 PINYIN_CF = None
@@ -1394,7 +1416,11 @@ def _display_category_label(category: str) -> str:
         return category
 
     parts = [part.strip() for part in category.split(" > ") if part.strip()]
-    return " > ".join(_translation_label(part) for part in parts) if parts else category
+    translated_parts = []
+    for part in parts:
+        key = _normalize(part)
+        translated_parts.append(COMPOSITOR_CATEGORY_ZH.get(key) or _translation_label(part))
+    return " > ".join(translated_parts) if translated_parts else category
 
 
 def _display_mode() -> str:
@@ -1524,6 +1550,8 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
         return NODE_TYPE_COLORS["geometry"]
     if normalized_english == "string to curve":
         return NODE_TYPE_COLORS["geometry"]
+    if entry.node_type in {"ShaderNodeValToRGB", "TextureNodeValToRGB"} or normalized_english == "color ramp":
+        return NODE_TYPE_COLORS["converter"]
     if normalized_english in {"combine color", "separate color"}:
         return NODE_TYPE_COLORS["converter"]
     if entry.node_type in {"GeometryNodeSetGreasePencilColor", "GeometryNodeSetGreasePencilDepth", "GeometryNodeSetGreasePencilSoftness"}:
@@ -1545,6 +1573,29 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
         return NODE_TYPE_COLORS["geometry"]
     if "read" in category_parts:
         return NODE_TYPE_COLORS["input"]
+    if entry.node_type.startswith("CompositorNode"):
+        if entry.node_type == "CompositorNodeNormalize" or normalized_english == "normalize":
+            return NODE_TYPE_COLORS["vector"]
+        if "sensor noise" in normalized_english:
+            return NODE_TYPE_COLORS["texture"]
+        if "posterize" in normalized_english or "adjust image" in normalized_english:
+            return NODE_TYPE_COLORS["color"]
+        if entry.node_type == "CompositorNodeIDMask" or normalized_english == "id mask":
+            return NODE_TYPE_COLORS["converter"]
+        if normalized_english == "mask" or any(part in {"keying", "mask", "matte"} for part in category_parts):
+            return NODE_TYPE_COLORS["compositor_mask"]
+        if any(word in normalized_english for word in ("distortion", "aberration", "vignette")):
+            return NODE_TYPE_COLORS["compositor_distort"]
+        if any(part in {"distort", "tracking", "camera & lens effects"} for part in category_parts):
+            return NODE_TYPE_COLORS["compositor_distort"]
+        if any(part in {"filter", "creative"} for part in category_parts):
+            return NODE_TYPE_COLORS["compositor_filter"]
+        if first_category in {"input", "output", "color", "vector"}:
+            return NODE_TYPE_COLORS[first_category]
+        if first_category in {"transform"}:
+            return NODE_TYPE_COLORS["vector"]
+        if first_category in {"converter", "utilities"}:
+            return NODE_TYPE_COLORS["converter"]
     if first_category in {"attribute", "input", "color", "output", "texture", "geometry", "vector"}:
         return NODE_TYPE_COLORS[first_category]
     if first_category in GEOMETRY_COLOR_KEYS or any(key in GEOMETRY_COLOR_KEYS for key in category_parts[:1]):
@@ -1645,6 +1696,14 @@ def _pinyin_match_level(query: str, compact: str, boundaries: tuple[int, ...], i
         return 5
     if len(compact_query) >= 3 and compact.startswith(compact_query) and len(compact_query) in boundaries:
         return 4
+    if len(compact_query) >= 4:
+        starts = (0,) + tuple(boundaries[:-1])
+        for start in starts:
+            end = start + len(compact_query)
+            if end > len(compact):
+                continue
+            if compact.startswith(compact_query, start) and end in boundaries:
+                return 3
     if len(compact_query) >= 4 and compact.startswith(compact_query) and not _is_complete_pinyin_sequence(compact_query):
         return 3
     if len(compact_query) >= 2 and compact.startswith(compact_query):
@@ -1692,6 +1751,9 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     chinese_parts = [_normalize(part) for part in entry.chinese.split(" > ") if part.strip()]
     category_parts = [_normalize(part) for part in entry.category.split(" > ") if part.strip()]
     category_text = _normalize(entry.category)
+    category_chinese_parts = [COMPOSITOR_CATEGORY_ZH.get(part, "") for part in category_parts]
+    category_chinese_text = _normalize(" ".join(part for part in category_chinese_parts if part))
+    category_pinyin_text = _normalize(" ".join(_pinyin_search_text(part) for part in category_chinese_parts if part))
     leaf_parts = [parts[-1] for parts in (english_parts, chinese_parts) if parts]
     root_parts = [parts[0] for parts in (english_parts, chinese_parts) if len(parts) > 1]
     compact_query = query.replace(" ", "")
@@ -1699,15 +1761,18 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     category_match = bool(query and (
         query in category_parts
         or any(part.startswith(query) for part in category_parts)
+        or (category_chinese_text and (query in category_chinese_text or any(part.startswith(query) for part in category_chinese_text.split())))
+        or (tokens and category_pinyin_text and all(len(token) >= 3 and token in category_pinyin_text for token in tokens))
         or _word_prefix_tokens_match(category_text, tokens)
         or (tokens and all(len(token) >= 4 and token in category_text for token in tokens))
     ))
     leaf_exact = any(part == query for part in leaf_parts)
     leaf_prefix = any(part.startswith(query) for part in leaf_parts)
-    leaf_contains = any(query in part for part in leaf_parts) if len(query) >= 4 else False
+    contains_threshold = 2 if re.search(r"[\u4e00-\u9fff]", query) else 4
+    leaf_contains = any(query in part for part in leaf_parts) if len(query) >= contains_threshold else False
     leaf_compact_exact = bool(compact_query and any(part == compact_query for part in compact_leaf_parts))
     leaf_compact_prefix = bool(compact_query and any(part.startswith(compact_query) for part in compact_leaf_parts))
-    leaf_compact_contains = bool(len(compact_query) >= 4 and any(compact_query in part for part in compact_leaf_parts))
+    leaf_compact_contains = bool(len(compact_query) >= contains_threshold and any(compact_query in part for part in compact_leaf_parts))
     root_exact = any(part == query for part in root_parts)
     path_text = " ".join([entry.category, entry.english])
     leaf_word_match = any(_word_prefix_tokens_match(part, tokens) for part in leaf_parts)
@@ -2172,6 +2237,41 @@ def _category_from_class_name(name: str) -> str:
         "uv": "UV",
     }
     return " > ".join(labels.get(token, token.replace("and", "&").title()) for token in tokens)
+
+
+def _fallback_category_for_node_type(node_type: str, english: str = "") -> str:
+    if not node_type.startswith("CompositorNode"):
+        return "Node"
+
+    name = _normalize(" ".join([node_type, english]))
+    if any(key in name for key in ("viewer", "output", "composite", "file output")):
+        return "Output"
+    if any(key in name for key in ("image", "movie", "mask", "render layers", "scene time", "time", "rgb", "value", "texture", "normal", "bokeh")):
+        return "Input"
+    if any(key in name for key in ("rotate", "scale", "translate", "transform", "flip", "crop", "corner pin", "plane track", "map uv", "stabilize")):
+        return "Transform"
+    if any(key in name for key in ("color", "hue", "saturation", "bright", "contrast", "exposure", "tonemap", "invert", "rgb curves")):
+        return "Color"
+    if any(key in name for key in ("key", "matte", "cryptomatte")):
+        return "Keying"
+    if any(key in name for key in ("blur", "glare", "filter", "denoise", "despeckle", "dilate", "erode", "inpaint", "kuwahara", "anti alias", "convolve")):
+        return "Filter"
+    if any(key in name for key in ("convert", "combine", "separate", "alpha", "zcombine", "switch", "mix")):
+        return "Converter"
+    return "Compositor"
+
+
+COMPOSITOR_MANUAL_ENTRIES = (
+    ("CompositorNodeGlare", "Filter", "Glare", "眩光"),
+    ("CompositorNodeSunBeams", "Filter", "Sun Beams", "日光束"),
+    ("CompositorNodeKuwahara", "Creative", "Kuwahara", "Kuwahara桑原滤镜"),
+    ("CompositorNodePixelate", "Creative", "Pixelate", "像素化"),
+    ("CompositorNodePosterize", "Creative", "Posterize", "色调分离"),
+    ("CompositorNodeAdjustImage", "Creative", "Adjust Image", "调整图像"),
+    ("CompositorNodeChromaticAberration", "Camera & Lens Effects", "Chromatic Aberration", "色差"),
+    ("CompositorNodeVignette", "Camera & Lens Effects", "Vignette", "暗角"),
+    ("CompositorNodeSensorNoise", "Camera & Lens Effects", "Sensor Noise", "传感器噪点"),
+)
 
 
 def _enum_items_for_node_property(node_type: str, property_name: str):
@@ -2644,16 +2744,6 @@ def _rebuild_search_entries(context):
                 )
             )
 
-    cached_entries = _load_search_index_cache(context) or _load_bundled_search_index(context)
-    if cached_entries is not None:
-        for entry in cached_entries:
-            add_entry(entry)
-            remember_key(entry)
-        add_zone_entries()
-        add_asset_library_entries()
-        add_local_groups()
-        return
-
     cacheable_entries: list[NodeSearchEntry] = []
 
     def add_cacheable_entry(entry: NodeSearchEntry):
@@ -2671,7 +2761,9 @@ def _rebuild_search_entries(context):
 
         bl_rna = bpy.types.Node.bl_rna_get_subclass(node_type)
         base_english = bl_rna.name if bl_rna and bl_rna.name else node_type
-        base_chinese = _translation_label(base_english)
+        if category == "Node":
+            category = _fallback_category_for_node_type(node_type, base_english)
+        base_chinese = variant_chinese if variant_chinese and not variant_label else _translation_label(base_english)
         if variant_label:
             english = f"{base_english} > {variant_label}"
             translated_variant = variant_chinese or _translation_label(variant_label)
@@ -2696,6 +2788,47 @@ def _rebuild_search_entries(context):
             )
         )
 
+    def add_compositor_manual_entries():
+        tree = getattr(getattr(context, "space_data", None), "edit_tree", None)
+        if not tree or tree.bl_idname != "CompositorNodeTree":
+            return
+        for node_type, category, english, chinese in COMPOSITOR_MANUAL_ENTRIES:
+            if not bpy.types.Node.bl_rna_get_subclass(node_type) and not getattr(bpy.types, node_type, None):
+                continue
+            key = (node_type, ())
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            label = _entry_label(english, chinese)
+            entry = NodeSearchEntry(
+                identifier=_safe_identifier("N", node_type, english),
+                category=category,
+                english=english,
+                chinese=chinese,
+                label=label,
+                description=english,
+                kind="NODE",
+                node_type=node_type,
+                search_text=_make_search_text(english, chinese, label, node_type),
+            )
+            add_entry(entry)
+            if cached_entries is None:
+                cacheable_entries.append(entry)
+
+    cached_entries = _load_search_index_cache(context) or _load_bundled_search_index(context)
+    if cached_entries is not None:
+        for entry in cached_entries:
+            add_entry(entry)
+            remember_key(entry)
+        add_compositor_manual_entries()
+        for cls in sorted(_iter_node_classes(), key=lambda item: getattr(item, "bl_label", "")):
+            add_builtin_entry(cls.bl_idname)
+        add_zone_entries()
+        add_asset_library_entries()
+        add_local_groups()
+        return
+
+    add_compositor_manual_entries()
     for node_type, category, variant_label, variant_chinese, settings in _iter_menu_entries(context):
         add_builtin_entry(node_type, category, variant_label, settings, trusted_menu=True, variant_chinese=variant_chinese)
 
@@ -3539,6 +3672,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
             clipboard = getattr(context.window_manager, "clipboard", "")
             if clipboard:
                 self._query += clipboard
+                self._selected_index = 0
+                self._scroll_offset = 0
                 self._hovered_result_index = None
                 self._keyboard_selection_active = False
                 self._refresh_results()
@@ -3548,6 +3683,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
         if event.unicode and not event.ctrl and not event.alt and not event.oskey and event.type not in {"RET", "NUMPAD_ENTER", "ESC", "BACK_SPACE", "DEL"}:
             self._query += event.unicode
+            self._selected_index = 0
+            self._scroll_offset = 0
             self._hovered_result_index = None
             self._keyboard_selection_active = False
             self._refresh_results()
@@ -3587,6 +3724,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     self._scroll_offset = self._selected_index - self._visible_limit + 1
             elif event.type == "BACK_SPACE":
                 self._query = self._query[:-1]
+                self._selected_index = 0
+                self._scroll_offset = 0
                 self._hovered_result_index = None
                 self._keyboard_selection_active = False
                 self._refresh_results()
@@ -3827,7 +3966,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             row_y = rows_top - (visible_index + 1) * row_height
             is_selected = index == self._selected_index
             is_hovered = index == self._hovered_result_index
-            is_emphasized = is_selected and (is_hovered or self._keyboard_selection_active)
+            is_emphasized = is_selected
             is_favorite = entry.identifier in self._favorites
 
             row_text_y = row_y + _scaled(7, scale)
