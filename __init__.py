@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.5"
+ADDON_VERSION = "0.9.6"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 5),
+    "version": (0, 9, 6),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -56,14 +56,14 @@ SHORTCUT_HEIGHT = 23
 SHORTCUT_GAP = 6
 CONTEXT_MENU_WIDTH = 190
 CONTEXT_MENU_ROW_HEIGHT = 30
-PANEL_BACKGROUND = (0.095, 0.095, 0.1, 1.0)
-FIELD_BACKGROUND = (0.12, 0.12, 0.125, 1.0)
+PANEL_BACKGROUND = (0.055, 0.055, 0.058, 1.0)
+FIELD_BACKGROUND = (0.075, 0.075, 0.078, 1.0)
 BORDER_COLOR = (0.24, 0.24, 0.25, 0.92)
-HIGHLIGHT_COLOR = (0.31, 0.31, 0.31, 1.0)
-HIGHLIGHT_BORDER_COLOR = (0.38, 0.38, 0.38, 0.85)
+HIGHLIGHT_COLOR = (0.25, 0.25, 0.25, 1.0)
+HIGHLIGHT_BORDER_COLOR = (0.27, 0.27, 0.27, 0.9)
 TEXT_COLOR = (0.88, 0.88, 0.9, 1.0)
-MUTED_TEXT_COLOR = (0.58, 0.58, 0.6, 1.0)
-SECONDARY_TEXT_COLOR = (0.435, 0.435, 0.45, 1.0)
+MUTED_TEXT_COLOR = (0.62, 0.62, 0.64, 1.0)
+SECONDARY_TEXT_COLOR = (0.54, 0.54, 0.56, 1.0)
 NODE_TYPE_COLORS = {
     "attribute": (0.12, 0.17, 0.36, 1.0),
     "input": (0.56, 0.23, 0.34, 1.0),
@@ -1576,13 +1576,17 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
     if entry.node_type.startswith("CompositorNode"):
         if entry.node_type == "CompositorNodeNormalize" or normalized_english == "normalize":
             return NODE_TYPE_COLORS["vector"]
+        if entry.node_type == "CompositorNodeMask" or normalized_english == "mask":
+            return NODE_TYPE_COLORS["input"]
+        if entry.node_type == "CompositorNodeFlip" or normalized_english == "flip":
+            return NODE_TYPE_COLORS["compositor_distort"]
         if "sensor noise" in normalized_english:
             return NODE_TYPE_COLORS["texture"]
         if "posterize" in normalized_english or "adjust image" in normalized_english:
             return NODE_TYPE_COLORS["color"]
         if entry.node_type == "CompositorNodeIDMask" or normalized_english == "id mask":
             return NODE_TYPE_COLORS["converter"]
-        if normalized_english == "mask" or any(part in {"keying", "mask", "matte"} for part in category_parts):
+        if any(part in {"keying", "mask", "matte"} for part in category_parts):
             return NODE_TYPE_COLORS["compositor_mask"]
         if any(word in normalized_english for word in ("distortion", "aberration", "vignette")):
             return NODE_TYPE_COLORS["compositor_distort"]
@@ -2113,6 +2117,12 @@ def _node_tree_allows_node(context, node_type: str) -> bool:
         return True
 
 
+def _entry_available_in_current_blender(context, entry: NodeSearchEntry) -> bool:
+    if entry.kind != "NODE":
+        return True
+    return _node_tree_allows_node(context, entry.node_type)
+
+
 def _iter_node_classes():
     global NODE_CLASS_CACHE
 
@@ -2617,6 +2627,8 @@ def _rebuild_search_entries(context):
     seen_keys = set()
 
     def add_entry(entry: NodeSearchEntry):
+        if not _entry_available_in_current_blender(context, entry):
+            return
         NODE_SEARCH_ENTRIES.append(entry)
         NODE_ENTRY_BY_ID[entry.identifier] = entry
 
@@ -2997,6 +3009,9 @@ def _store_cursor_location(context, event):
 
 
 def _add_builtin_node(context, entry: NodeSearchEntry):
+    if not _node_tree_allows_node(context, entry.node_type):
+        raise RuntimeError(f"Current Blender version does not support node type: {entry.node_type}")
+
     space = context.space_data
     edit_tree = space.edit_tree
 
@@ -3787,6 +3802,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 if not self._mouse_in_panel(event):
                     return self._finish(context, {"CANCELLED"})
             elif event.type == "RIGHTMOUSE":
+                if not self._mouse_in_panel(event):
+                    return self._finish(context, {"CANCELLED"})
                 self._open_context_menu(event, self._row_index_from_mouse(event))
             elif event.type == "MOUSEMOVE":
                 if self._context_menu_index is not None:
@@ -3925,6 +3942,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 shortcut_hovered = self._shortcut_hover == identifier
                 shortcut_fill, shortcut_border = _entry_type_colors(entry, active=shortcut_hovered)
                 shortcut_fill = _blend_color(shortcut_fill, 1.0, FIELD_BACKGROUND)
+                shortcut_fill = (shortcut_fill[0], shortcut_fill[1], shortcut_fill[2], 1.0)
+                shortcut_border = (shortcut_border[0], shortcut_border[1], shortcut_border[2], 1.0)
                 _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, max(3, radius - 1), shortcut_fill, shortcut_border)
                 shortcut_text_size = _scaled(13, scale)
                 delete_size = max(_scaled(13, scale), 11)
