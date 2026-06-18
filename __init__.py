@@ -2117,10 +2117,14 @@ def _node_tree_allows_node(context, node_type: str) -> bool:
         return True
 
 
+def _node_type_exists_in_current_blender(node_type: str) -> bool:
+    return bpy.types.Node.bl_rna_get_subclass(node_type) is not None or getattr(bpy.types, node_type, None) is not None
+
+
 def _entry_available_in_current_blender(context, entry: NodeSearchEntry) -> bool:
     if entry.kind != "NODE":
         return True
-    return _node_tree_allows_node(context, entry.node_type)
+    return _node_type_exists_in_current_blender(entry.node_type)
 
 
 def _iter_node_classes():
@@ -3009,7 +3013,7 @@ def _store_cursor_location(context, event):
 
 
 def _add_builtin_node(context, entry: NodeSearchEntry):
-    if not _node_tree_allows_node(context, entry.node_type):
+    if not _node_type_exists_in_current_blender(entry.node_type):
         raise RuntimeError(f"Current Blender version does not support node type: {entry.node_type}")
 
     space = context.space_data
