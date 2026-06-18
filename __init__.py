@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.7"
+ADDON_VERSION = "0.9.8"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 7),
+    "version": (0, 9, 8),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -1565,6 +1565,8 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
         return NODE_TYPE_COLORS["vector"]
     if entry.node_type in {"ShaderNodeVectorRotate", "ShaderNodeVectorMath", "ShaderNodeVectorCurve"}:
         return NODE_TYPE_COLORS["vector"]
+    if entry.node_type in {"ShaderNodeDisplacement", "ShaderNodeVectorDisplacement"} or first_category == "displacement":
+        return NODE_TYPE_COLORS["vector"]
     settings = dict(entry.settings)
     if entry.node_type == "ShaderNodeMix" and (settings.get("data_type") == "VECTOR" or "mix vector" in normalized_english):
         return NODE_TYPE_COLORS["vector"]
@@ -1591,14 +1593,14 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
             return NODE_TYPE_COLORS["compositor_mask"]
         if any(word in normalized_english for word in ("distortion", "aberration", "vignette")):
             return NODE_TYPE_COLORS["compositor_distort"]
-        if any(part in {"distort", "tracking", "camera & lens effects"} for part in category_parts):
+        if any(part in {"distort", "tracking", "camera & lens effects", "transform"} for part in category_parts):
             return NODE_TYPE_COLORS["compositor_distort"]
         if any(part in {"filter", "creative"} for part in category_parts):
             return NODE_TYPE_COLORS["compositor_filter"]
         if first_category in {"input", "output", "color", "vector"}:
             return NODE_TYPE_COLORS[first_category]
         if first_category in {"transform"}:
-            return NODE_TYPE_COLORS["vector"]
+            return NODE_TYPE_COLORS["compositor_distort"]
         if first_category in {"converter", "utilities"}:
             return NODE_TYPE_COLORS["converter"]
     if first_category in {"attribute", "input", "color", "output", "texture", "geometry", "vector"}:
@@ -1955,6 +1957,8 @@ def _dynamic_preferred_order(entry: NodeSearchEntry, query: str) -> int:
     match = _query_match_parts(entry, query)
     if match["leaf_exact"] or match["leaf_compact_exact"]:
         return 1_000
+    if match["leaf_prefix"] or match["leaf_compact_prefix"]:
+        return 1_020
     if match["is_primary"] and (match["leaf_word_match"] or match["leaf_compact_prefix"]):
         return 1_050
     if _has_visible_output_setting(entry) and match["root_word_match"]:
@@ -1963,8 +1967,6 @@ def _dynamic_preferred_order(entry: NodeSearchEntry, query: str) -> int:
         return 1_200
     if match["is_primary"] and (match["leaf_contains"] or match["leaf_compact_contains"]):
         return 1_400
-    if match["leaf_prefix"] or match["leaf_compact_prefix"]:
-        return 1_600
     if match["leaf_contains"] or match["leaf_compact_contains"]:
         return 1_800
     if match["leaf_pinyin_level"] >= 5:
@@ -2126,6 +2128,13 @@ def _entry_available_in_current_blender(context, entry: NodeSearchEntry) -> bool
     if entry.kind != "NODE":
         return True
     return _node_type_exists_in_current_blender(entry.node_type)
+
+
+def _is_redundant_mix_color_entry(entry: NodeSearchEntry) -> bool:
+    if entry.node_type != "ShaderNodeMix":
+        return False
+    settings = dict(entry.settings)
+    return settings.get("data_type") == "RGBA" and settings.get("blend_type") == "MIX"
 
 
 def _iter_node_classes():
@@ -2633,6 +2642,8 @@ def _rebuild_search_entries(context):
 
     def add_entry(entry: NodeSearchEntry):
         if not _entry_available_in_current_blender(context, entry):
+            return
+        if _is_redundant_mix_color_entry(entry):
             return
         NODE_SEARCH_ENTRIES.append(entry)
         NODE_ENTRY_BY_ID[entry.identifier] = entry
