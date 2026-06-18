@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.6"
+ADDON_VERSION = "0.9.7"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 6),
+    "version": (0, 9, 7),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -57,7 +57,7 @@ SHORTCUT_GAP = 6
 CONTEXT_MENU_WIDTH = 190
 CONTEXT_MENU_ROW_HEIGHT = 30
 PANEL_BACKGROUND = (0.055, 0.055, 0.058, 1.0)
-FIELD_BACKGROUND = (0.075, 0.075, 0.078, 1.0)
+FIELD_BACKGROUND = (0.055, 0.055, 0.058, 1.0)
 BORDER_COLOR = (0.24, 0.24, 0.25, 0.92)
 HIGHLIGHT_COLOR = (0.25, 0.25, 0.25, 1.0)
 HIGHLIGHT_BORDER_COLOR = (0.27, 0.27, 0.27, 0.9)
@@ -115,6 +115,7 @@ UI_TEXT_ZH = {
     "Add Favorite": "添加收藏",
     "Remove Favorite": "移除收藏",
     "Add Shortcut": "添加快捷节点",
+    "Remove Shortcut": "删除快捷节点",
     "Search Result Display": "搜索结果显示",
     "Enable Chinese Fuzzy Match": "启用中文模糊检索",
     "May slightly slow live search": "可能会略微降低实时搜索速度",
@@ -3301,6 +3302,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _search_height = SEARCH_HEIGHT
     _clear_button_rect = (0, 0, 0, 0)
     _context_menu_index = None
+    _context_menu_kind = None
+    _context_menu_shortcut = None
     _context_menu_rect = (0, 0, 0, 0)
     _context_menu_hover = None
     _anchor_x = 0
@@ -3313,9 +3316,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _visible_limit = MAX_RESULTS
     _shortcuts: list[str] = []
     _shortcut_rects: list[tuple[str, tuple[float, float, float, float]]] = []
-    _shortcut_delete_rects: list[tuple[str, tuple[float, float, float, float]]] = []
     _shortcut_hover = None
-    _shortcut_delete_hover = None
     _shortcut_hover_started = 0.0
     _hovered_result_index = None
     _keyboard_selection_active = False
@@ -3336,12 +3337,18 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
     def _refresh_results(self):
         self._results = _search_entries(self._query, self._favorites)
-        self._context_menu_index = None
+        self._close_context_menu()
         self._scroll_offset = min(self._scroll_offset, max(0, len(self._results) - 1))
         if not self._results:
             self._selected_index = 0
             return
         self._selected_index = max(0, min(self._selected_index, len(self._results) - 1))
+
+    def _close_context_menu(self):
+        self._context_menu_index = None
+        self._context_menu_kind = None
+        self._context_menu_shortcut = None
+        self._context_menu_hover = None
 
     def _capture_context_owner(self, context):
         self._owner_window = context.window.as_pointer() if context.window else None
@@ -3486,17 +3493,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 return identifier
         return None
 
-    def _shortcut_delete_identifier_from_mouse(self, event):
-        for identifier, rect in self._shortcut_delete_rects:
-            x, y, width, height = rect
-            if x <= event.mouse_region_x <= x + width and y <= event.mouse_region_y <= y + height:
-                return identifier
-        return None
-
     def _update_shortcut_hover(self, event):
-        delete_identifier = self._shortcut_delete_identifier_from_mouse(event)
         identifier = self._shortcut_identifier_from_mouse(event)
-        self._shortcut_delete_hover = delete_identifier
         if identifier != self._shortcut_hover:
             self._shortcut_hover = identifier
             self._shortcut_hover_started = time.monotonic() if identifier else 0.0
@@ -3523,6 +3521,11 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._keyboard_selection_active = False
         self._refresh_results()
 
+    def _context_menu_items(self):
+        if self._context_menu_kind == "SHORTCUT":
+            return (("REMOVE_SHORTCUT", _ui_text("Remove Shortcut")),)
+        return (("FAVORITE", _ui_text("Add Favorite")), ("UNFAVORITE", _ui_text("Remove Favorite")), ("SHORTCUT", _ui_text("Add Shortcut")))
+
     def _context_menu_action_from_mouse(self, event):
         x, y, width, height = self._context_menu_rect
         mouse_x = event.mouse_region_x
@@ -3530,8 +3533,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if mouse_x < x or mouse_x > x + width or mouse_y < y or mouse_y > y + height:
             return None
 
-        row = int((y + height - mouse_y) // (height / 3))
-        return ("FAVORITE", "UNFAVORITE", "SHORTCUT")[max(0, min(2, row))]
+        items = self._context_menu_items()
+        row = int((y + height - mouse_y) // (height / len(items)))
+        return items[max(0, min(len(items) - 1, row))][0]
 
     def _update_context_menu_hover(self, event):
         self._context_menu_hover = self._context_menu_action_from_mouse(event)
@@ -3556,16 +3560,44 @@ class ENS_AddNodeByEnglishSearch(Operator):
             return
 
         self._context_menu_index = index
+        self._context_menu_kind = "RESULT"
+        self._context_menu_shortcut = None
         scale = _ui_scale()
         width = _scaled(CONTEXT_MENU_WIDTH, scale)
         row_height = _scaled(CONTEXT_MENU_ROW_HEIGHT, scale)
         x = event.mouse_region_x
-        y = event.mouse_region_y - row_height * 3
+        menu_height = row_height * len(self._context_menu_items())
+        y = event.mouse_region_y - menu_height
         if self._panel_rect[2]:
             panel_x, panel_y, panel_width, panel_height = self._panel_rect
             x = min(max(panel_x, x), panel_x + panel_width - width)
-            y = min(max(panel_y, y), panel_y + panel_height - row_height * 3)
-        self._context_menu_rect = (x, y, width, row_height * 3)
+            y = min(max(panel_y, y), panel_y + panel_height - menu_height)
+        self._context_menu_rect = (x, y, width, menu_height)
+        self._context_menu_hover = self._context_menu_action_from_mouse(event)
+
+    def _open_shortcut_context_menu(self, event, identifier: str):
+        self._context_menu_index = None
+        self._context_menu_kind = "SHORTCUT"
+        self._context_menu_shortcut = identifier
+        scale = _ui_scale()
+        label_size = _scaled(13, scale)
+        label_width = _text_width(_ui_text("Remove Shortcut"), label_size)
+        width = max(_scaled(82, scale), label_width + _scaled(24, scale))
+        row_height = _scaled(CONTEXT_MENU_ROW_HEIGHT, scale)
+        menu_height = row_height * len(self._context_menu_items())
+        shortcut_rect = next((rect for shortcut_id, rect in self._shortcut_rects if shortcut_id == identifier), None)
+        if shortcut_rect:
+            shortcut_x, shortcut_y, shortcut_width, _shortcut_height = shortcut_rect
+            x = shortcut_x + (shortcut_width - width) / 2
+            y = shortcut_y - menu_height - _scaled(8, scale)
+        else:
+            x = event.mouse_region_x
+            y = event.mouse_region_y - menu_height
+        if self._panel_rect[2]:
+            panel_x, panel_y, panel_width, panel_height = self._panel_rect
+            x = min(max(panel_x, x), panel_x + panel_width - width)
+            y = max(1, y)
+        self._context_menu_rect = (x, y, width, menu_height)
         self._context_menu_hover = self._context_menu_action_from_mouse(event)
 
     def _scroll_results(self, amount: int) -> bool:
@@ -3626,8 +3658,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
         self._query = ""
         self._selected_index = 0
-        self._context_menu_index = None
-        self._context_menu_hover = None
+        self._close_context_menu()
         self._anchor_x = event.mouse_region_x
         self._anchor_y = event.mouse_region_y
         self._panel_x = None
@@ -3712,7 +3743,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             return {"RUNNING_MODAL"}
 
         if event.type in {"WHEELUPMOUSE", "WHEELDOWNMOUSE", "WHEELINMOUSE", "WHEELOUTMOUSE", "TRACKPADPAN", "MOUSEPAN"}:
-            if self._context_menu_index is not None:
+            if self._context_menu_kind is not None:
                 return {"RUNNING_MODAL"}
             amount = self._scroll_amount_from_event(event)
             if amount:
@@ -3751,10 +3782,15 @@ class ENS_AddNodeByEnglishSearch(Operator):
             elif event.type == "DEL":
                 self._clear_query()
             elif event.type == "LEFTMOUSE":
-                if self._context_menu_index is not None:
+                if self._context_menu_kind is not None:
                     action = self._context_menu_action_from_mouse(event)
-                    entry = self._results[self._context_menu_index] if self._context_menu_index < len(self._results) else None
-                    if action == "FAVORITE":
+                    entry = self._results[self._context_menu_index] if self._context_menu_index is not None and self._context_menu_index < len(self._results) else None
+                    if action == "REMOVE_SHORTCUT" and self._context_menu_shortcut:
+                        _remove_shortcut(self._context_menu_shortcut)
+                        self._shortcuts = _load_shortcuts()
+                        self._shortcut_hover = None
+                        self._close_context_menu()
+                    elif action == "FAVORITE":
                         self._set_favorite(self._context_menu_index, True)
                     elif action == "UNFAVORITE":
                         self._set_favorite(self._context_menu_index, False)
@@ -3763,12 +3799,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         self._favorite_meta[entry.identifier] = entry.label
                         _save_favorites(self._favorites, self._favorite_meta)
                         self._shortcuts = _load_shortcuts()
-                        self._context_menu_index = None
+                        self._close_context_menu()
                         self._query = ""
                         self._scroll_offset = 0
                         self._refresh_results()
                     else:
-                        self._context_menu_index = None
+                        self._close_context_menu()
                         if not self._mouse_in_panel(event):
                             return self._finish(context, {"CANCELLED"})
                     if context.area:
@@ -3786,16 +3822,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     self._selected_index = index
                     return self._confirm(context, event)
 
-                shortcut_delete_identifier = self._shortcut_delete_identifier_from_mouse(event)
-                if shortcut_delete_identifier:
-                    _remove_shortcut(shortcut_delete_identifier)
-                    self._shortcuts = _load_shortcuts()
-                    self._shortcut_hover = None
-                    self._shortcut_delete_hover = None
-                    if context.area:
-                        context.area.tag_redraw()
-                    return {"RUNNING_MODAL"}
-
                 shortcut_identifier = self._shortcut_identifier_from_mouse(event)
                 if shortcut_identifier:
                     entry = self._entry_from_identifier(shortcut_identifier)
@@ -3808,9 +3834,15 @@ class ENS_AddNodeByEnglishSearch(Operator):
             elif event.type == "RIGHTMOUSE":
                 if not self._mouse_in_panel(event):
                     return self._finish(context, {"CANCELLED"})
+                shortcut_identifier = self._shortcut_identifier_from_mouse(event)
+                if shortcut_identifier:
+                    self._open_shortcut_context_menu(event, shortcut_identifier)
+                    if context.area:
+                        context.area.tag_redraw()
+                    return {"RUNNING_MODAL"}
                 self._open_context_menu(event, self._row_index_from_mouse(event))
             elif event.type == "MOUSEMOVE":
-                if self._context_menu_index is not None:
+                if self._context_menu_kind is not None:
                     self._update_context_menu_hover(event)
                     if context.area:
                         context.area.tag_redraw()
@@ -3822,9 +3854,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     self._selected_index = index
                     self._keyboard_selection_active = False
                 old_hover = self._shortcut_hover
-                old_delete_hover = self._shortcut_delete_hover
                 self._update_shortcut_hover(event)
-                if (old_hover != self._shortcut_hover or old_delete_hover != self._shortcut_delete_hover) and context.area:
+                if old_hover != self._shortcut_hover and context.area:
                     context.area.tag_redraw()
 
             if context.area:
@@ -3832,7 +3863,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             return {"RUNNING_MODAL"}
 
         if event.type == "MOUSEMOVE":
-            if self._context_menu_index is not None:
+            if self._context_menu_kind is not None:
                 old_hover = self._context_menu_hover
                 self._update_context_menu_hover(event)
                 if old_hover != self._context_menu_hover and context.area:
@@ -3851,9 +3882,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
             elif old_result_hover != self._hovered_result_index and context.area:
                 context.area.tag_redraw()
             old_hover = self._shortcut_hover
-            old_delete_hover = self._shortcut_delete_hover
             self._update_shortcut_hover(event)
-            if (old_hover != self._shortcut_hover or old_delete_hover != self._shortcut_delete_hover) and context.area:
+            if old_hover != self._shortcut_hover and context.area:
                 context.area.tag_redraw()
 
         return {"RUNNING_MODAL"}
@@ -3931,7 +3961,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
             _draw_centered_text("x", clear_x, clear_y, clear_size, clear_size, max(9, _scaled(9, scale)), (0.52, 0.52, 0.54, 0.90))
 
         self._shortcut_rects = []
-        self._shortcut_delete_rects = []
         shortcuts_y = search_y - shortcut_gap - shortcut_visual_offset - shortcut_height
         if show_shortcuts:
             item_gap = _scaled(5, scale)
@@ -3950,36 +3979,34 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 shortcut_border = (shortcut_border[0], shortcut_border[1], shortcut_border[2], 1.0)
                 _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, max(3, radius - 1), shortcut_fill, shortcut_border)
                 shortcut_text_size = _scaled(13, scale)
-                delete_size = max(_scaled(13, scale), 11)
-                delete_x = item_x + item_width - delete_size - _scaled(4, scale)
-                delete_y = shortcuts_y + shortcut_height - delete_size - _scaled(4, scale)
-                delete_visible = self._shortcut_hover == identifier
-                delete_hovered = False
-                if delete_visible:
-                    delete_rect = (delete_x, delete_y, delete_size, delete_size)
-                    self._shortcut_delete_rects.append((identifier, delete_rect))
                 shortcut_text_x = item_x + _scaled(10, scale)
                 shortcut_text_y = shortcuts_y + _scaled(7, scale)
-                shortcut_text = _fit_text(_abbreviate_label(_entry_primary_label(entry)), item_width - _scaled(21, scale), shortcut_text_size)
+                shortcut_text = _fit_text(_abbreviate_label(_entry_primary_label(entry)), item_width - _scaled(18, scale), shortcut_text_size)
                 shortcut_text_color = MUTED_TEXT_COLOR if shortcut_hovered else SECONDARY_TEXT_COLOR
                 _draw_text(shortcut_text, shortcut_text_x, shortcut_text_y, shortcut_text_size, shortcut_text_color)
-                if delete_visible:
-                    x_size = max(10, _scaled(10, scale))
-                    delete_hovered = self._shortcut_delete_hover == identifier
-                    if delete_hovered:
-                        _draw_rounded_rect(delete_x, delete_y, delete_size, delete_size, delete_size / 2, (0.42, 0.42, 0.44, 0.96))
-                        x_color = (0.92, 0.92, 0.94, 1.0)
-                    else:
-                        x_color = (0.50, 0.50, 0.52, 0.82)
-                    _draw_centered_text("x", delete_x, delete_y, delete_size, delete_size, x_size, x_color)
+
+        def draw_context_menu():
+            if self._context_menu_kind is None:
+                return
+            menu_x, menu_y, menu_width, menu_height = self._context_menu_rect
+            labels = self._context_menu_items()
+            menu_row_height = menu_height / len(labels)
+            _draw_rounded_panel(menu_x, menu_y, menu_width, menu_height, radius, PANEL_BACKGROUND)
+            for index, (action, label) in enumerate(labels):
+                row_y = menu_y + menu_height - (index + 1) * menu_row_height
+                if self._context_menu_hover == action:
+                    _draw_rounded_panel(menu_x + 4, row_y + 3, menu_width - 8, menu_row_height - 6, max(3, radius - 2), HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
+                _draw_text_vcenter(label, menu_x + _scaled(12, scale), row_y + _scaled(3, scale), menu_row_height, _scaled(13, scale), TEXT_COLOR)
 
         rows_top = search_y - shortcuts_height - gap
         self._rows_top = rows_top
         if not has_query:
+            draw_context_menu()
             return
 
         if not self._results:
             _draw_text(_ui_text("No results found"), x + padding + _scaled(8, scale), rows_top - _scaled(20, scale), _scaled(13, scale), TEXT_COLOR)
+            draw_context_menu()
             return
 
         category_color_mode = _category_color_mode()
@@ -4047,16 +4074,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if has_query and len(self._results) > self._scroll_offset + rows:
             _draw_text("▼", x + width / 2 - _scaled(4, scale), y + _scaled(4, scale), _scaled(12, scale), TEXT_COLOR)
 
-        if self._context_menu_index is not None:
-            menu_x, menu_y, menu_width, menu_height = self._context_menu_rect
-            menu_row_height = menu_height / 3
-            _draw_rounded_panel(menu_x, menu_y, menu_width, menu_height, radius, PANEL_BACKGROUND)
-            labels = (("FAVORITE", _ui_text("Add Favorite")), ("UNFAVORITE", _ui_text("Remove Favorite")), ("SHORTCUT", _ui_text("Add Shortcut")))
-            for index, (action, label) in enumerate(labels):
-                row_y = menu_y + menu_height - (index + 1) * menu_row_height
-                if self._context_menu_hover == action:
-                    _draw_rounded_panel(menu_x + 4, row_y + 3, menu_width - 8, menu_row_height - 6, max(3, radius - 2), HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
-                _draw_text(label, menu_x + _scaled(12, scale), row_y + _scaled(8, scale), _scaled(13, scale), TEXT_COLOR)
+        draw_context_menu()
 
         if (
             self._shortcut_hover
