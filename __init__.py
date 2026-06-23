@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.9"
+ADDON_VERSION = "0.9.10"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 9),
+    "version": (0, 9, 10),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -54,8 +54,9 @@ ROW_HEIGHT = 26
 PANEL_PADDING = 8
 SHORTCUT_HEIGHT = 23
 SHORTCUT_GAP = 6
-CONTEXT_MENU_WIDTH = 190
-CONTEXT_MENU_ROW_HEIGHT = 30
+CONTEXT_MENU_WIDTH = 143
+CONTEXT_MENU_ROW_HEIGHT = 26
+CONTEXT_MENU_TEXT_Y_OFFSET = 1
 PANEL_BACKGROUND = (0.055, 0.055, 0.058, 1.0)
 FIELD_BACKGROUND = (0.055, 0.055, 0.058, 1.0)
 BORDER_COLOR = (0.24, 0.24, 0.25, 0.92)
@@ -1463,6 +1464,18 @@ def _entry_primary_label(entry: NodeSearchEntry) -> str:
     if display_mode in {"CHINESE", "CHINESE_ENGLISH"} and entry.chinese != entry.english:
         return entry.chinese
     return entry.english
+
+
+def _entry_shortcut_label(entry: NodeSearchEntry) -> str:
+    english_parts = [part.strip() for part in entry.english.split(" > ") if part.strip()]
+    chinese_parts = [part.strip() for part in entry.chinese.split(" > ") if part.strip()]
+    if len(english_parts) <= 1:
+        return _entry_primary_label(entry)
+
+    display_mode = _display_mode()
+    if display_mode in {"CHINESE", "CHINESE_ENGLISH"} and len(chinese_parts) == len(english_parts):
+        return chinese_parts[-1]
+    return english_parts[-1]
 
 
 def _entry_display_label(identifier: str, fallback: str = "") -> str:
@@ -4010,7 +4023,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 shortcut_text_size = _scaled(13, scale)
                 shortcut_text_x = item_x + _scaled(10, scale)
                 shortcut_text_y = shortcuts_y + _scaled(7, scale)
-                shortcut_text = _fit_text(_abbreviate_label(_entry_primary_label(entry)), item_width - _scaled(18, scale), shortcut_text_size)
+                shortcut_text = _fit_text(_abbreviate_label(_entry_shortcut_label(entry)), item_width - _scaled(18, scale), shortcut_text_size)
                 shortcut_text_color = MUTED_TEXT_COLOR if shortcut_hovered else SECONDARY_TEXT_COLOR
                 _draw_text(shortcut_text, shortcut_text_x, shortcut_text_y, shortcut_text_size, shortcut_text_color)
 
@@ -4025,7 +4038,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 row_y = menu_y + menu_height - (index + 1) * menu_row_height
                 if self._context_menu_hover == action:
                     _draw_rounded_panel(menu_x + 4, row_y + 3, menu_width - 8, menu_row_height - 6, max(3, radius - 2), HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
-                _draw_text_vcenter(label, menu_x + _scaled(12, scale), row_y + _scaled(3, scale), menu_row_height, _scaled(13, scale), TEXT_COLOR)
+                _draw_text_vcenter(label, menu_x + _scaled(12, scale), row_y + _scaled(CONTEXT_MENU_TEXT_Y_OFFSET, scale), menu_row_height, _scaled(13, scale), TEXT_COLOR)
 
         rows_top = search_y - shortcuts_height - gap
         self._rows_top = rows_top
