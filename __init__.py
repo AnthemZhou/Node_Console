@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.10"
+ADDON_VERSION = "0.9.11"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 10),
+    "version": (0, 9, 11),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -62,6 +62,7 @@ FIELD_BACKGROUND = (0.055, 0.055, 0.058, 1.0)
 BORDER_COLOR = (0.24, 0.24, 0.25, 0.92)
 HIGHLIGHT_COLOR = (0.25, 0.25, 0.25, 1.0)
 HIGHLIGHT_BORDER_COLOR = (0.27, 0.27, 0.27, 0.9)
+CONTEXT_MENU_DIM_COLOR = (0.055, 0.055, 0.058, 0.8)
 TEXT_COLOR = (0.88, 0.88, 0.9, 1.0)
 MUTED_TEXT_COLOR = (0.62, 0.62, 0.64, 1.0)
 SECONDARY_TEXT_COLOR = (0.54, 0.54, 0.56, 1.0)
@@ -3218,9 +3219,21 @@ def _draw_rounded_rect(
 ):
     shader = _uniform_shader()
     batch = batch_for_shader(shader, "TRI_FAN", {"pos": _rounded_rect_vertices(x, y, width, height, radius)})
+    previous_blend = None
+    if color[3] < 1.0:
+        try:
+            previous_blend = gpu.state.blend_get()
+            gpu.state.blend_set("ALPHA")
+        except Exception:
+            previous_blend = None
     shader.bind()
     shader.uniform_float("color", color)
     batch.draw(shader)
+    if color[3] < 1.0 and previous_blend is not None:
+        try:
+            gpu.state.blend_set(previous_blend)
+        except Exception:
+            pass
 
 
 def _draw_rounded_panel(
@@ -3879,7 +3892,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     if context.area:
                         context.area.tag_redraw()
                     return {"RUNNING_MODAL"}
-                self._open_context_menu(event, self._row_index_from_mouse(event))
+                index = self._row_index_from_mouse(event)
+                if index is not None:
+                    self._selected_index = index
+                    self._hovered_result_index = index
+                    self._keyboard_selection_active = False
+                self._open_context_menu(event, index)
             elif event.type == "MOUSEMOVE":
                 if self._context_menu_kind is not None:
                     self._update_context_menu_hover(event)
@@ -4058,7 +4076,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
             row_y = rows_top - (visible_index + 1) * row_height
             is_selected = index == self._selected_index
             is_hovered = index == self._hovered_result_index
-            is_emphasized = is_selected
+            context_menu_target = self._context_menu_kind == "RESULT" and self._context_menu_index == index
+            context_menu_dimmed = self._context_menu_kind == "RESULT" and self._context_menu_index is not None and not context_menu_target
+            is_emphasized = is_selected or context_menu_target
             is_favorite = entry.identifier in self._favorites
 
             row_text_y = row_y + _scaled(7, scale)
@@ -4112,6 +4132,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 fav_y = row_y + (row_height - fav_height) / 2
                 favorite_strength = 0.66 if is_emphasized else 0.5
                 _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), _multiply_color(secondary_row_color, favorite_strength))
+            if context_menu_dimmed:
+                _draw_rounded_rect(x + padding, block_y, search_width, block_height, block_radius, CONTEXT_MENU_DIM_COLOR)
 
         if has_query and len(self._results) > self._scroll_offset + rows:
             _draw_text("▼", x + width / 2 - _scaled(4, scale), y + _scaled(4, scale), _scaled(12, scale), TEXT_COLOR)
