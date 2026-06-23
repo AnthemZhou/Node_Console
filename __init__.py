@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.11"
+ADDON_VERSION = "0.9.12"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 11),
+    "version": (0, 9, 12),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -62,7 +62,7 @@ FIELD_BACKGROUND = (0.055, 0.055, 0.058, 1.0)
 BORDER_COLOR = (0.24, 0.24, 0.25, 0.92)
 HIGHLIGHT_COLOR = (0.25, 0.25, 0.25, 1.0)
 HIGHLIGHT_BORDER_COLOR = (0.27, 0.27, 0.27, 0.9)
-CONTEXT_MENU_DIM_COLOR = (0.055, 0.055, 0.058, 0.8)
+CONTEXT_MENU_DIM_COLOR = (0.055, 0.055, 0.058, 0.83)
 TEXT_COLOR = (0.88, 0.88, 0.9, 1.0)
 MUTED_TEXT_COLOR = (0.62, 0.62, 0.64, 1.0)
 SECONDARY_TEXT_COLOR = (0.54, 0.54, 0.56, 1.0)
@@ -1565,6 +1565,10 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
         return NODE_TYPE_COLORS["geometry"]
     if normalized_english == "string to curve":
         return NODE_TYPE_COLORS["geometry"]
+    if normalized_english == "set material index":
+        return NODE_TYPE_COLORS["geometry"]
+    if normalized_english == "shader to rgb":
+        return NODE_TYPE_COLORS["converter"]
     if entry.node_type in {"ShaderNodeValToRGB", "TextureNodeValToRGB"} or normalized_english == "color ramp":
         return NODE_TYPE_COLORS["converter"]
     if normalized_english in {"combine color", "separate color"}:
