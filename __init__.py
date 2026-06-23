@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.8"
+ADDON_VERSION = "0.9.9"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 8),
+    "version": (0, 9, 9),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -2096,6 +2096,20 @@ def _primary_match_order(entry: NodeSearchEntry, query: str) -> int:
     return 8
 
 
+def _deprecated_sort_penalty(entry: NodeSearchEntry, query: str) -> int:
+    query = _normalize(query)
+    if not query:
+        return 0
+    category = _normalize(entry.category)
+    if "deprecated" not in category:
+        return 0
+    english = _normalize(entry.english)
+    chinese = _normalize(entry.chinese)
+    if query in english or query in chinese or any(part.startswith(query) for part in (english.split() + chinese.split())):
+        return 1
+    return 0
+
+
 def _node_tree_allows_node(context, node_type: str) -> bool:
     space = context.space_data
     node_tree = getattr(space, "edit_tree", None)
@@ -3002,7 +3016,8 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
         match = _query_match_parts(entry, query)
         output_sort = entry.english.lower() if _has_visible_output_setting(entry) and match["root_word_match"] else ""
         leaf_sort = _leaf_prefix_sort_key(entry, query)
-        return (not item[2], item[7], leaf_sort, item[5], item[6], output_sort, not item[1], item[4], -item[0], item[3])
+        deprecated_penalty = _deprecated_sort_penalty(entry, query)
+        return (not item[2], item[7], leaf_sort, item[5], item[6], output_sort, not item[1], deprecated_penalty, item[4], -item[0], item[3])
 
     scored.sort(key=sort_key)
     return [item[-1] for item in scored]
@@ -3628,10 +3643,10 @@ class ENS_AddNodeByEnglishSearch(Operator):
     def _scroll_amount_from_event(self, event) -> int:
         if event.type in {"WHEELDOWNMOUSE", "WHEELOUTMOUSE"}:
             self._scroll_remainder = 0.0
-            return -1
+            return 1
         if event.type in {"WHEELUPMOUSE", "WHEELINMOUSE"}:
             self._scroll_remainder = 0.0
-            return 1
+            return -1
         if event.type in {"TRACKPADPAN", "MOUSEPAN"}:
             delta_y = getattr(event, "mouse_prev_y", event.mouse_region_y) - getattr(event, "mouse_y", event.mouse_region_y)
             if delta_y == 0:
@@ -3951,6 +3966,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         query_color = TEXT_COLOR if self._query else SECONDARY_TEXT_COLOR
         query_size = _scaled(13, scale)
         search_text_y = search_y + (search_height - _scaled(13, scale)) / 2 + _scaled(1, scale)
+        query_text_y = search_text_y + _scaled(1, scale)
         _draw_text("⌕", x + padding + _scaled(10, scale), search_text_y - _scaled(1, scale), _scaled(20, scale), MUTED_TEXT_COLOR)
         query_x = x + padding + _scaled(32, scale)
         text_x = query_x if self._query else query_x + _scaled(9, scale)
@@ -3963,7 +3979,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         else:
             self._clear_button_rect = (0, 0, 0, 0)
             text_max_width = search_width - (text_x - (x + padding)) - _scaled(8, scale)
-        _draw_text(_clip_text(query_text, text_max_width, query_size), text_x, search_text_y, query_size, query_color)
+        _draw_text(_clip_text(query_text, text_max_width, query_size), text_x, query_text_y, query_size, query_color)
         if int(time.monotonic() * 2) % 2 == 0:
             cursor_x = query_x + min(_text_width(self._query, query_size), text_max_width) + _scaled(2, scale)
             _draw_rect(cursor_x, search_y + _scaled(5, scale), max(1, _scaled(1, scale)), search_height - _scaled(10, scale), TEXT_COLOR)
