@@ -3017,7 +3017,7 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
         output_sort = entry.english.lower() if _has_visible_output_setting(entry) and match["root_word_match"] else ""
         leaf_sort = _leaf_prefix_sort_key(entry, query)
         deprecated_penalty = _deprecated_sort_penalty(entry, query)
-        return (not item[2], item[7], leaf_sort, item[5], item[6], output_sort, not item[1], deprecated_penalty, item[4], -item[0], item[3])
+        return (not item[2], item[7], deprecated_penalty, leaf_sort, item[5], item[6], output_sort, not item[1], item[4], -item[0], item[3])
 
     scored.sort(key=sort_key)
     return [item[-1] for item in scored]
