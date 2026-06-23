@@ -3966,7 +3966,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
         query_color = TEXT_COLOR if self._query else SECONDARY_TEXT_COLOR
         query_size = _scaled(13, scale)
         search_text_y = search_y + (search_height - _scaled(13, scale)) / 2 + _scaled(1, scale)
-        query_text_y = search_text_y + _scaled(1, scale)
+        input_text_y = search_text_y + _scaled(1, scale)
+        placeholder_text_y = search_text_y
         _draw_text("⌕", x + padding + _scaled(10, scale), search_text_y - _scaled(1, scale), _scaled(20, scale), MUTED_TEXT_COLOR)
         query_x = x + padding + _scaled(32, scale)
         text_x = query_x if self._query else query_x + _scaled(9, scale)
@@ -3979,7 +3980,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
         else:
             self._clear_button_rect = (0, 0, 0, 0)
             text_max_width = search_width - (text_x - (x + padding)) - _scaled(8, scale)
-        _draw_text(_clip_text(query_text, text_max_width, query_size), text_x, query_text_y, query_size, query_color)
+        text_y = input_text_y if self._query else placeholder_text_y
+        _draw_text(_clip_text(query_text, text_max_width, query_size), text_x, text_y, query_size, query_color)
         if int(time.monotonic() * 2) % 2 == 0:
             cursor_x = query_x + min(_text_width(self._query, query_size), text_max_width) + _scaled(2, scale)
             _draw_rect(cursor_x, search_y + _scaled(5, scale), max(1, _scaled(1, scale)), search_height - _scaled(10, scale), TEXT_COLOR)
