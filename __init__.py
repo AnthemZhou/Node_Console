@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.13"
+ADDON_VERSION = "0.9.14"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 13),
+    "version": (0, 9, 14),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -36,6 +36,10 @@ bl_info = {
 
 ADDON_ID = __name__
 KEYMAP_ITEMS = []
+DISABLED_KEYMAP_ITEMS = []
+OFFICIAL_SHIFT_A_ITEMS = []
+KEYMAP_CONFLICT_LABELS = []
+SHORTCUT_UPDATE_SUSPENDED = False
 NODE_SEARCH_ENTRIES: list["NodeSearchEntry"] = []
 ACTIVE_CONSOLE_OPERATOR = None
 MENU_ENTRY_CACHE: dict[str, list[tuple[str, str, str, str, tuple[tuple[str, str], ...]]]] = {}
@@ -48,7 +52,9 @@ TEXT_WIDTH_CACHE: dict[tuple[str, int], float] = {}
 
 FONT_ID = 0
 MAX_RESULTS = 12
-PANEL_WIDTH = 404
+PANEL_WIDTH = 400
+PANEL_MIN_WIDTH = 320
+PANEL_MAX_WIDTH = 720
 SEARCH_HEIGHT = 23
 ROW_HEIGHT = 26
 PANEL_PADDING = 8
@@ -128,6 +134,12 @@ UI_TEXT_ZH = {
     "Off": "关闭",
     "Cached Assets": "已缓存资产",
     "Console Size": "搜索窗口大小",
+    "Console Width": "搜索窗口宽度",
+    "Reset Width": "恢复默认宽度",
+    "Reset Shortcut": "恢复默认快捷键",
+    "Shortcut conflict": "快捷键冲突",
+    "This shortcut temporarily overrides": "当前快捷键会临时覆盖",
+    "The original shortcut will be restored after changing Node Console to a non-conflicting shortcut.": "当 Node Console 改为不冲突的快捷键后，原快捷键会自动恢复。",
     "Refresh Asset Index": "刷新资产索引",
     "Shortcut": "快捷键",
     "Command": "Command",
@@ -1023,6 +1035,7 @@ def _save_preference_settings():
             "shortcut_oskey": prefs.shortcut_oskey,
             "scan_asset_libraries": prefs.scan_asset_libraries,
             "category_color_mode": prefs.category_color_mode,
+            "console_width": prefs.console_width,
             "settings_version": 2,
         }
     )
@@ -1041,7 +1054,7 @@ def _load_preferences_from_settings():
         _write_settings(data)
     if "category_color_mode" not in data and "show_category_color_tags" in data:
         data["category_color_mode"] = "BLOCK" if data.get("show_category_color_tags") else "OFF"
-    for name in ("display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "scan_asset_libraries", "category_color_mode"):
+    for name in ("display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "scan_asset_libraries", "category_color_mode", "console_width"):
         if name in data:
             try:
                 setattr(prefs, name, data[name])
@@ -1062,6 +1075,14 @@ def _ui_scale() -> float:
     prefs = _preferences()
     addon_scale = max(0.5, min(2.0, prefs.ui_scale)) if prefs else 1.0
     return addon_scale * 1.7 * _resolution_scale()
+
+
+def _console_width() -> float:
+    prefs = _preferences()
+    value = getattr(prefs, "console_width", PANEL_WIDTH) if prefs else PANEL_WIDTH
+    if not isinstance(value, (int, float)):
+        return float(PANEL_WIDTH)
+    return max(PANEL_MIN_WIDTH, min(PANEL_MAX_WIDTH, float(value)))
 
 
 def _scaled(value: float, scale: float) -> float:
@@ -1350,6 +1371,8 @@ def _visual_preference_changed(_self, _context):
 
 
 def _shortcut_changed(_self, _context):
+    if SHORTCUT_UPDATE_SUSPENDED:
+        return
     _save_preference_settings()
     refresh_keymap()
 
@@ -3357,6 +3380,13 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _padding = PANEL_PADDING
     _search_height = SEARCH_HEIGHT
     _clear_button_rect = (0, 0, 0, 0)
+    _search_field_rect = (0, 0, 0, 0)
+    _resize_handle_rect = (0, 0, 0, 0)
+    _resizing_width = False
+    _resize_handle_hover = False
+    _resize_start_mouse_x = 0
+    _resize_start_width = PANEL_WIDTH
+    _resize_live_width = None
     _context_menu_index = None
     _context_menu_kind = None
     _context_menu_shortcut = None
@@ -3568,6 +3598,36 @@ class ENS_AddNodeByEnglishSearch(Operator):
         x, y, width, height = self._clear_button_rect
         return x <= event.mouse_region_x <= x + width and y <= event.mouse_region_y <= y + height
 
+    def _resize_handle_from_mouse(self, event) -> bool:
+        x, y, width, height = self._resize_handle_rect
+        return width > 0 and x <= event.mouse_region_x <= x + width and y <= event.mouse_region_y <= y + height
+
+    def _console_width_for_draw(self) -> float:
+        if self._resizing_width and isinstance(self._resize_live_width, (int, float)):
+            return max(PANEL_MIN_WIDTH, min(PANEL_MAX_WIDTH, float(self._resize_live_width)))
+        return _console_width()
+
+    def _set_console_width_from_mouse(self, context, event, *, save: bool):
+        scale = _ui_scale()
+        if scale <= 0:
+            return
+        delta = (event.mouse_region_x - self._resize_start_mouse_x) / scale
+        value = max(PANEL_MIN_WIDTH, min(PANEL_MAX_WIDTH, self._resize_start_width + delta))
+        self._resize_live_width = value
+        if not save:
+            if context.area:
+                context.area.tag_redraw()
+            return
+        prefs = _preferences()
+        if prefs:
+            prefs.console_width = value
+        else:
+            data = _load_settings()
+            data["console_width"] = value
+            _write_settings(data)
+        if context.area:
+            context.area.tag_redraw()
+
     def _clear_query(self):
         self._query = ""
         self._selected_index = 0
@@ -3578,6 +3638,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._refresh_results()
 
     def _context_menu_items(self):
+        if self._context_menu_kind == "RESIZE":
+            return (("RESET_WIDTH", _ui_text("Reset Width")),)
         if self._context_menu_kind == "SHORTCUT":
             return (("REMOVE_SHORTCUT", _ui_text("Remove Shortcut")),)
         return (("FAVORITE", _ui_text("Add Favorite")), ("UNFAVORITE", _ui_text("Remove Favorite")), ("SHORTCUT", _ui_text("Add Shortcut")))
@@ -3656,6 +3718,23 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._context_menu_rect = (x, y, width, menu_height)
         self._context_menu_hover = self._context_menu_action_from_mouse(event)
 
+    def _open_resize_context_menu(self, event):
+        self._context_menu_index = None
+        self._context_menu_kind = "RESIZE"
+        self._context_menu_shortcut = None
+        scale = _ui_scale()
+        label_size = _scaled(13, scale)
+        label_width = _text_width(_ui_text("Reset Width"), label_size)
+        width = max(_scaled(82, scale), label_width + _scaled(24, scale))
+        row_height = _scaled(CONTEXT_MENU_ROW_HEIGHT, scale)
+        menu_height = row_height * len(self._context_menu_items())
+        panel_x, _panel_y, panel_width, _panel_height = self._panel_rect
+        _field_x, field_y, _field_width, field_height = self._search_field_rect
+        x = panel_x + panel_width + _scaled(4, scale)
+        y = field_y + (field_height - menu_height) / 2
+        self._context_menu_rect = (x, y, width, menu_height)
+        self._context_menu_hover = self._context_menu_action_from_mouse(event)
+
     def _scroll_results(self, amount: int) -> bool:
         if not self._query or not self._results or self._visible_limit <= 0:
             return False
@@ -3728,6 +3807,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._hovered_result_index = None
         self._keyboard_selection_active = False
         self._pending_native_transform = False
+        self._resizing_width = False
+        self._resize_handle_hover = False
+        self._resize_live_width = None
         self._refresh_results()
         self._draw_handler = SpaceNodeEditor.draw_handler_add(self._draw_callback, (context,), "WINDOW", "POST_PIXEL")
         self._timer = context.window_manager.event_timer_add(0.2, window=context.window)
@@ -3748,6 +3830,25 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if event.type == "TIMER":
             self._tag_owner_redraw(context)
             return {"RUNNING_MODAL"}
+
+        if self._resizing_width:
+            if event.type == "MOUSEMOVE":
+                self._set_console_width_from_mouse(context, event, save=False)
+                return {"RUNNING_MODAL"}
+            if event.type == "LEFTMOUSE" and event.value == "RELEASE":
+                self._set_console_width_from_mouse(context, event, save=True)
+                self._resizing_width = False
+                self._resize_live_width = None
+                return {"RUNNING_MODAL"}
+            if event.type == "ESC" and event.value == "PRESS":
+                prefs = _preferences()
+                if prefs:
+                    prefs.console_width = self._resize_start_width
+                self._resizing_width = False
+                self._resize_live_width = None
+                if context.area:
+                    context.area.tag_redraw()
+                return {"RUNNING_MODAL"}
 
         if self._placing_node and self._pending_native_transform:
             if event.value == "PRESS" and event.type == "ESC":
@@ -3859,12 +3960,26 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         self._query = ""
                         self._scroll_offset = 0
                         self._refresh_results()
+                    elif action == "RESET_WIDTH":
+                        prefs = _preferences()
+                        if prefs:
+                            prefs.console_width = PANEL_WIDTH
+                        self._close_context_menu()
                     else:
                         self._close_context_menu()
                         if not self._mouse_in_panel(event):
                             return self._finish(context, {"CANCELLED"})
                     if context.area:
                         context.area.tag_redraw()
+                    return {"RUNNING_MODAL"}
+
+                if self._resize_handle_from_mouse(event):
+                    self._resizing_width = True
+                    self._resize_handle_hover = True
+                    self._resize_start_mouse_x = event.mouse_region_x
+                    self._resize_start_width = _console_width()
+                    self._resize_live_width = self._resize_start_width
+                    self._close_context_menu()
                     return {"RUNNING_MODAL"}
 
                 if self._clear_button_from_mouse(event):
@@ -3890,6 +4005,11 @@ class ENS_AddNodeByEnglishSearch(Operator):
             elif event.type == "RIGHTMOUSE":
                 if not self._mouse_in_panel(event):
                     return self._finish(context, {"CANCELLED"})
+                if self._resize_handle_from_mouse(event):
+                    self._open_resize_context_menu(event)
+                    if context.area:
+                        context.area.tag_redraw()
+                    return {"RUNNING_MODAL"}
                 shortcut_identifier = self._shortcut_identifier_from_mouse(event)
                 if shortcut_identifier:
                     self._open_shortcut_context_menu(event, shortcut_identifier)
@@ -3931,6 +4051,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     context.area.tag_redraw()
                 return {"RUNNING_MODAL"}
 
+            old_resize_hover = self._resize_handle_hover
+            self._resize_handle_hover = self._resize_handle_from_mouse(event)
             index = self._row_index_from_mouse(event)
             old_result_hover = self._hovered_result_index
             self._hovered_result_index = index
@@ -3945,6 +4067,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
             old_hover = self._shortcut_hover
             self._update_shortcut_hover(event)
             if old_hover != self._shortcut_hover and context.area:
+                context.area.tag_redraw()
+            if old_resize_hover != self._resize_handle_hover and context.area:
                 context.area.tag_redraw()
 
         return {"RUNNING_MODAL"}
@@ -3964,9 +4088,11 @@ class ENS_AddNodeByEnglishSearch(Operator):
         shortcut_height = _scaled(SHORTCUT_HEIGHT, scale)
         shortcut_gap = gap
         radius = _scaled(5, scale)
-        width = min(_scaled(PANEL_WIDTH, scale), region.width - _scaled(12, scale))
+        width = min(_scaled(self._console_width_for_draw(), scale), region.width - _scaled(12, scale))
         has_query = bool(_normalize(self._query))
         search_width = width - padding * 2
+        resize_gutter_width = max(_scaled(2, scale), 3)
+        search_field_width = max(_scaled(80, scale), search_width - resize_gutter_width)
         active_shortcuts = [identifier for identifier in self._shortcuts if identifier in NODE_ENTRY_BY_ID]
         show_shortcuts = bool(active_shortcuts and not has_query)
 
@@ -3992,9 +4118,19 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._padding = padding
         self._search_height = search_height
         self._row_height = row_height
+        resize_handle_width = max(_scaled(6, scale), 8)
+        field_x = x + padding
+        field_right = field_x + search_field_width
+        handle_width = max(1, _scaled(1, scale))
+        handle_x = field_right + (x + width - field_right - handle_width) / 2
+        self._search_field_rect = (field_x, search_y, search_field_width, search_height)
+        self._resize_handle_rect = (handle_x - resize_handle_width / 2, search_y, resize_handle_width + _scaled(4, scale), search_height)
 
         _draw_rounded_panel(x, y, width, height, radius, PANEL_BACKGROUND)
-        _draw_rounded_panel(x + padding, search_y, search_width, search_height, max(4, radius - 1), FIELD_BACKGROUND, BORDER_COLOR)
+        resize_active = self._resizing_width or self._resize_handle_hover
+        handle_color = (0.30, 0.30, 0.32, 0.72 if resize_active else 0.28)
+        _draw_rounded_panel(field_x, search_y, search_field_width, search_height, max(4, radius - 1), FIELD_BACKGROUND, BORDER_COLOR)
+        _draw_rounded_rect(handle_x, search_y + _scaled(3, scale), handle_width, max(0, search_height - _scaled(6, scale)), max(1, _scaled(1, scale)), handle_color)
 
         placeholder = _ui_text("Search nodes...")
         query_text = self._query if self._query else placeholder
@@ -4007,14 +4143,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
         query_x = x + padding + _scaled(32, scale)
         text_x = query_x if self._query else query_x + _scaled(9, scale)
         clear_size = max(_scaled(13, scale), 12)
-        clear_x = x + padding + search_width - clear_size - _scaled(8, scale)
+        clear_x = x + padding + search_field_width - clear_size - _scaled(6, scale)
         clear_y = search_y + (search_height - clear_size) / 2
         if self._query:
             self._clear_button_rect = (clear_x - _scaled(4, scale), clear_y - _scaled(4, scale), clear_size + _scaled(8, scale), clear_size + _scaled(8, scale))
             text_max_width = max(0, clear_x - text_x - _scaled(10, scale))
         else:
             self._clear_button_rect = (0, 0, 0, 0)
-            text_max_width = search_width - (text_x - (x + padding)) - _scaled(8, scale)
+            text_max_width = search_field_width - (text_x - (x + padding)) - _scaled(6, scale)
         text_y = input_text_y if self._query else placeholder_text_y
         _draw_text(_clip_text(query_text, text_max_width, query_size), text_x, text_y, query_size, query_color)
         if int(time.monotonic() * 2) % 2 == 0:
@@ -4081,16 +4217,25 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 row_y = menu_y + menu_height - (index + 1) * menu_row_height
                 if self._context_menu_hover == action:
                     _draw_rounded_panel(menu_x + 4, row_y + 3, menu_width - 8, menu_row_height - 6, max(3, radius - 2), HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
-                _draw_text_vcenter(label, menu_x + _scaled(12, scale), row_y + _scaled(CONTEXT_MENU_TEXT_Y_OFFSET, scale), menu_row_height, _scaled(13, scale), TEXT_COLOR)
+                text_y_offset = CONTEXT_MENU_TEXT_Y_OFFSET + (2.5 if self._context_menu_kind == "RESIZE" else 0)
+                _draw_text_vcenter(label, menu_x + _scaled(12, scale), row_y + _scaled(text_y_offset, scale), menu_row_height, _scaled(13, scale), TEXT_COLOR)
+
+        def draw_resize_hint():
+            if not resize_active:
+                return
+            handle_width = max(1, _scaled(1, scale))
+            _draw_rounded_rect(handle_x, search_y + _scaled(3, scale), handle_width, max(0, search_height - _scaled(6, scale)), max(1, _scaled(1, scale)), handle_color)
 
         rows_top = search_y - shortcuts_height - gap
         self._rows_top = rows_top
         if not has_query:
+            draw_resize_hint()
             draw_context_menu()
             return
 
         if not self._results:
             _draw_text(_ui_text("No results found"), x + padding + _scaled(8, scale), rows_top - _scaled(20, scale), _scaled(13, scale), TEXT_COLOR)
+            draw_resize_hint()
             draw_context_menu()
             return
 
@@ -4164,6 +4309,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if has_query and len(self._results) > self._scroll_offset + rows:
             _draw_text("▼", x + width / 2 - _scaled(4, scale), y + _scaled(4, scale), _scaled(12, scale), TEXT_COLOR)
 
+        draw_resize_hint()
         draw_context_menu()
 
         if (
@@ -4192,6 +4338,55 @@ class NODECONSOLE_OT_RefreshAssetIndex(Operator):
     def execute(self, _context):
         count = _refresh_asset_index()
         self.report({"INFO"}, f"Node Console cached {count} asset node groups")
+        return {"FINISHED"}
+
+
+class NODECONSOLE_OT_ResetConsoleWidth(Operator):
+    bl_idname = "node_console.reset_console_width"
+    bl_label = "Reset Width"
+    bl_description = "Reset Node Console width to the default value"
+    bl_options = {"INTERNAL"}
+
+    def execute(self, _context):
+        prefs = _preferences()
+        if prefs:
+            prefs.console_width = PANEL_WIDTH
+        return {"FINISHED"}
+
+
+class NODECONSOLE_OT_ResetShortcut(Operator):
+    bl_idname = "node_console.reset_shortcut"
+    bl_label = "Reset Shortcut"
+    bl_description = "Reset Node Console shortcut to Shift A and rebuild the keymap"
+    bl_options = {"INTERNAL"}
+
+    def execute(self, _context):
+        global SHORTCUT_UPDATE_SUSPENDED
+        prefs = _preferences()
+        if prefs:
+            SHORTCUT_UPDATE_SUSPENDED = True
+            try:
+                prefs.shortcut_key = "A"
+                prefs.shortcut_shift = True
+                prefs.shortcut_ctrl = False
+                prefs.shortcut_alt = False
+                prefs.shortcut_oskey = False
+            finally:
+                SHORTCUT_UPDATE_SUSPENDED = False
+            _save_preference_settings()
+        else:
+            data = _load_settings()
+            data.update(
+                {
+                    "shortcut_key": "A",
+                    "shortcut_shift": True,
+                    "shortcut_ctrl": False,
+                    "shortcut_alt": False,
+                    "shortcut_oskey": False,
+                }
+            )
+            _write_settings(data)
+        refresh_keymap()
         return {"FINISHED"}
 
 
@@ -4319,6 +4514,18 @@ class ENS_AddonPreferences(AddonPreferences):
         step=10,
         update=_visual_preference_changed,
     )
+    console_width: FloatProperty(
+        name="Console Width",
+        description="Adjust the Node Console panel width",
+        default=float(PANEL_WIDTH),
+        min=float(PANEL_MIN_WIDTH),
+        max=float(PANEL_MAX_WIDTH),
+        soft_min=float(PANEL_MIN_WIDTH),
+        soft_max=float(PANEL_MAX_WIDTH),
+        step=10,
+        precision=0,
+        update=_visual_preference_changed,
+    )
     favorites_json: StringProperty(
         name="Favorite Nodes",
         description="Internal favorite node storage",
@@ -4336,32 +4543,35 @@ class ENS_AddonPreferences(AddonPreferences):
         layout = self.layout
 
         settings_box = layout.box()
-        display_top = settings_box.split(factor=0.667, align=False)
-        display_left_middle = display_top.split(factor=0.5, align=False)
-        display_left = display_left_middle.column(align=True)
-        display_left.label(text=_ui_text("Search Result Display"))
-        display_left.label(text=_ui_text("Category Color Display"))
-        display_middle = display_left_middle.column(align=True)
-        display_mode_row = display_middle.split(factor=0.6, align=True)
-        display_mode_row.prop(self, "display_mode", text="")
-        display_mode_row.label(text="")
-        category_mode_row = display_middle.split(factor=0.6, align=True)
-        category_mode_row.prop(self, "category_color_mode", text="")
-        category_mode_row.label(text="")
-        right_col = display_top.column(align=False)
-        size_row = right_col.split(factor=0.45, align=True)
+        display_top = settings_box.split(factor=0.5, align=False)
+        display_left = display_top.box().column(align=True)
+        display_right = display_top.box().column(align=True)
+
+        display_row = display_left.split(factor=0.56, align=True)
+        display_row.label(text=_ui_text("Search Result Display"))
+        display_row.prop(self, "display_mode", text="")
+        category_row = display_left.split(factor=0.56, align=True)
+        category_row.label(text=_ui_text("Category Color Display"))
+        category_row.prop(self, "category_color_mode", text="")
+
+        size_row = display_right.split(factor=0.47, align=True)
         size_row.label(text=_ui_text("Console Size"))
         size_row.prop(self, "ui_scale", text="", slider=True)
-        right_col.label(text="")
+        width_row = display_right.split(factor=0.47, align=True)
+        width_row.label(text=_ui_text("Console Width"))
+        width_controls = width_row.row(align=True)
+        width_controls.prop(self, "console_width", text="")
+        width_controls.operator(NODECONSOLE_OT_ResetConsoleWidth.bl_idname, icon="FILE_REFRESH", text="")
 
         settings_box.separator(type="LINE")
-        asset_top = settings_box.split(factor=0.667, align=False)
-        asset_left_middle = asset_top.split(factor=0.5, align=False)
-        asset_left_middle.prop(self, "scan_asset_libraries", text=_ui_text("Show Cached Asset Nodes"))
-        asset_left_middle.label(text=f"{_ui_text('Cached Assets')}: {len(_load_asset_index())}")
-        refresh_row = asset_top.split(factor=0.72, align=True)
-        refresh_row.label(text=_ui_text("Refresh Asset Index"))
-        refresh_row.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="")
+        asset_top = settings_box.split(factor=0.5, align=False)
+        asset_left = asset_top.box().row(align=True)
+        asset_left.prop(self, "scan_asset_libraries", text=_ui_text("Show Cached Asset Nodes"))
+        asset_right = asset_top.box().split(factor=0.47, align=True)
+        asset_right.label(text=f"{_ui_text('Cached Assets')}: {len(_load_asset_index())}")
+        refresh_controls = asset_right.row(align=True)
+        refresh_controls.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, text=_ui_text("Refresh Asset Index"))
+        refresh_controls.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, icon="FILE_REFRESH", text="")
 
         # Chinese fuzzy match is intentionally hidden during the 0.9.x pinyin
         # search rewrite. The property remains registered for compatibility.
@@ -4385,6 +4595,22 @@ class ENS_AddonPreferences(AddonPreferences):
         row.prop(self, "shortcut_shift", text="Shift", toggle=True, translate=False)
         row.separator(factor=0.45)
         row.prop(self, "shortcut_alt", text="Alt", toggle=True, translate=False)
+        row.separator(factor=0.45)
+        row.operator(NODECONSOLE_OT_ResetShortcut.bl_idname, icon="FILE_REFRESH", text="")
+        conflict_labels = _shortcut_conflict_labels()
+        if conflict_labels:
+            warning = box.box()
+            warning.label(text=f"{_ui_text('Shortcut conflict')}:")
+            warning.label(text=_ui_text("This shortcut temporarily overrides"))
+            for label in conflict_labels[:3]:
+                conflict_row = warning.row()
+                conflict_row.alert = True
+                conflict_row.label(text=label)
+            if len(conflict_labels) > 3:
+                conflict_row = warning.row()
+                conflict_row.alert = True
+                conflict_row.label(text=f"+ {len(conflict_labels) - 3}")
+            warning.label(text=_ui_text("The original shortcut will be restored after changing Node Console to a non-conflicting shortcut."))
 
         favorite_meta = _load_favorite_meta()
         lists = layout.split(factor=0.5, align=False)
@@ -4425,6 +4651,8 @@ class ENS_AddonPreferences(AddonPreferences):
 classes = (
     ENS_AddNodeByEnglishSearch,
     NODECONSOLE_OT_RefreshAssetIndex,
+    NODECONSOLE_OT_ResetConsoleWidth,
+    NODECONSOLE_OT_ResetShortcut,
     NODECONSOLE_OT_RemoveFavorite,
     NODECONSOLE_OT_RemoveShortcut,
     NODECONSOLE_OT_MoveShortcut,
@@ -4437,50 +4665,209 @@ def refresh_keymap():
     register_keymap()
 
 
+def _retry_register_keymap():
+    register_keymap()
+    return None
+
+
 def _remove_node_console_keymap_items():
     wm = bpy.context.window_manager
     for keyconfig in (wm.keyconfigs.addon, wm.keyconfigs.user):
         if not keyconfig:
             continue
-        keymap = keyconfig.keymaps.get("Node Editor")
-        if not keymap:
+        for keymap in _node_keymaps(keyconfig):
+            stale_items = [item for item in keymap.keymap_items if item.idname == ENS_AddNodeByEnglishSearch.bl_idname]
+            for item in stale_items:
+                try:
+                    keymap.keymap_items.remove(item)
+                except Exception:
+                    pass
+
+
+def _node_keymaps(keyconfig):
+    for keymap in keyconfig.keymaps:
+        name = getattr(keymap, "name", "")
+        space_type = getattr(keymap, "space_type", "")
+        if space_type == "NODE_EDITOR" or "Node" in name:
+            yield keymap
+
+
+def _keymap_item_matches_shortcut(item, key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool) -> bool:
+    return (
+        item.idname != ENS_AddNodeByEnglishSearch.bl_idname
+        and item.type == key_type
+        and item.value == "PRESS"
+        and bool(item.shift) == bool(shift)
+        and bool(item.ctrl) == bool(ctrl)
+        and bool(item.alt) == bool(alt)
+        and bool(item.oskey) == bool(oskey)
+    )
+
+
+def _is_default_replacement_shortcut(key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool) -> bool:
+    return key_type == "A" and shift and not ctrl and not alt and not oskey
+
+
+def _keymap_item_label(item) -> str:
+    name = getattr(item, "name", "") or getattr(item, "idname", "")
+    return str(name) if name else "Unknown"
+
+
+def _shortcut_text(key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool) -> str:
+    parts = []
+    if oskey:
+        parts.append("Command")
+    if ctrl:
+        parts.append("Ctrl")
+    if shift:
+        parts.append("Shift")
+    if alt:
+        parts.append("Alt")
+    parts.append(key_type.title() if len(key_type) > 1 else key_type)
+    return " + ".join(parts)
+
+
+def _shortcut_conflict_labels() -> list[str]:
+    if not KEYMAP_CONFLICT_LABELS:
+        return []
+    seen = set()
+    labels = []
+    for label in KEYMAP_CONFLICT_LABELS:
+        if label not in seen:
+            labels.append(label)
+            seen.add(label)
+    return labels
+
+
+def _disable_conflicting_keymap_items(key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool):
+    wm = bpy.context.window_manager
+    show_warning = not _is_default_replacement_shortcut(key_type, shift, ctrl, alt, oskey)
+    for keyconfig in (wm.keyconfigs.default, wm.keyconfigs.user, wm.keyconfigs.addon):
+        if not keyconfig:
             continue
-        stale_items = [item for item in keymap.keymap_items if item.idname == ENS_AddNodeByEnglishSearch.bl_idname]
-        for item in stale_items:
+        for keymap in _node_keymaps(keyconfig):
+            for item in keymap.keymap_items:
+                if _keymap_item_matches_shortcut(item, key_type, shift, ctrl, alt, oskey) and item.active:
+                    try:
+                        if show_warning:
+                            KEYMAP_CONFLICT_LABELS.append(f"{_keymap_item_label(item)} ({_shortcut_text(key_type, shift, ctrl, alt, oskey)})")
+                        DISABLED_KEYMAP_ITEMS.append((item, item.active))
+                        item.active = False
+                    except Exception:
+                        pass
+
+
+def _activate_conflicting_keymap_items(key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool):
+    wm = bpy.context.window_manager
+    for keyconfig in (wm.keyconfigs.default, wm.keyconfigs.user, wm.keyconfigs.addon):
+        if not keyconfig:
+            continue
+        for keymap in _node_keymaps(keyconfig):
+            for item in keymap.keymap_items:
+                if _keymap_item_matches_shortcut(item, key_type, shift, ctrl, alt, oskey):
+                    try:
+                        item.active = True
+                    except Exception:
+                        pass
+
+
+def _remove_official_shift_a_fallback():
+    while OFFICIAL_SHIFT_A_ITEMS:
+        keymap, keymap_item = OFFICIAL_SHIFT_A_ITEMS.pop()
+        try:
+            keymap.keymap_items.remove(keymap_item)
+        except Exception:
+            pass
+
+
+def _ensure_official_shift_a_fallback():
+    _remove_official_shift_a_fallback()
+    keyconfigs = bpy.context.window_manager.keyconfigs
+    for keyconfig in (keyconfigs.user, keyconfigs.addon):
+        if not keyconfig:
+            continue
+        for keymap_name in ("Node Editor", "Node Generic"):
+            keymap = keyconfig.keymaps.get(keymap_name)
+            if not keymap:
+                keymap = keyconfig.keymaps.new(name=keymap_name, space_type="NODE_EDITOR", region_type="WINDOW")
             try:
-                keymap.keymap_items.remove(item)
+                keymap_item = keymap.keymap_items.new("wm.call_menu", type="A", value="PRESS", shift=True, head=True)
+            except TypeError:
+                keymap_item = keymap.keymap_items.new("wm.call_menu", type="A", value="PRESS", shift=True)
+            try:
+                keymap_item.properties.name = "NODE_MT_add"
             except Exception:
                 pass
+            OFFICIAL_SHIFT_A_ITEMS.append((keymap, keymap_item))
+
+
+def _restore_conflicting_keymap_items():
+    KEYMAP_CONFLICT_LABELS.clear()
+    while DISABLED_KEYMAP_ITEMS:
+        item, was_active = DISABLED_KEYMAP_ITEMS.pop()
+        try:
+            item.active = was_active
+        except Exception:
+            pass
 
 
 def register_keymap():
     prefs = _preferences()
 
-    keyconfig = bpy.context.window_manager.keyconfigs.addon
-    if not keyconfig:
+    _restore_conflicting_keymap_items()
+    _remove_official_shift_a_fallback()
+
+    keyconfigs = bpy.context.window_manager.keyconfigs
+    addon_keyconfig = keyconfigs.addon
+    user_keyconfig = keyconfigs.user
+    if not addon_keyconfig and not user_keyconfig:
+        try:
+            bpy.app.timers.register(_retry_register_keymap, first_interval=0.5)
+        except Exception:
+            pass
         return
 
     _remove_node_console_keymap_items()
-    keymap = keyconfig.keymaps.new(name="Node Editor", space_type="NODE_EDITOR")
 
     key_type = prefs.shortcut_key if prefs else "A"
     shift = prefs.shortcut_shift if prefs else True
     ctrl = prefs.shortcut_ctrl if prefs else False
     alt = prefs.shortcut_alt if prefs else False
     oskey = prefs.shortcut_oskey if prefs else False
-    keymap_item = keymap.keymap_items.new(
-        ENS_AddNodeByEnglishSearch.bl_idname,
-        type=key_type,
-        value="PRESS",
-        shift=shift,
-        ctrl=ctrl,
-        alt=alt,
-        oskey=oskey,
-    )
-    KEYMAP_ITEMS.append((keymap, keymap_item))
+    if not _is_default_replacement_shortcut(key_type, shift, ctrl, alt, oskey):
+        _activate_conflicting_keymap_items("A", True, False, False, False)
+        _ensure_official_shift_a_fallback()
+    _disable_conflicting_keymap_items(key_type, shift, ctrl, alt, oskey)
+    keymap_args = {
+        "type": key_type,
+        "value": "PRESS",
+        "shift": shift,
+        "ctrl": ctrl,
+        "alt": alt,
+        "oskey": oskey,
+    }
+
+    def add_keymap_item(keyconfig):
+        if not keyconfig:
+            return
+        keymap = keyconfig.keymaps.get("Node Editor")
+        if not keymap:
+            keymap = keyconfig.keymaps.new(name="Node Editor", space_type="NODE_EDITOR")
+        try:
+            keymap_item = keymap.keymap_items.new(ENS_AddNodeByEnglishSearch.bl_idname, head=True, **keymap_args)
+        except TypeError:
+            keymap_item = keymap.keymap_items.new(ENS_AddNodeByEnglishSearch.bl_idname, **keymap_args)
+        KEYMAP_ITEMS.append((keymap, keymap_item))
+
+    add_keymap_item(addon_keyconfig)
+    # User keymaps can outrank addon keymaps after a shortcut has been edited
+    # in Preferences. Register there too so Reset Shortcut can recover priority.
+    add_keymap_item(user_keyconfig)
 
 
 def unregister_keymap():
+    _remove_official_shift_a_fallback()
+    _restore_conflicting_keymap_items()
     while KEYMAP_ITEMS:
         keymap, keymap_item = KEYMAP_ITEMS.pop()
         try:
