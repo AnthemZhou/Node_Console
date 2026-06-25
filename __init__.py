@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.14"
+ADDON_VERSION = "0.9.15"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 14),
+    "version": (0, 9, 15),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -36,10 +36,8 @@ bl_info = {
 
 ADDON_ID = __name__
 KEYMAP_ITEMS = []
-DISABLED_KEYMAP_ITEMS = []
-OFFICIAL_SHIFT_A_ITEMS = []
-KEYMAP_CONFLICT_LABELS = []
 SHORTCUT_UPDATE_SUSPENDED = False
+KEYMAP_REFRESH_PENDING = False
 NODE_SEARCH_ENTRIES: list["NodeSearchEntry"] = []
 ACTIVE_CONSOLE_OPERATOR = None
 MENU_ENTRY_CACHE: dict[str, list[tuple[str, str, str, str, tuple[tuple[str, str], ...]]]] = {}
@@ -138,8 +136,8 @@ UI_TEXT_ZH = {
     "Reset Width": "恢复默认宽度",
     "Reset Shortcut": "恢复默认快捷键",
     "Shortcut conflict": "快捷键冲突",
-    "This shortcut temporarily overrides": "当前快捷键会临时覆盖",
-    "The original shortcut will be restored after changing Node Console to a non-conflicting shortcut.": "当 Node Console 改为不冲突的快捷键后，原快捷键会自动恢复。",
+    "Current shortcut temporarily overrides": "当前快捷键会临时覆盖",
+    "Original shortcut restores after Node Console uses a non-conflicting shortcut.": "当 Node Console 改为不冲突的快捷键后，原快捷键会自动恢复。",
     "Refresh Asset Index": "刷新资产索引",
     "Shortcut": "快捷键",
     "Command": "Command",
@@ -1374,7 +1372,7 @@ def _shortcut_changed(_self, _context):
     if SHORTCUT_UPDATE_SUSPENDED:
         return
     _save_preference_settings()
-    refresh_keymap()
+    _schedule_keymap_refresh()
 
 
 def _translation_label(text: str, translation_context: str | None = None) -> str:
@@ -4601,7 +4599,7 @@ class ENS_AddonPreferences(AddonPreferences):
         if conflict_labels:
             warning = box.box()
             warning.label(text=f"{_ui_text('Shortcut conflict')}:")
-            warning.label(text=_ui_text("This shortcut temporarily overrides"))
+            warning.label(text=_ui_text("Current shortcut temporarily overrides"))
             for label in conflict_labels[:3]:
                 conflict_row = warning.row()
                 conflict_row.alert = True
@@ -4610,7 +4608,7 @@ class ENS_AddonPreferences(AddonPreferences):
                 conflict_row = warning.row()
                 conflict_row.alert = True
                 conflict_row.label(text=f"+ {len(conflict_labels) - 3}")
-            warning.label(text=_ui_text("The original shortcut will be restored after changing Node Console to a non-conflicting shortcut."))
+            warning.label(text=_ui_text("Original shortcut restores after Node Console uses a non-conflicting shortcut."))
 
         favorite_meta = _load_favorite_meta()
         lists = layout.split(factor=0.5, align=False)
@@ -4663,54 +4661,55 @@ classes = (
 def refresh_keymap():
     unregister_keymap()
     register_keymap()
+    _update_keyconfigs()
 
 
 def _retry_register_keymap():
     register_keymap()
+    _update_keyconfigs()
     return None
 
 
-def _remove_node_console_keymap_items():
-    wm = bpy.context.window_manager
-    for keyconfig in (wm.keyconfigs.addon, wm.keyconfigs.user):
-        if not keyconfig:
-            continue
-        for keymap in _node_keymaps(keyconfig):
-            stale_items = [item for item in keymap.keymap_items if item.idname == ENS_AddNodeByEnglishSearch.bl_idname]
-            for item in stale_items:
-                try:
-                    keymap.keymap_items.remove(item)
-                except Exception:
-                    pass
+def _refresh_keymap_from_timer():
+    global KEYMAP_REFRESH_PENDING
+    KEYMAP_REFRESH_PENDING = False
+    refresh_keymap()
+    return None
 
 
-def _node_keymaps(keyconfig):
-    for keymap in keyconfig.keymaps:
-        name = getattr(keymap, "name", "")
-        space_type = getattr(keymap, "space_type", "")
-        if space_type == "NODE_EDITOR" or "Node" in name:
+def _schedule_keymap_refresh():
+    global KEYMAP_REFRESH_PENDING
+    if KEYMAP_REFRESH_PENDING:
+        return
+    KEYMAP_REFRESH_PENDING = True
+    try:
+        bpy.app.timers.register(_refresh_keymap_from_timer, first_interval=0.05)
+    except Exception:
+        KEYMAP_REFRESH_PENDING = False
+        refresh_keymap()
+
+
+def _update_keyconfigs():
+    try:
+        bpy.context.window_manager.keyconfigs.update()
+    except Exception:
+        pass
+
+
+def _node_console_user_keymaps(keyconfig):
+    for keymap_name in ("Node Editor", "Node Generic"):
+        keymap = keyconfig.keymaps.get(keymap_name)
+        if keymap:
             yield keymap
 
 
-def _keymap_item_matches_shortcut(item, key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool) -> bool:
-    return (
-        item.idname != ENS_AddNodeByEnglishSearch.bl_idname
-        and item.type == key_type
-        and item.value == "PRESS"
-        and bool(item.shift) == bool(shift)
-        and bool(item.ctrl) == bool(ctrl)
-        and bool(item.alt) == bool(alt)
-        and bool(item.oskey) == bool(oskey)
-    )
-
-
-def _is_default_replacement_shortcut(key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool) -> bool:
-    return key_type == "A" and shift and not ctrl and not alt and not oskey
-
-
-def _keymap_item_label(item) -> str:
-    name = getattr(item, "name", "") or getattr(item, "idname", "")
-    return str(name) if name else "Unknown"
+def _node_editor_keymaps(keyconfig):
+    if not keyconfig:
+        return
+    for keymap_name in ("Node Editor", "Node Generic"):
+        keymap = keyconfig.keymaps.get(keymap_name)
+        if keymap:
+            yield keymap
 
 
 def _shortcut_text(key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool) -> str:
@@ -4727,100 +4726,94 @@ def _shortcut_text(key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: boo
     return " + ".join(parts)
 
 
+def _keymap_item_label(item) -> str:
+    name = getattr(item, "name", "") or getattr(item, "idname", "")
+    return str(name) if name else "Unknown"
+
+
+def _keymap_item_matches_shortcut(item, key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool) -> bool:
+    return (
+        item.idname != ENS_AddNodeByEnglishSearch.bl_idname
+        and item.type == key_type
+        and item.value == "PRESS"
+        and bool(item.shift) == bool(shift)
+        and bool(item.ctrl) == bool(ctrl)
+        and bool(item.alt) == bool(alt)
+        and bool(item.oskey) == bool(oskey)
+        and bool(getattr(item, "active", True))
+    )
+
+
 def _shortcut_conflict_labels() -> list[str]:
-    if not KEYMAP_CONFLICT_LABELS:
+    prefs = _preferences()
+    if not prefs:
         return []
-    seen = set()
+
+    key_type = prefs.shortcut_key
+    shift = prefs.shortcut_shift
+    ctrl = prefs.shortcut_ctrl
+    alt = prefs.shortcut_alt
+    oskey = prefs.shortcut_oskey
+    shortcut = _shortcut_text(key_type, shift, ctrl, alt, oskey)
     labels = []
-    for label in KEYMAP_CONFLICT_LABELS:
-        if label not in seen:
-            labels.append(label)
-            seen.add(label)
+    seen = set()
+    keyconfigs = bpy.context.window_manager.keyconfigs
+    for keyconfig in (keyconfigs.user, keyconfigs.addon, keyconfigs.default):
+        for keymap in _node_editor_keymaps(keyconfig):
+            for item in keymap.keymap_items:
+                if not _keymap_item_matches_shortcut(item, key_type, shift, ctrl, alt, oskey):
+                    continue
+                label = f"{_keymap_item_label(item)} ({shortcut})"
+                if label in seen:
+                    continue
+                seen.add(label)
+                labels.append(label)
     return labels
 
 
-def _disable_conflicting_keymap_items(key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool):
-    wm = bpy.context.window_manager
-    show_warning = not _is_default_replacement_shortcut(key_type, shift, ctrl, alt, oskey)
-    for keyconfig in (wm.keyconfigs.default, wm.keyconfigs.user, wm.keyconfigs.addon):
-        if not keyconfig:
-            continue
-        for keymap in _node_keymaps(keyconfig):
-            for item in keymap.keymap_items:
-                if _keymap_item_matches_shortcut(item, key_type, shift, ctrl, alt, oskey) and item.active:
-                    try:
-                        if show_warning:
-                            KEYMAP_CONFLICT_LABELS.append(f"{_keymap_item_label(item)} ({_shortcut_text(key_type, shift, ctrl, alt, oskey)})")
-                        DISABLED_KEYMAP_ITEMS.append((item, item.active))
-                        item.active = False
-                    except Exception:
-                        pass
-
-
-def _activate_conflicting_keymap_items(key_type: str, shift: bool, ctrl: bool, alt: bool, oskey: bool):
-    wm = bpy.context.window_manager
-    for keyconfig in (wm.keyconfigs.default, wm.keyconfigs.user, wm.keyconfigs.addon):
-        if not keyconfig:
-            continue
-        for keymap in _node_keymaps(keyconfig):
-            for item in keymap.keymap_items:
-                if _keymap_item_matches_shortcut(item, key_type, shift, ctrl, alt, oskey):
-                    try:
-                        item.active = True
-                    except Exception:
-                        pass
-
-
-def _remove_official_shift_a_fallback():
-    while OFFICIAL_SHIFT_A_ITEMS:
-        keymap, keymap_item = OFFICIAL_SHIFT_A_ITEMS.pop()
-        try:
-            keymap.keymap_items.remove(keymap_item)
-        except Exception:
-            pass
-
-
-def _ensure_official_shift_a_fallback():
-    _remove_official_shift_a_fallback()
-    keyconfigs = bpy.context.window_manager.keyconfigs
-    for keyconfig in (keyconfigs.user, keyconfigs.addon):
-        if not keyconfig:
-            continue
-        for keymap_name in ("Node Editor", "Node Generic"):
-            keymap = keyconfig.keymaps.get(keymap_name)
-            if not keymap:
-                keymap = keyconfig.keymaps.new(name=keymap_name, space_type="NODE_EDITOR", region_type="WINDOW")
+def _cleanup_user_keymap_overrides():
+    user_keyconfig = bpy.context.window_manager.keyconfigs.user
+    if not user_keyconfig:
+        return
+    for keymap in _node_console_user_keymaps(user_keyconfig):
+        stale_items = [
+            item
+            for item in keymap.keymap_items
+            if item.idname == ENS_AddNodeByEnglishSearch.bl_idname
+        ]
+        for item in stale_items:
             try:
-                keymap_item = keymap.keymap_items.new("wm.call_menu", type="A", value="PRESS", shift=True, head=True)
-            except TypeError:
-                keymap_item = keymap.keymap_items.new("wm.call_menu", type="A", value="PRESS", shift=True)
-            try:
-                keymap_item.properties.name = "NODE_MT_add"
+                keymap.keymap_items.remove(item)
             except Exception:
                 pass
-            OFFICIAL_SHIFT_A_ITEMS.append((keymap, keymap_item))
+        if len(keymap.keymap_items) == 0:
+            try:
+                user_keyconfig.keymaps.remove(keymap)
+            except Exception:
+                pass
 
 
-def _restore_conflicting_keymap_items():
-    KEYMAP_CONFLICT_LABELS.clear()
-    while DISABLED_KEYMAP_ITEMS:
-        item, was_active = DISABLED_KEYMAP_ITEMS.pop()
-        try:
-            item.active = was_active
-        except Exception:
-            pass
+def _remove_node_console_keymap_items():
+    keyconfig = bpy.context.window_manager.keyconfigs.addon
+    if keyconfig:
+        keymap = keyconfig.keymaps.get("Node Editor")
+        if keymap:
+            stale_items = [item for item in keymap.keymap_items if item.idname == ENS_AddNodeByEnglishSearch.bl_idname]
+            for item in stale_items:
+                try:
+                    keymap.keymap_items.remove(item)
+                except Exception:
+                    pass
+    _cleanup_user_keymap_overrides()
 
 
 def register_keymap():
     prefs = _preferences()
 
-    _restore_conflicting_keymap_items()
-    _remove_official_shift_a_fallback()
+    _cleanup_user_keymap_overrides()
 
-    keyconfigs = bpy.context.window_manager.keyconfigs
-    addon_keyconfig = keyconfigs.addon
-    user_keyconfig = keyconfigs.user
-    if not addon_keyconfig and not user_keyconfig:
+    keyconfig = bpy.context.window_manager.keyconfigs.addon
+    if not keyconfig:
         try:
             bpy.app.timers.register(_retry_register_keymap, first_interval=0.5)
         except Exception:
@@ -4829,15 +4822,15 @@ def register_keymap():
 
     _remove_node_console_keymap_items()
 
+    keymap = keyconfig.keymaps.get("Node Editor")
+    if not keymap:
+        keymap = keyconfig.keymaps.new(name="Node Editor", space_type="NODE_EDITOR")
+
     key_type = prefs.shortcut_key if prefs else "A"
     shift = prefs.shortcut_shift if prefs else True
     ctrl = prefs.shortcut_ctrl if prefs else False
     alt = prefs.shortcut_alt if prefs else False
     oskey = prefs.shortcut_oskey if prefs else False
-    if not _is_default_replacement_shortcut(key_type, shift, ctrl, alt, oskey):
-        _activate_conflicting_keymap_items("A", True, False, False, False)
-        _ensure_official_shift_a_fallback()
-    _disable_conflicting_keymap_items(key_type, shift, ctrl, alt, oskey)
     keymap_args = {
         "type": key_type,
         "value": "PRESS",
@@ -4846,28 +4839,15 @@ def register_keymap():
         "alt": alt,
         "oskey": oskey,
     }
-
-    def add_keymap_item(keyconfig):
-        if not keyconfig:
-            return
-        keymap = keyconfig.keymaps.get("Node Editor")
-        if not keymap:
-            keymap = keyconfig.keymaps.new(name="Node Editor", space_type="NODE_EDITOR")
-        try:
-            keymap_item = keymap.keymap_items.new(ENS_AddNodeByEnglishSearch.bl_idname, head=True, **keymap_args)
-        except TypeError:
-            keymap_item = keymap.keymap_items.new(ENS_AddNodeByEnglishSearch.bl_idname, **keymap_args)
-        KEYMAP_ITEMS.append((keymap, keymap_item))
-
-    add_keymap_item(addon_keyconfig)
-    # User keymaps can outrank addon keymaps after a shortcut has been edited
-    # in Preferences. Register there too so Reset Shortcut can recover priority.
-    add_keymap_item(user_keyconfig)
+    try:
+        keymap_item = keymap.keymap_items.new(ENS_AddNodeByEnglishSearch.bl_idname, head=True, **keymap_args)
+    except TypeError:
+        keymap_item = keymap.keymap_items.new(ENS_AddNodeByEnglishSearch.bl_idname, **keymap_args)
+    KEYMAP_ITEMS.append((keymap, keymap_item))
+    _update_keyconfigs()
 
 
 def unregister_keymap():
-    _remove_official_shift_a_fallback()
-    _restore_conflicting_keymap_items()
     while KEYMAP_ITEMS:
         keymap, keymap_item = KEYMAP_ITEMS.pop()
         try:
@@ -4875,6 +4855,7 @@ def unregister_keymap():
         except Exception:
             pass
     _remove_node_console_keymap_items()
+    _update_keyconfigs()
 
 
 def register():
