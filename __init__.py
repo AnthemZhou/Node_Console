@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.12"
+ADDON_VERSION = "0.9.13"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 12),
+    "version": (0, 9, 13),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -1591,7 +1591,7 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
     if entry.node_type in {"FunctionNodeAlignEulerToVector", "FunctionNodeRotateVector", "FunctionNodeRotateRotation"}:
         return NODE_TYPE_COLORS["converter"]
     if first_category == "curve" and "topology" in category_parts:
-        return NODE_TYPE_COLORS["geometry"]
+        return NODE_TYPE_COLORS["input"]
     if "read" in category_parts:
         return NODE_TYPE_COLORS["input"]
     if entry.node_type.startswith("CompositorNode"):
@@ -4024,6 +4024,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             _draw_rounded_rect(clear_x, clear_y, clear_size, clear_size, clear_size / 2, (0.235, 0.235, 0.25, 0.86))
             _draw_centered_text("x", clear_x, clear_y, clear_size, clear_size, max(9, _scaled(9, scale)), (0.52, 0.52, 0.54, 0.90))
 
+        category_color_mode = _category_color_mode()
         self._shortcut_rects = []
         shortcuts_y = search_y - shortcut_gap - shortcut_visual_offset - shortcut_height
         if show_shortcuts:
@@ -4037,15 +4038,35 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 self._shortcut_rects.append((identifier, rect))
                 entry = NODE_ENTRY_BY_ID[identifier]
                 shortcut_hovered = self._shortcut_hover == identifier
-                shortcut_fill, shortcut_border = _entry_type_colors(entry, active=shortcut_hovered)
-                shortcut_fill = _blend_color(shortcut_fill, 1.0, FIELD_BACKGROUND)
-                shortcut_fill = (shortcut_fill[0], shortcut_fill[1], shortcut_fill[2], 1.0)
-                shortcut_border = (shortcut_border[0], shortcut_border[1], shortcut_border[2], 1.0)
-                _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, max(3, radius - 1), shortcut_fill, shortcut_border)
+                shortcut_radius = max(3, radius - 1)
+                if category_color_mode == "BLOCK":
+                    shortcut_fill, shortcut_border = _entry_type_colors(entry, active=shortcut_hovered)
+                    shortcut_fill = _blend_color(shortcut_fill, 1.0, FIELD_BACKGROUND)
+                    shortcut_fill = (shortcut_fill[0], shortcut_fill[1], shortcut_fill[2], 1.0)
+                    shortcut_border = (shortcut_border[0], shortcut_border[1], shortcut_border[2], 1.0)
+                    _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, shortcut_radius, shortcut_fill, shortcut_border)
+                    shortcut_text_x = item_x + _scaled(10, scale)
+                    shortcut_text_max_width = item_width - _scaled(18, scale)
+                else:
+                    _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, shortcut_radius, FIELD_BACKGROUND, BORDER_COLOR)
+                    if shortcut_hovered:
+                        _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, shortcut_radius, HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
+                    shortcut_text_x = item_x + _scaled(10, scale)
+                    shortcut_text_max_width = item_width - _scaled(18, scale)
+                    if category_color_mode == "LINE":
+                        shortcut_block_y = shortcuts_y + _scaled(2, scale)
+                        shortcut_block_height = shortcut_height - _scaled(4, scale)
+                        shortcut_line_width = max(2, _scaled(3, scale))
+                        shortcut_line_height = shortcut_block_height
+                        shortcut_line_y = shortcut_block_y + (shortcut_block_height - shortcut_line_height) / 2
+                        shortcut_base_color = _entry_base_type_color(entry)
+                        shortcut_line_color = _blend_color(shortcut_base_color, 0.95 if shortcut_hovered else 0.82, PANEL_BACKGROUND)
+                        _draw_rounded_rect(item_x, shortcut_line_y, shortcut_line_width, shortcut_line_height, max(1, shortcut_line_width / 2), (shortcut_line_color[0], shortcut_line_color[1], shortcut_line_color[2], 0.95))
+                        shortcut_text_x = item_x + _scaled(10, scale)
+                        shortcut_text_max_width = item_width - _scaled(18, scale)
                 shortcut_text_size = _scaled(13, scale)
-                shortcut_text_x = item_x + _scaled(10, scale)
                 shortcut_text_y = shortcuts_y + _scaled(7, scale)
-                shortcut_text = _fit_text(_abbreviate_label(_entry_shortcut_label(entry)), item_width - _scaled(18, scale), shortcut_text_size)
+                shortcut_text = _fit_text(_abbreviate_label(_entry_shortcut_label(entry)), shortcut_text_max_width, shortcut_text_size)
                 shortcut_text_color = MUTED_TEXT_COLOR if shortcut_hovered else SECONDARY_TEXT_COLOR
                 _draw_text(shortcut_text, shortcut_text_x, shortcut_text_y, shortcut_text_size, shortcut_text_color)
 
@@ -4073,7 +4094,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
             draw_context_menu()
             return
 
-        category_color_mode = _category_color_mode()
         visible_results = self._results[self._scroll_offset:self._scroll_offset + visible_limit]
         for visible_index, entry in enumerate(visible_results):
             index = self._scroll_offset + visible_index
@@ -4113,6 +4133,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
             label_block_width = max(0, x + padding + search_width - label_block_x)
             if category_color_mode == "BLOCK":
                 category_fill, category_border = _entry_type_colors(entry, active=is_emphasized)
+                category_fill = (category_fill[0], category_fill[1], category_fill[2], 1.0)
+                category_border = (category_border[0], category_border[1], category_border[2], 1.0)
                 _draw_rounded_panel(category_block_x, block_y, category_block_width, block_height, block_radius, category_fill, category_border)
             if is_emphasized and category_color_mode == "BLOCK":
                 _draw_rounded_panel(label_block_x, block_y, label_block_width, block_height, block_radius, HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
