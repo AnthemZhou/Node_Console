@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "0.9.15"
+ADDON_VERSION = "1.0.0"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (0, 9, 15),
+    "version": (1, 0, 0),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -82,6 +82,10 @@ NODE_TYPE_COLORS = {
     "compositor_filter": (0.36, 0.22, 0.48, 1.0),
     "compositor_mask": (0.46, 0.24, 0.24, 1.0),
     "compositor_distort": (0.28, 0.52, 0.52, 1.0),
+    "special_output": (0.34, 0.16, 0.22, 1.0),
+    "closure": (0.43, 0.45, 0.15, 1.0),
+    "for_each": (0.16, 0.32, 0.55, 1.0),
+    "simulation": (0.46, 0.24, 0.50, 1.0),
     "none": (0.24, 0.34, 0.18, 1.0),
 }
 CATEGORY_COLOR_FALLBACK = NODE_TYPE_COLORS["none"]
@@ -100,6 +104,7 @@ COMPOSITOR_CATEGORY_ZH = {
     "tracking": "追踪",
     "transform": "变换",
     "utilities": "实用工具",
+    "layout": "布局",
 }
 NODE_COLOR_TAG_TYPES = {
     "ATTRIBUTE": "attribute",
@@ -238,6 +243,21 @@ PINYIN_PROFILE_CACHE: dict[str, tuple[str, tuple[int, ...], str, str]] = {}
 PINYIN_SEQUENCE_CACHE: dict[str, bool] = {}
 PINYIN_PHRASE_TABLE = {
     "着色器": "zhuo se qi",
+    "着色": "zhuo se",
+    "附着": "fu zhuo",
+    "恢复": "hui fu",
+    "长度": "chang du",
+    "重采样": "chong cai yang",
+    "重新": "chong xin",
+    "重定时": "chong ding shi",
+    "重复": "chong fu",
+    "行列式": "hang lie shi",
+    "栅格": "zha ge",
+    "山格": "shan ge",
+    "框": "kuang",
+    "校正": "jiao zheng",
+    "曝光": "bao guang",
+    "滤镜": "lv jing",
     "眩光": "xuan guang",
     "创意": "chuang yi",
     "蒙版": "meng ban",
@@ -950,7 +970,17 @@ def _pinyin_search_text(text: str) -> str:
     syllables = raw.split()
     compact = "".join(syllables)
     initials = "".join(part[0] for part in syllables if part)
-    value = _normalize(" ".join([raw, compact, initials]))
+    variants = []
+    if "栅格" in text:
+        alternate = _normalize(_source_pinyin(text.replace("栅格", "山格")))
+        if alternate and alternate != raw:
+            alternate_syllables = alternate.split()
+            variants.extend([
+                alternate,
+                "".join(alternate_syllables),
+                "".join(part[0] for part in alternate_syllables if part),
+            ])
+    value = _normalize(" ".join([raw, compact, initials, *variants]))
     PINYIN_TEXT_CACHE[text] = value
     return value
 
@@ -978,6 +1008,15 @@ def _pinyin_profile(text: str) -> tuple[str, tuple[int, ...], str, str]:
     value = (compact, tuple(boundaries), initials, search_text)
     PINYIN_PROFILE_CACHE[text] = value
     return value
+
+
+def _alternate_pinyin_profiles(text: str) -> list[tuple[str, tuple[int, ...], str, str]]:
+    profiles = []
+    if "栅格" in text:
+        alternate = text.replace("栅格", "山格")
+        if alternate != text:
+            profiles.append(_pinyin_profile(alternate))
+    return [profile for profile in profiles if profile[0]]
 
 
 def _preferences():
@@ -1223,6 +1262,8 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
         english = str(item["english"])
         chinese = str(item.get("chinese") or english)
         node_type = str(item.get("node_type", ""))
+        if node_type == "NodeFrame" and english == "Frame":
+            chinese = "框"
         settings = tuple(tuple(pair) for pair in item.get("settings", []))
         label = _entry_label(english, chinese)
         return NodeSearchEntry(
@@ -1238,12 +1279,6 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
             asset_name=str(item.get("asset_name", "")),
             asset_color_tag=str(item.get("asset_color_tag", "")),
             search_text=_make_search_text(english, chinese, label, node_type),
-            leaf_pinyin_compact=str(item.get("leaf_pinyin_compact", "")),
-            leaf_pinyin_boundaries=tuple(int(value) for value in item.get("leaf_pinyin_boundaries", [])),
-            leaf_pinyin_initials=str(item.get("leaf_pinyin_initials", "")),
-            root_pinyin_compact=str(item.get("root_pinyin_compact", "")),
-            root_pinyin_boundaries=tuple(int(value) for value in item.get("root_pinyin_boundaries", [])),
-            root_pinyin_initials=str(item.get("root_pinyin_initials", "")),
             settings=settings,
         )
     except Exception:
@@ -1578,44 +1613,75 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
     if entry.node_type == "NodeGroupOutput":
         return NODE_TYPE_COLORS["output"]
     normalized_english = _normalize(entry.english or "")
+    settings = dict(entry.settings)
+    if entry.kind == "ZONE":
+        if normalized_english == "simulation":
+            return NODE_TYPE_COLORS["simulation"]
+        if normalized_english == "for each element":
+            return NODE_TYPE_COLORS["for_each"]
+        if normalized_english == "closure":
+            return NODE_TYPE_COLORS["closure"]
+    if entry.node_type in {"GeometryNodeSimulationInput", "GeometryNodeSimulationOutput"}:
+        return NODE_TYPE_COLORS["simulation"]
+    if entry.node_type in {"GeometryNodeForeachGeometryElementInput", "GeometryNodeForeachGeometryElementOutput"}:
+        return NODE_TYPE_COLORS["for_each"]
+    if entry.node_type in {"CompositorNodeViewer", "CompositorNodeOutputFile", "ShaderNodeOutputAOV", "ShaderNodeOutputMaterial", "ShaderNodeOutputWorld", "TextureNodeViewer"}:
+        return NODE_TYPE_COLORS["special_output"]
     if entry.node_type == "NodeEvaluateClosure" or normalized_english == "evaluate closure":
         return NODE_TYPE_COLORS["converter"]
     if normalized_english == "closure" or entry.node_type in {"NodeClosureInput", "NodeClosureOutput"}:
-        return NODE_TYPE_COLORS["none"]
+        return NODE_TYPE_COLORS["closure"]
     if normalized_english == "smooth by angle" or normalized_english == "get geometry bundle":
         return NODE_TYPE_COLORS["geometry"]
     if normalized_english == "string to curve":
         return NODE_TYPE_COLORS["geometry"]
+    if entry.node_type == "FunctionNodeStringToCurves":
+        return NODE_TYPE_COLORS["geometry"]
     if normalized_english == "set material index":
         return NODE_TYPE_COLORS["geometry"]
-    if normalized_english == "shader to rgb":
+    if normalized_english == "get named grid":
+        return NODE_TYPE_COLORS["geometry"]
+    if normalized_english in {"shader to rgb", "blackbody", "wavelength", "rgb to bw", "alpha convert", "set alpha", "convert colorspace", "convert to display", "desaturate"}:
         return NODE_TYPE_COLORS["converter"]
+    if normalized_english in {"chromatic aberration", "vignette", "radial blur"}:
+        return NODE_TYPE_COLORS["compositor_distort"]
+    if normalized_english in {"sepia", "color separation", "unsharp mask", "filter"}:
+        return NODE_TYPE_COLORS["compositor_filter"]
     if entry.node_type in {"ShaderNodeValToRGB", "TextureNodeValToRGB"} or normalized_english == "color ramp":
         return NODE_TYPE_COLORS["converter"]
     if normalized_english in {"combine color", "separate color"}:
         return NODE_TYPE_COLORS["converter"]
     if entry.node_type in {"GeometryNodeSetGreasePencilColor", "GeometryNodeSetGreasePencilDepth", "GeometryNodeSetGreasePencilSoftness"}:
         return NODE_TYPE_COLORS["geometry"]
-    if normalized_english in {"instance rotation", "uv tangent", "special characters"} or normalized_english.endswith("material index"):
+    if entry.node_type in {"GeometryNodeGizmoDial", "GeometryNodeGizmoLinear", "GeometryNodeGizmoTransform"}:
+        return NODE_TYPE_COLORS["output"]
+    if entry.node_type in {"GeometryNodeInputInstanceBounds", "GeometryNodeInstanceTransform", "GeometryNodeInputInstanceScale", "GeometryNodeEdgePathsToSelection"}:
+        return NODE_TYPE_COLORS["input"]
+    if normalized_english in {"instance rotation", "instance bounds", "instance transform", "instance scale", "uv tangent", "special characters"} or normalized_english.endswith("material index"):
         return NODE_TYPE_COLORS["input"]
     if normalized_english in {"pack uv islands", "uv unwrap", "index of nearest"}:
         return NODE_TYPE_COLORS["converter"]
     if normalized_english == "radial tiling":
         return NODE_TYPE_COLORS["vector"]
-    if entry.node_type in {"ShaderNodeVectorRotate", "ShaderNodeVectorMath", "ShaderNodeVectorCurve"}:
+    if entry.node_type in {"ShaderNodeVectorRotate", "ShaderNodeVectorMath", "ShaderNodeVectorCurve", "ShaderNodeMapping", "ShaderNodeNormal", "ShaderNodeVectorTransform"}:
         return NODE_TYPE_COLORS["vector"]
     if entry.node_type in {"ShaderNodeDisplacement", "ShaderNodeVectorDisplacement"} or first_category == "displacement":
         return NODE_TYPE_COLORS["vector"]
-    settings = dict(entry.settings)
     if entry.node_type == "ShaderNodeMix" and (settings.get("data_type") == "VECTOR" or "mix vector" in normalized_english):
         return NODE_TYPE_COLORS["vector"]
     if entry.node_type in {"FunctionNodeAlignEulerToVector", "FunctionNodeRotateVector", "FunctionNodeRotateRotation"}:
         return NODE_TYPE_COLORS["converter"]
     if first_category == "curve" and "topology" in category_parts:
         return NODE_TYPE_COLORS["input"]
+    if first_category == "mesh" and "topology" in category_parts:
+        return NODE_TYPE_COLORS["input"]
     if "read" in category_parts:
         return NODE_TYPE_COLORS["input"]
     if entry.node_type.startswith("CompositorNode"):
+        if entry.node_type in {"CompositorNodePremulKey", "CompositorNodeSetAlpha", "CompositorNodeConvertColorSpace", "CompositorNodeConvertToDisplay", "CompositorNodeRGBToBW", "ShaderNodeBlackbody"}:
+            return NODE_TYPE_COLORS["converter"]
+        if entry.node_type == "CompositorNodeTrackPos":
+            return NODE_TYPE_COLORS["input"]
         if entry.node_type == "CompositorNodeNormalize" or normalized_english == "normalize":
             return NODE_TYPE_COLORS["vector"]
         if entry.node_type == "CompositorNodeMask" or normalized_english == "mask":
@@ -1624,13 +1690,15 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
             return NODE_TYPE_COLORS["compositor_distort"]
         if "sensor noise" in normalized_english:
             return NODE_TYPE_COLORS["texture"]
+        if normalized_english in {"sepia", "color separation", "unsharp mask"}:
+            return NODE_TYPE_COLORS["compositor_filter"]
         if "posterize" in normalized_english or "adjust image" in normalized_english:
             return NODE_TYPE_COLORS["color"]
         if entry.node_type == "CompositorNodeIDMask" or normalized_english == "id mask":
             return NODE_TYPE_COLORS["converter"]
         if any(part in {"keying", "mask", "matte"} for part in category_parts):
             return NODE_TYPE_COLORS["compositor_mask"]
-        if any(word in normalized_english for word in ("distortion", "aberration", "vignette")):
+        if any(word in normalized_english for word in ("distortion", "aberration", "vignette", "radial")):
             return NODE_TYPE_COLORS["compositor_distort"]
         if any(part in {"distort", "tracking", "camera & lens effects", "transform"} for part in category_parts):
             return NODE_TYPE_COLORS["compositor_distort"]
@@ -1830,12 +1898,16 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
         entry.leaf_pinyin_boundaries,
         entry.leaf_pinyin_initials,
     )
+    for compact, boundaries, initials, _search_text in _alternate_pinyin_profiles(" ".join(chinese_parts[-1:])):
+        leaf_pinyin_level = max(leaf_pinyin_level, _pinyin_match_level(compact_query, compact, boundaries, initials))
     root_pinyin_level = _pinyin_match_level(
         compact_query,
         entry.root_pinyin_compact,
         entry.root_pinyin_boundaries,
         entry.root_pinyin_initials,
     )
+    for compact, boundaries, initials, _search_text in _alternate_pinyin_profiles(" ".join(chinese_parts[:-1])):
+        root_pinyin_level = max(root_pinyin_level, _pinyin_match_level(compact_query, compact, boundaries, initials))
     leaf_pinyin_match = leaf_pinyin_level >= 4
     root_pinyin_match = root_pinyin_level >= 4
     if _chinese_fuzzy_match_enabled():
@@ -1984,6 +2056,24 @@ OFFICIALISH_QUERY_ORDER = {
         "noise texture",
         "hair curves noise",
         "white noise texture",
+    ),
+    "instance": (
+        "instance on points",
+        "instances to points",
+        "realize instances",
+        "instance bounds",
+        "instance transform",
+        "instance scale",
+        "instance rotation",
+    ),
+    "shili": (
+        "instance on points",
+        "instances to points",
+        "realize instances",
+        "instance bounds",
+        "instance transform",
+        "instance scale",
+        "instance rotation",
     ),
 }
 
@@ -2180,7 +2270,7 @@ def _node_type_exists_in_current_blender(node_type: str) -> bool:
 def _entry_available_in_current_blender(context, entry: NodeSearchEntry) -> bool:
     if entry.kind != "NODE":
         return True
-    return _node_type_exists_in_current_blender(entry.node_type)
+    return _node_tree_allows_node(context, entry.node_type)
 
 
 def _is_redundant_mix_color_entry(entry: NodeSearchEntry) -> bool:
@@ -2339,15 +2429,21 @@ def _fallback_category_for_node_type(node_type: str, english: str = "") -> str:
 
 
 COMPOSITOR_MANUAL_ENTRIES = (
+    ("CompositorNodeFilter", "Filter", "Filter", "滤镜（过滤）"),
     ("CompositorNodeGlare", "Filter", "Glare", "眩光"),
+    ("CompositorNodeSepia", "Filter", "Sepia", "棕色调"),
+    ("CompositorNodeColorSeparation", "Filter", "Color Separation", "色彩分离"),
+    ("CompositorNodeUnsharpMask", "Filter", "Unsharp Mask", "反遮罩锐化"),
     ("CompositorNodeSunBeams", "Filter", "Sun Beams", "日光束"),
     ("CompositorNodeKuwahara", "Creative", "Kuwahara", "Kuwahara桑原滤镜"),
     ("CompositorNodePixelate", "Creative", "Pixelate", "像素化"),
     ("CompositorNodePosterize", "Creative", "Posterize", "色调分离"),
     ("CompositorNodeAdjustImage", "Creative", "Adjust Image", "调整图像"),
     ("CompositorNodeChromaticAberration", "Camera & Lens Effects", "Chromatic Aberration", "色差"),
+    ("CompositorNodeRadialBlur", "Camera & Lens Effects", "Radial Blur", "迳向"),
     ("CompositorNodeVignette", "Camera & Lens Effects", "Vignette", "暗角"),
     ("CompositorNodeSensorNoise", "Camera & Lens Effects", "Sensor Noise", "传感器噪点"),
+    ("CompositorNodeRetime", "Transform", "Retime", "重定时"),
 )
 
 
@@ -2790,16 +2886,25 @@ def _rebuild_search_entries(context):
     def add_zone_entries():
         space = context.space_data
         edit_tree = getattr(space, "edit_tree", None)
-        if not edit_tree or edit_tree.bl_idname != "GeometryNodeTree":
+        if not edit_tree:
             return
 
-        zones = (
-            ("Simulation", "GeometryNodeSimulationInput", "GeometryNodeSimulationOutput", "node.add_zone", "Simulation zone", True),
-            ("Repeat", "GeometryNodeRepeatInput", "GeometryNodeRepeatOutput", "node.add_zone", "Repeat zone", True),
-            ("For Each Element", "GeometryNodeForeachGeometryElementInput", "GeometryNodeForeachGeometryElementOutput", "node.add_zone", "For Each Element zone", False),
-            ("Closure", "NodeClosureInput", "NodeClosureOutput", "node.add_zone", "Closure zone", False),
-        )
+        zones_by_tree = {
+            "GeometryNodeTree": (
+                ("Simulation", "GeometryNodeSimulationInput", "GeometryNodeSimulationOutput", "node.add_zone", "Simulation zone", True),
+                ("Repeat", "GeometryNodeRepeatInput", "GeometryNodeRepeatOutput", "node.add_zone", "Repeat zone", True),
+                ("For Each Element", "GeometryNodeForeachGeometryElementInput", "GeometryNodeForeachGeometryElementOutput", "node.add_zone", "For Each Element zone", False),
+                ("Closure", "NodeClosureInput", "NodeClosureOutput", "node.add_zone", "Closure zone", False),
+            ),
+            "ShaderNodeTree": (
+                ("Repeat", "GeometryNodeRepeatInput", "GeometryNodeRepeatOutput", "node.add_zone", "Repeat zone", False),
+                ("Closure", "NodeClosureInput", "NodeClosureOutput", "node.add_zone", "Closure zone", False),
+            ),
+        }
+        zones = zones_by_tree.get(edit_tree.bl_idname, ())
         for english, input_type, output_type, operator_id, description, add_default_geometry_link in zones:
+            if not _node_type_exists_in_current_blender(input_type) or not _node_type_exists_in_current_blender(output_type):
+                continue
             key = ("ZONE", input_type, output_type)
             if key in seen_keys:
                 continue
@@ -2845,6 +2950,8 @@ def _rebuild_search_entries(context):
         if category == "Node":
             category = _fallback_category_for_node_type(node_type, base_english)
         base_chinese = variant_chinese if variant_chinese and not variant_label else _translation_label(base_english)
+        if node_type == "NodeFrame" and base_english == "Frame":
+            base_chinese = "框"
         if variant_label:
             english = f"{base_english} > {variant_label}"
             translated_variant = variant_chinese or _translation_label(variant_label)
@@ -4754,6 +4861,8 @@ def _shortcut_conflict_labels() -> list[str]:
     ctrl = prefs.shortcut_ctrl
     alt = prefs.shortcut_alt
     oskey = prefs.shortcut_oskey
+    if key_type == "A" and shift and not ctrl and not alt and not oskey:
+        return []
     shortcut = _shortcut_text(key_type, shift, ctrl, alt, oskey)
     labels = []
     seen = set()
