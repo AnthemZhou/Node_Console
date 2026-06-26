@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "1.0.0"
+ADDON_VERSION = "1.0.1"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 0, 0),
+    "version": (1, 0, 1),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -2163,8 +2163,21 @@ def _leaf_prefix_sort_key(entry: NodeSearchEntry, query: str) -> tuple[int, int,
     return (tier, len(leaf_words), first_hit, len(leaf), _category_sort_priority(entry))
 
 
+def _officialish_query_key(query: str) -> str | None:
+    normalized = _normalize(query)
+    if normalized in OFFICIALISH_QUERY_ORDER:
+        return normalized
+    if len(normalized) < 3:
+        return None
+    for key in OFFICIALISH_QUERY_ORDER:
+        if key.startswith(normalized):
+            return key
+    return None
+
+
 def _officialish_preferred_order(entry: NodeSearchEntry, query: str) -> int:
-    preferred = OFFICIALISH_QUERY_ORDER.get(_normalize(query))
+    preferred_key = _officialish_query_key(query)
+    preferred = OFFICIALISH_QUERY_ORDER.get(preferred_key or "")
     if not preferred:
         return _dynamic_preferred_order(entry, query)
 
@@ -3163,6 +3176,8 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
         output_sort = entry.english.lower() if _has_visible_output_setting(entry) and match["root_word_match"] else ""
         leaf_sort = _leaf_prefix_sort_key(entry, query)
         deprecated_penalty = _deprecated_sort_penalty(entry, query)
+        if _officialish_query_key(query):
+            return (item[7], not item[2], deprecated_penalty, leaf_sort, item[5], item[6], output_sort, not item[1], item[4], -item[0], item[3])
         return (not item[2], item[7], deprecated_penalty, leaf_sort, item[5], item[6], output_sort, not item[1], item[4], -item[0], item[3])
 
     scored.sort(key=sort_key)
