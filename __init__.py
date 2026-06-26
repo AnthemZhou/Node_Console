@@ -2283,7 +2283,7 @@ def _node_type_exists_in_current_blender(node_type: str) -> bool:
 def _entry_available_in_current_blender(context, entry: NodeSearchEntry) -> bool:
     if entry.kind != "NODE":
         return True
-    return _node_tree_allows_node(context, entry.node_type)
+    return _node_type_exists_in_current_blender(entry.node_type)
 
 
 def _is_redundant_mix_color_entry(entry: NodeSearchEntry) -> bool:
