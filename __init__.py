@@ -20,13 +20,13 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 
-ADDON_VERSION = "1.0.1"
+ADDON_VERSION = "1.0.2"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 0, 1),
+    "version": (1, 0, 2),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -51,7 +51,7 @@ TEXT_WIDTH_CACHE: dict[tuple[str, int], float] = {}
 FONT_ID = 0
 MAX_RESULTS = 12
 PANEL_WIDTH = 400
-PANEL_MIN_WIDTH = 320
+PANEL_MIN_WIDTH = 250
 PANEL_MAX_WIDTH = 720
 SEARCH_HEIGHT = 23
 ROW_HEIGHT = 26
@@ -117,6 +117,12 @@ NODE_COLOR_TAG_TYPES = {
     "VECTOR": "vector",
     "NONE": "none",
 }
+NODE_TREE_GROUPS = (
+    ("GeometryNodeTree", "Geometry Nodes"),
+    ("ShaderNodeTree", "Shader Nodes"),
+    ("CompositorNodeTree", "Compositor Nodes"),
+    ("", "Uncategorized"),
+)
 SETTINGS_FILENAME = "node_console_settings.json"
 BUNDLED_CACHE_FILENAME = "node_console_builtin_cache.json"
 
@@ -150,6 +156,10 @@ UI_TEXT_ZH = {
     "No favorite nodes": "没有收藏节点",
     "Shortcuts": "快捷节点",
     "No node shortcuts": "没有快捷节点",
+    "Geometry Nodes": "几何节点",
+    "Shader Nodes": "材质节点",
+    "Compositor Nodes": "合成节点",
+    "Uncategorized": "未分类",
 }
 
 TRANSLATIONS = {
@@ -1160,6 +1170,103 @@ def _load_favorite_meta() -> dict[str, str]:
     return {key: value for key, value in raw.items() if isinstance(key, str) and isinstance(value, str)}
 
 
+def _valid_node_tree_ids() -> set[str]:
+    return {tree_id for tree_id, _label in NODE_TREE_GROUPS if tree_id}
+
+
+def _available_trees_for_identifier(identifier: str, fallback_tree_id: str = "") -> set[str]:
+    trees = set()
+    if fallback_tree_id in _valid_node_tree_ids():
+        trees.add(fallback_tree_id)
+    inferred = _infer_identifier_tree(identifier)
+    if inferred in _valid_node_tree_ids():
+        trees.add(inferred)
+    return trees
+
+
+def _load_identifier_tree_meta(name: str) -> dict[str, set[str]]:
+    raw = _load_settings().get(name, {})
+    if not isinstance(raw, dict):
+        return {}
+    valid_trees = _valid_node_tree_ids()
+    result: dict[str, set[str]] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str):
+            continue
+        if isinstance(value, str):
+            trees = {value} if value in valid_trees else set()
+        elif isinstance(value, list):
+            trees = {item for item in value if isinstance(item, str) and item in valid_trees}
+        else:
+            trees = set()
+        if trees:
+            result[key] = trees
+    return result
+
+
+def _save_identifier_tree_meta(name: str, values: dict[str, set[str] | list[str] | tuple[str, ...]]):
+    data = _load_settings()
+    valid_trees = _valid_node_tree_ids()
+    data[name] = {
+        key: sorted({tree_id for tree_id in value if tree_id in valid_trees})
+        for key, value in values.items()
+        if isinstance(key, str) and isinstance(value, (set, list, tuple)) and {tree_id for tree_id in value if tree_id in valid_trees}
+    }
+    _write_settings(data)
+
+
+def _infer_identifier_tree(identifier: str) -> str:
+    entry = NODE_ENTRY_BY_ID.get(identifier)
+    node_type = entry.node_type if entry else identifier
+    if "CompositorNode" in node_type:
+        return "CompositorNodeTree"
+    if "GeometryNode" in node_type or "FunctionNode" in node_type or node_type in {"NodeClosureInput", "NodeClosureOutput"}:
+        return "GeometryNodeTree"
+    if "ShaderNode" in node_type:
+        return "ShaderNodeTree"
+    return ""
+
+
+def _identifier_trees(identifier: str, tree_meta: dict[str, set[str]]) -> set[str]:
+    trees = tree_meta.get(identifier)
+    if trees:
+        return set(trees)
+    inferred = _infer_identifier_tree(identifier)
+    return {inferred} if inferred else {""}
+
+
+def _group_identifiers_by_tree(identifiers, tree_meta: dict[str, set[str]]) -> dict[str, list[str]]:
+    groups = {tree_id: [] for tree_id, _label in NODE_TREE_GROUPS}
+    for identifier in identifiers:
+        for tree_id in sorted(_identifier_trees(identifier, tree_meta)):
+            groups.setdefault(tree_id, []).append(identifier)
+    return groups
+
+
+def _load_favorites_for_tree(tree_id: str) -> set[str]:
+    favorites = _load_favorites()
+    tree_meta = _load_identifier_tree_meta("favorite_tree_meta")
+    if tree_id not in _valid_node_tree_ids():
+        return favorites
+    return {
+        identifier
+        for identifier in favorites
+        if tree_id in _identifier_trees(identifier, tree_meta)
+    }
+
+
+def _load_shortcuts_for_tree(tree_id: str) -> list[str]:
+    shortcuts = _load_shortcuts()
+    tree_meta = _load_identifier_tree_meta("shortcut_tree_meta")
+    if tree_id not in _valid_node_tree_ids():
+        return shortcuts
+    return [
+        identifier
+        for identifier in shortcuts
+        if tree_id in _identifier_trees(identifier, tree_meta)
+    ]
+
+
 def _load_asset_index() -> list[dict]:
     raw = _load_settings().get("asset_index", [])
     if not isinstance(raw, list):
@@ -1350,11 +1457,17 @@ def _save_search_index_cache(context, entries: list[NodeSearchEntry]):
     SEARCH_INDEX_MEMORY_KEYS.add(cache_key)
 
 
-def _save_favorites(favorites: set[str], favorite_meta: dict[str, str] | None = None):
+def _save_favorites(favorites: set[str], favorite_meta: dict[str, str] | None = None, favorite_tree_meta: dict[str, set[str]] | None = None):
     data = _load_settings()
     data["favorites"] = sorted(favorites)
     if favorite_meta is not None:
         data["favorite_meta"] = {key: favorite_meta[key] for key in sorted(favorite_meta)}
+    if favorite_tree_meta is not None:
+        data["favorite_tree_meta"] = {
+            key: sorted(favorite_tree_meta[key])
+            for key in sorted(favorite_tree_meta)
+            if favorite_tree_meta[key]
+        }
     _write_settings(data)
 
 
@@ -1362,15 +1475,31 @@ def _save_shortcuts(shortcuts: list[str]):
     _save_string_list("shortcuts", shortcuts)
 
 
-def _add_shortcut(identifier: str):
+def _add_shortcut(identifier: str, tree_id: str = ""):
     shortcuts = _load_shortcuts()
     if identifier not in shortcuts:
         shortcuts.append(identifier)
         _save_shortcuts(shortcuts)
+    if tree_id:
+        tree_meta = _load_identifier_tree_meta("shortcut_tree_meta")
+        tree_meta.setdefault(identifier, set()).add(tree_id)
+        _save_identifier_tree_meta("shortcut_tree_meta", tree_meta)
 
 
-def _remove_shortcut(identifier: str):
-    _save_shortcuts([item for item in _load_shortcuts() if item != identifier])
+def _remove_shortcut(identifier: str, tree_id: str = ""):
+    tree_meta = _load_identifier_tree_meta("shortcut_tree_meta")
+    if tree_id and identifier in _load_shortcuts():
+        trees = set(tree_meta.get(identifier) or _available_trees_for_identifier(identifier, tree_id))
+        trees.discard(tree_id)
+        if trees:
+            tree_meta[identifier] = trees
+        else:
+            tree_meta.pop(identifier, None)
+            _save_shortcuts([item for item in _load_shortcuts() if item != identifier])
+    else:
+        _save_shortcuts([item for item in _load_shortcuts() if item != identifier])
+        tree_meta.pop(identifier, None)
+    _save_identifier_tree_meta("shortcut_tree_meta", tree_meta)
 
 
 def _move_shortcut(identifier: str, delta: int):
@@ -1385,12 +1514,24 @@ def _move_shortcut(identifier: str, delta: int):
     _save_shortcuts(shortcuts)
 
 
-def _remove_favorite(identifier: str):
+def _remove_favorite(identifier: str, tree_id: str = ""):
     favorites = _load_favorites()
     favorite_meta = _load_favorite_meta()
-    favorites.discard(identifier)
-    favorite_meta.pop(identifier, None)
-    _save_favorites(favorites, favorite_meta)
+    favorite_tree_meta = _load_identifier_tree_meta("favorite_tree_meta")
+    if tree_id and identifier in favorites:
+        trees = set(favorite_tree_meta.get(identifier) or _available_trees_for_identifier(identifier, tree_id))
+        trees.discard(tree_id)
+        if trees:
+            favorite_tree_meta[identifier] = trees
+        else:
+            favorites.discard(identifier)
+            favorite_meta.pop(identifier, None)
+            favorite_tree_meta.pop(identifier, None)
+    else:
+        favorites.discard(identifier)
+        favorite_meta.pop(identifier, None)
+        favorite_tree_meta.pop(identifier, None)
+    _save_favorites(favorites, favorite_meta, favorite_tree_meta)
 
 
 def _preference_changed(_self, _context):
@@ -1537,7 +1678,20 @@ def _entry_shortcut_label(entry: NodeSearchEntry) -> str:
 
 def _entry_display_label(identifier: str, fallback: str = "") -> str:
     entry = NODE_ENTRY_BY_ID.get(identifier)
-    return entry.label if entry else fallback or identifier
+    if entry:
+        return _entry_label(entry.english, entry.chinese)
+
+    label = fallback or identifier
+    if " / " in label:
+        first, second = [part.strip() for part in label.split(" / ", 1)]
+        first_is_ascii = all(ord(char) < 128 for char in first)
+        second_is_ascii = all(ord(char) < 128 for char in second)
+        if first_is_ascii != second_is_ascii:
+            english = first if first_is_ascii else second
+            chinese = second if first_is_ascii else first
+            return _entry_label(english, chinese)
+
+    return label
 
 
 def _settings_dict(settings: tuple[tuple[str, str], ...]) -> dict[str, str]:
@@ -3524,6 +3678,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _shortcut_rects: list[tuple[str, tuple[float, float, float, float]]] = []
     _shortcut_hover = None
     _shortcut_hover_started = 0.0
+    _tree_id = ""
     _hovered_result_index = None
     _keyboard_selection_active = False
     _pending_native_transform = False
@@ -3784,13 +3939,19 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
         entry = self._results[index]
         identifier = entry.identifier
+        all_favorites = _load_favorites()
         if should_favorite:
+            all_favorites.add(identifier)
             self._favorites.add(identifier)
             self._favorite_meta[identifier] = entry.label
+            favorite_tree_meta = _load_identifier_tree_meta("favorite_tree_meta")
+            if self._tree_id:
+                favorite_tree_meta.setdefault(identifier, set()).add(self._tree_id)
+            _save_favorites(all_favorites, self._favorite_meta, favorite_tree_meta)
         else:
-            self._favorites.discard(identifier)
-            self._favorite_meta.pop(identifier, None)
-        _save_favorites(self._favorites, self._favorite_meta)
+            _remove_favorite(identifier, self._tree_id)
+            self._favorites = _load_favorites_for_tree(self._tree_id)
+            self._favorite_meta = _load_favorite_meta()
         self._refresh_results()
 
     def _open_context_menu(self, event, index):
@@ -3916,11 +4077,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._close_context_menu()
         self._anchor_x = event.mouse_region_x
         self._anchor_y = event.mouse_region_y
+        self._tree_id = _node_tree_id(context)
         self._panel_x = None
         self._search_y = None
-        self._favorites = _load_favorites()
+        self._favorites = _load_favorites_for_tree(self._tree_id)
         self._favorite_meta = _load_favorite_meta()
-        self._shortcuts = _load_shortcuts()
+        self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
         self._shortcut_hover_started = 0.0
         self._scroll_offset = 0
         self._scroll_remainder = 0.0
@@ -4063,8 +4225,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     action = self._context_menu_action_from_mouse(event)
                     entry = self._results[self._context_menu_index] if self._context_menu_index is not None and self._context_menu_index < len(self._results) else None
                     if action == "REMOVE_SHORTCUT" and self._context_menu_shortcut:
-                        _remove_shortcut(self._context_menu_shortcut)
-                        self._shortcuts = _load_shortcuts()
+                        _remove_shortcut(self._context_menu_shortcut, self._tree_id)
+                        self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
                         self._shortcut_hover = None
                         self._close_context_menu()
                     elif action == "FAVORITE":
@@ -4072,10 +4234,13 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     elif action == "UNFAVORITE":
                         self._set_favorite(self._context_menu_index, False)
                     elif action == "SHORTCUT" and entry:
-                        _add_shortcut(entry.identifier)
+                        _add_shortcut(entry.identifier, self._tree_id)
                         self._favorite_meta[entry.identifier] = entry.label
-                        _save_favorites(self._favorites, self._favorite_meta)
-                        self._shortcuts = _load_shortcuts()
+                        favorite_meta = _load_favorite_meta()
+                        favorite_meta[entry.identifier] = entry.label
+                        _save_favorites(_load_favorites(), favorite_meta, _load_identifier_tree_meta("favorite_tree_meta"))
+                        self._favorite_meta = favorite_meta
+                        self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
                         self._close_context_menu()
                         self._query = ""
                         self._scroll_offset = 0
@@ -4474,6 +4639,19 @@ class NODECONSOLE_OT_ResetConsoleWidth(Operator):
         return {"FINISHED"}
 
 
+class NODECONSOLE_OT_ResetConsoleSize(Operator):
+    bl_idname = "node_console.reset_console_size"
+    bl_label = "Reset Size"
+    bl_description = "Reset Node Console size to the platform default value"
+    bl_options = {"INTERNAL"}
+
+    def execute(self, _context):
+        prefs = _preferences()
+        if prefs:
+            prefs.ui_scale = 0.8 if sys.platform == "win32" else 1.0
+        return {"FINISHED"}
+
+
 class NODECONSOLE_OT_ResetShortcut(Operator):
     bl_idname = "node_console.reset_shortcut"
     bl_label = "Reset Shortcut"
@@ -4517,9 +4695,10 @@ class NODECONSOLE_OT_RemoveFavorite(Operator):
     bl_options = {"INTERNAL"}
 
     identifier: StringProperty()
+    tree_id: StringProperty(default="")
 
     def execute(self, _context):
-        _remove_favorite(self.identifier)
+        _remove_favorite(self.identifier, self.tree_id)
         return {"FINISHED"}
 
 
@@ -4530,9 +4709,10 @@ class NODECONSOLE_OT_RemoveShortcut(Operator):
     bl_options = {"INTERNAL"}
 
     identifier: StringProperty()
+    tree_id: StringProperty(default="")
 
     def execute(self, _context):
-        _remove_shortcut(self.identifier)
+        _remove_shortcut(self.identifier, self.tree_id)
         return {"FINISHED"}
 
 
@@ -4663,6 +4843,37 @@ class ENS_AddonPreferences(AddonPreferences):
         layout = self.layout
 
         settings_box = layout.box()
+        private_links = settings_box.split(factor=0.5, align=False)
+        private_left = private_links.column(align=True)
+        private_right = private_links.column(align=True)
+
+        row = private_left.split(factor=0.56, align=True)
+        platform = row.split(factor=0.32, align=True)
+        platform.label(text="B站:")
+        platform.label(text="周圣宇_Anthem")
+        op = row.operator("wm.url_open", text="一键三连", icon="URL")
+        op.url = "https://space.bilibili.com/25142156?spm_id_from=333.1007.0.0"
+
+        row = private_left.split(factor=0.56, align=True)
+        platform = row.split(factor=0.32, align=True)
+        platform.label(text="小红书:")
+        platform.label(text="一周不剩")
+        op = row.operator("wm.url_open", text="点赞关注", icon="URL")
+        op.url = "https://xhslink.com/m/6zzQ97wiPAI"
+
+        row = private_right.split(factor=0.56, align=True)
+        row.label(text="飞书技术字典")
+        disabled_button = row.row(align=True)
+        disabled_button.enabled = False
+        disabled_button.operator("wm.url_open", text="查看资料", icon="URL")
+
+        row = private_right.split(factor=0.56, align=True)
+        row.label(text=f"GitHub：Node Console v{ADDON_VERSION}")
+        op = row.operator("wm.url_open", text="查看源码", icon="URL")
+        op.url = "https://github.com/AnthemZhou/Node_Console"
+
+        settings_box.separator(type="LINE")
+
         display_top = settings_box.split(factor=0.5, align=False)
         display_left = display_top.box().column(align=True)
         display_right = display_top.box().column(align=True)
@@ -4674,10 +4885,12 @@ class ENS_AddonPreferences(AddonPreferences):
         category_row.label(text=_ui_text("Category Color Display"))
         category_row.prop(self, "category_color_mode", text="")
 
-        size_row = display_right.split(factor=0.47, align=True)
+        size_row = display_right.split(factor=0.56, align=True)
         size_row.label(text=_ui_text("Console Size"))
-        size_row.prop(self, "ui_scale", text="", slider=True)
-        width_row = display_right.split(factor=0.47, align=True)
+        size_controls = size_row.row(align=True)
+        size_controls.prop(self, "ui_scale", text="", slider=True)
+        size_controls.operator(NODECONSOLE_OT_ResetConsoleSize.bl_idname, icon="FILE_REFRESH", text="")
+        width_row = display_right.split(factor=0.56, align=True)
         width_row.label(text=_ui_text("Console Width"))
         width_controls = width_row.row(align=True)
         width_controls.prop(self, "console_width", text="")
@@ -4687,7 +4900,7 @@ class ENS_AddonPreferences(AddonPreferences):
         asset_top = settings_box.split(factor=0.5, align=False)
         asset_left = asset_top.box().row(align=True)
         asset_left.prop(self, "scan_asset_libraries", text=_ui_text("Show Cached Asset Nodes"))
-        asset_right = asset_top.box().split(factor=0.47, align=True)
+        asset_right = asset_top.box().split(factor=0.56, align=True)
         asset_right.label(text=f"{_ui_text('Cached Assets')}: {len(_load_asset_index())}")
         refresh_controls = asset_right.row(align=True)
         refresh_controls.operator(NODECONSOLE_OT_RefreshAssetIndex.bl_idname, text=_ui_text("Refresh Asset Index"))
@@ -4733,6 +4946,8 @@ class ENS_AddonPreferences(AddonPreferences):
             warning.label(text=_ui_text("Original shortcut restores after Node Console uses a non-conflicting shortcut."))
 
         favorite_meta = _load_favorite_meta()
+        favorite_tree_meta = _load_identifier_tree_meta("favorite_tree_meta")
+        shortcut_tree_meta = _load_identifier_tree_meta("shortcut_tree_meta")
         lists = layout.split(factor=0.5, align=False)
 
         favorites = _load_favorites()
@@ -4742,11 +4957,25 @@ class ENS_AddonPreferences(AddonPreferences):
         if not favorites:
             box.label(text=_ui_text("No favorite nodes"))
         else:
-            for identifier in sorted(favorites, key=lambda item: _entry_display_label(item, favorite_meta.get(item, item)).lower()):
-                row = box.row(align=True)
-                row.label(text=_entry_display_label(identifier, favorite_meta.get(identifier, identifier)))
-                remove_op = row.operator(NODECONSOLE_OT_RemoveFavorite.bl_idname, text="", icon="X")
-                remove_op.identifier = identifier
+            grouped_favorites = _group_identifiers_by_tree(
+                sorted(favorites, key=lambda item: _entry_display_label(item, favorite_meta.get(item, item)).lower()),
+                favorite_tree_meta,
+            )
+            for tree_id, label in NODE_TREE_GROUPS:
+                identifiers = grouped_favorites.get(tree_id, [])
+                if not identifiers:
+                    continue
+                if tree_id != next((item[0] for item in NODE_TREE_GROUPS if grouped_favorites.get(item[0])), None):
+                    box.separator(type="LINE")
+                header = box.row()
+                header.enabled = False
+                header.label(text=_ui_text(label))
+                for identifier in identifiers:
+                    row = box.row(align=True)
+                    row.label(text=_entry_display_label(identifier, favorite_meta.get(identifier, identifier)))
+                    remove_op = row.operator(NODECONSOLE_OT_RemoveFavorite.bl_idname, text="", icon="X")
+                    remove_op.identifier = identifier
+                    remove_op.tree_id = tree_id
 
         shortcuts = _load_shortcuts()
         right_col = lists.column()
@@ -4755,23 +4984,35 @@ class ENS_AddonPreferences(AddonPreferences):
         if not shortcuts:
             box.label(text=_ui_text("No node shortcuts"))
         else:
-            for identifier in shortcuts:
-                row = box.row(align=True)
-                row.label(text=_entry_display_label(identifier, favorite_meta.get(identifier, identifier)))
-                up_op = row.operator(NODECONSOLE_OT_MoveShortcut.bl_idname, text="", icon="TRIA_UP")
-                up_op.identifier = identifier
-                up_op.direction = "UP"
-                down_op = row.operator(NODECONSOLE_OT_MoveShortcut.bl_idname, text="", icon="TRIA_DOWN")
-                down_op.identifier = identifier
-                down_op.direction = "DOWN"
-                remove_op = row.operator(NODECONSOLE_OT_RemoveShortcut.bl_idname, text="", icon="X")
-                remove_op.identifier = identifier
+            grouped_shortcuts = _group_identifiers_by_tree(shortcuts, shortcut_tree_meta)
+            for tree_id, label in NODE_TREE_GROUPS:
+                identifiers = grouped_shortcuts.get(tree_id, [])
+                if not identifiers:
+                    continue
+                if tree_id != next((item[0] for item in NODE_TREE_GROUPS if grouped_shortcuts.get(item[0])), None):
+                    box.separator(type="LINE")
+                header = box.row()
+                header.enabled = False
+                header.label(text=_ui_text(label))
+                for identifier in identifiers:
+                    row = box.row(align=True)
+                    row.label(text=_entry_display_label(identifier, favorite_meta.get(identifier, identifier)))
+                    up_op = row.operator(NODECONSOLE_OT_MoveShortcut.bl_idname, text="", icon="TRIA_UP")
+                    up_op.identifier = identifier
+                    up_op.direction = "UP"
+                    down_op = row.operator(NODECONSOLE_OT_MoveShortcut.bl_idname, text="", icon="TRIA_DOWN")
+                    down_op.identifier = identifier
+                    down_op.direction = "DOWN"
+                    remove_op = row.operator(NODECONSOLE_OT_RemoveShortcut.bl_idname, text="", icon="X")
+                    remove_op.identifier = identifier
+                    remove_op.tree_id = tree_id
 
 
 classes = (
     ENS_AddNodeByEnglishSearch,
     NODECONSOLE_OT_RefreshAssetIndex,
     NODECONSOLE_OT_ResetConsoleWidth,
+    NODECONSOLE_OT_ResetConsoleSize,
     NODECONSOLE_OT_ResetShortcut,
     NODECONSOLE_OT_RemoveFavorite,
     NODECONSOLE_OT_RemoveShortcut,
