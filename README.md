@@ -1,8 +1,6 @@
 # Node Console
 
-<img width="1920" height="600" alt="节点控制台 02" src="https://github.com/user-attachments/assets/ab5b8d12-006a-438b-9fc0-1c310b3cc644" />
-
-
+<img width="1920" height="600" alt="节点控制台 02" src="https://github.com/user-attachments/assets/c0468802-5677-4372-92f9-28a31d0f6dd7" />
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2-f5792a?logo=blender&logoColor=white)
