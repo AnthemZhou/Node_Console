@@ -4847,30 +4847,18 @@ class ENS_AddonPreferences(AddonPreferences):
         private_left = private_links.column(align=True)
         private_right = private_links.column(align=True)
 
-        row = private_left.split(factor=0.56, align=True)
-        platform = row.split(factor=0.32, align=True)
-        platform.label(text="B站:")
-        platform.label(text="周圣宇_Anthem")
-        op = row.operator("wm.url_open", text="一键三连", icon="URL")
-        op.url = "https://space.bilibili.com/25142156?spm_id_from=333.1007.0.0"
+        def subdued_url_button(layout, prefix, title, url="", enabled=True):
+            button_row = layout.row(align=True)
+            button_row.enabled = enabled
+            text = f"{prefix:<8}{title}"
+            op = button_row.operator("wm.url_open", text=f"{text:<34}", icon="URL")
+            op.url = url
 
-        row = private_left.split(factor=0.56, align=True)
-        platform = row.split(factor=0.32, align=True)
-        platform.label(text="小红书:")
-        platform.label(text="一周不剩")
-        op = row.operator("wm.url_open", text="点赞关注", icon="URL")
-        op.url = "https://xhslink.com/m/6zzQ97wiPAI"
+        subdued_url_button(private_left, "B站:", "周圣宇_Anthem", "https://space.bilibili.com/25142156?spm_id_from=333.1007.0.0")
+        subdued_url_button(private_left, "小红书:", "一周不剩", "https://xhslink.com/m/6zzQ97wiPAI")
 
-        row = private_right.split(factor=0.56, align=True)
-        row.label(text="飞书技术字典")
-        disabled_button = row.row(align=True)
-        disabled_button.enabled = False
-        disabled_button.operator("wm.url_open", text="查看资料", icon="URL")
-
-        row = private_right.split(factor=0.56, align=True)
-        row.label(text=f"GitHub：Node Console v{ADDON_VERSION}")
-        op = row.operator("wm.url_open", text="查看源码", icon="URL")
-        op.url = "https://github.com/AnthemZhou/Node_Console"
+        subdued_url_button(private_right, "飞书:", "飞书技术字典", enabled=False)
+        subdued_url_button(private_right, "GitHub:", f"Node Console v{ADDON_VERSION}", "https://github.com/AnthemZhou/Node_Console")
 
         settings_box.separator(type="LINE")
 
