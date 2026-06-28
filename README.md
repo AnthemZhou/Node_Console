@@ -1,5 +1,8 @@
 # Node Console
 
+<img width="2172" height="724" alt="426fa23c0ece3b14cb8d2484947c0b82" src="https://github.com/user-attachments/assets/716b19b1-f3b9-402b-8a1b-208080646314" />
+
+
 ![Blender](https://img.shields.io/badge/Blender-5.1.2-f5792a?logo=blender&logoColor=white)
 ![Version](https://img.shields.io/badge/version-1.0.2-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
