@@ -1,6 +1,7 @@
 # Node Console
 
-<img width="1920" height="600" alt="节点控制台 01" src="https://github.com/user-attachments/assets/4e1ce4df-f0e0-45ba-ba0e-97cd61db3fdb" />
+<img width="1920" height="600" alt="节点控制台 02" src="https://github.com/user-attachments/assets/ab5b8d12-006a-438b-9fc0-1c310b3cc644" />
+
 
 
 
