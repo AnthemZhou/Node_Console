@@ -4858,7 +4858,7 @@ class ENS_AddonPreferences(AddonPreferences):
         subdued_url_button(private_left, "小红书:", "一周不剩", "https://xhslink.com/m/6zzQ97wiPAI")
 
         subdued_url_button(private_right, "飞书:", "飞书技术字典", enabled=False)
-        subdued_url_button(private_right, "GitHub:", f"Node Console v{ADDON_VERSION}", "https://github.com/AnthemZhou/Node_Console")
+        subdued_url_button(private_right, "GitHub:", f"Node Console v{ADDON_VERSION}", "https://github.com/AnthemZhou")
 
         settings_box.separator(type="LINE")
 
@@ -5139,18 +5139,15 @@ def _cleanup_user_keymap_overrides():
                 keymap.keymap_items.remove(item)
             except Exception:
                 pass
-        if len(keymap.keymap_items) == 0:
-            try:
-                user_keyconfig.keymaps.remove(keymap)
-            except Exception:
-                pass
 
 
 def _remove_node_console_keymap_items():
     keyconfig = bpy.context.window_manager.keyconfigs.addon
     if keyconfig:
-        keymap = keyconfig.keymaps.get("Node Editor")
-        if keymap:
+        for keymap_name in ("Node Editor", "Node Generic"):
+            keymap = keyconfig.keymaps.get(keymap_name)
+            if not keymap:
+                continue
             stale_items = [item for item in keymap.keymap_items if item.idname == ENS_AddNodeByEnglishSearch.bl_idname]
             for item in stale_items:
                 try:
@@ -5175,9 +5172,9 @@ def register_keymap():
 
     _remove_node_console_keymap_items()
 
-    keymap = keyconfig.keymaps.get("Node Editor")
+    keymap = keyconfig.keymaps.get("Node Generic")
     if not keymap:
-        keymap = keyconfig.keymaps.new(name="Node Editor", space_type="NODE_EDITOR")
+        keymap = keyconfig.keymaps.new(name="Node Generic", space_type="NODE_EDITOR")
 
     key_type = prefs.shortcut_key if prefs else "A"
     shift = prefs.shortcut_shift if prefs else True
