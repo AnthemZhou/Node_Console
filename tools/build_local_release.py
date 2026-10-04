@@ -26,7 +26,7 @@ def main():
                    if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'ADDON_VERSION' for t in node.targets))
     lines = [f'# Node Console {version} 验证报告', '',
              '## 环境与范围', '',
-             '工作基线为干净的 `main` / `cae84b5`（1.1.2），未发现已有 1.1.3 修改。旧交接文件描述 0.8.25，仅作历史参考。',
+             '工作基线为干净的 `main` / `cae84b5`（1.1.2），开发开始时没有未提交修改。旧交接文件描述 0.8.25，仅作历史参考。',
              '5.2.2 从 Blender 官方发布服务器下载，只读挂载临时目录，不替换本机 5.1.2；全部测试使用 `--background --factory-startup`，测试配置写入临时目录。',
              '5.2.2 macOS arm64 镜像 SHA256 已与官方清单核对：`dc4125399b8bfefe283cc1624d6cfc7809d1cac20ace51072127eb371f31f210`。', '',
              '| 实测版本 / 构建 | 几何 | 材质 | 合成 | 本地资产 |',

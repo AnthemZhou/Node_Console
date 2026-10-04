@@ -4,13 +4,13 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.1.3-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.1.3
+版本：1.2.0
 
 ## 中文
 
@@ -30,7 +30,7 @@ Node Console 将拼音搜索作为主要中文检索方式。你可以直接输�
 
 ### 安装
 
-1. 选择 `Node_Console_1.1.3.zip` 安装包。
+1. 选择 `Node_Console_1.2.0.zip` 安装包。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -75,10 +75,10 @@ Node Console 将拼音搜索作为主要中文检索方式。你可以直接输�
 
 - Node Console 以普通 Blender 插件 zip 格式发布。
 - 插件不会修改 Blender 的语言文件、节点标签或接口标签。
-- 1.1.3 已在 Blender 5.2.2 LTS 与 5.1.2 实测。节点按当前版本的真实注册类型与创建能力生成索引，不会在旧版中展示不存在的新节点。
+- 1.2.0 已在 Blender 5.2.2 LTS 与 5.1.2 实测。节点按当前版本的真实注册类型与创建能力生成索引，不会在旧版中展示不存在的新节点。
 - 中文名优先读取当前 Blender 的官方简中词典及翻译上下文，不切换你的界面语言；人工搜索别名单独记录。英文、中文、全拼和完整首字母均可检索，例如 `Mesh Bevel`、`网格倒角`、`wanggedaojiao`、`wgdj`。
 - 升级 Blender 后，可用「刷新资产索引」发现新版自带的资产节点组。只索引本地可读取的 `.blend` 资产，不会把未下载的在线资产当作可直接添加的节点。
-- [1.1.3 变更日志](CHANGELOG.md)与[实测明细](VALIDATION_1.1.3.md)记录了节点范围、译名来源和未验证项。
+- [1.2.0 变更日志](CHANGELOG.md)与[实测明细](VALIDATION_1.2.0.md)记录了节点范围、译名来源和未验证项。
 
 ## English
 
@@ -98,7 +98,7 @@ Node Console treats pinyin as the primary way to search Chinese node names. You 
 
 ### Install
 
-1. Choose the `Node_Console_1.1.3.zip` installation package.
+1. Choose the `Node_Console_1.2.0.zip` installation package.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -143,7 +143,7 @@ Snippet Nodes are stored in an external JSON library file. Preferences provide c
 
 - Node Console is released as a regular Blender add-on zip.
 - The add-on does not modify Blender language files, node labels, or socket labels.
-- Version 1.1.3 was tested with Blender 5.2.2 LTS and 5.1.2. Runtime registration and native creation checks determine which nodes are offered in each editor.
+- Version 1.2.0 was tested with Blender 5.2.2 LTS and 5.1.2. Runtime registration and native creation checks determine which nodes are offered in each editor.
 - Chinese labels use the running Blender's official Simplified Chinese catalog and translation contexts without changing the UI language. Editorial search aliases are stored separately. Search supports English, Chinese, full pinyin and complete initials, such as `Mesh Bevel`, `网格倒角`, `wanggedaojiao` and `wgdj`.
 - After upgrading Blender, use Refresh Asset Index to discover new bundled node groups. Only locally readable `.blend` assets are indexed; undownloaded online assets are not presented as directly creatable nodes.
-- See the [changelog](CHANGELOG.md) and [validation details](VALIDATION_1.1.3.md) for scope and testing limits.
+- See the [changelog](CHANGELOG.md) and [validation details](VALIDATION_1.2.0.md) for scope and testing limits.

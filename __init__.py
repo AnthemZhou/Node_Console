@@ -21,13 +21,13 @@ from gpu_extras.batch import batch_for_shader
 from . import node_registry
 
 
-ADDON_VERSION = "1.1.3"
+ADDON_VERSION = "1.2.0"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 1, 3),
+    "version": (1, 2, 0),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
