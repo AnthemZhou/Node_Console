@@ -1,0 +1,23 @@
+{
+  "source": "Editorial search aliases maintained by Node Console. Not official Blender UI or manual translations. Official UI names are read separately from the running Blender zh_HANS blender.mo catalog, with RNA translation contexts.",
+  "aliases": {
+    "Frame": ["框"],
+    "Field to List": ["场转列表"],
+    "Closure to List": ["闭包转列表"],
+    "Get List Item": ["获取列表项"],
+    "Transfer Attributes": ["传输属性"],
+    "Trim String": ["裁剪字符串"],
+    "String To Image": ["字符串转图像"],
+    "Object": ["Input Object", "输入物体"],
+    "Font": ["Input Font", "输入字体"],
+    "Cluster by Distance": ["按距离聚类"],
+    "Cluster by Connected": ["按连接聚类"],
+    "3D to Screen Space": ["三维转屏幕空间"],
+    "Screen to 3D Space": ["屏幕转三维空间"],
+    "Transform and Project": ["变换并投影"],
+    "Project with Depth": ["带深度投影"],
+    "Principal Components": ["Principal Component Analysis", "PCA", "主成分分析"],
+    "Geometry Principal Components": ["Geometry Principal Component Analysis", "几何主成分分析"],
+    "Film Grain": ["胶片颗粒"]
+  }
+}

@@ -9,7 +9,7 @@ import math
 import re
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import blf
@@ -18,15 +18,16 @@ import gpu
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
 from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
+from . import node_registry
 
 
-ADDON_VERSION = "1.1.2"
+ADDON_VERSION = "1.1.3"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 1, 2),
+    "version": (1, 1, 3),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -301,6 +302,7 @@ class NodeSearchEntry:
     root_pinyin_boundaries: tuple[int, ...] = ()
     root_pinyin_initials: str = ""
     settings: tuple[tuple[str, str], ...] = ()
+    aliases: tuple[str, ...] = ()
 
     def __post_init__(self):
         if self.leaf_pinyin_compact or self.root_pinyin_compact:
@@ -324,6 +326,7 @@ def _clear_search_caches():
     MENU_ENTRY_CACHE.clear()
     TRANSLATION_LABEL_CACHE.clear()
     NODE_CLASS_CACHE = None
+    node_registry.clear()
 
 
 def _safe_identifier(prefix: str, *parts: str) -> str:
@@ -333,7 +336,7 @@ def _safe_identifier(prefix: str, *parts: str) -> str:
 
 
 def _normalize(text: str) -> str:
-    return re.sub(r"[^\w\u4e00-\u9fff]+", " ", text.lower()).replace("_", " ").strip()
+    return " ".join(re.sub(r"[^\w\u4e00-\u9fff]+", " ", text.lower()).replace("_", " ").split())
 
 
 def _camel_words(text: str) -> str:
@@ -356,6 +359,9 @@ PINYIN_PHRASE_TABLE = {
     "恢复": "hui fu",
     "长度": "chang du",
     "重采样": "chong cai yang",
+    "重命名": "chong ming ming",
+    "过滤": "guo lv",
+    "频率": "pin lv",
     "重新": "chong xin",
     "重定时": "chong ding shi",
     "重复": "chong fu",
@@ -1046,6 +1052,11 @@ def _fallback_pinyin(text: str) -> str:
                 matched = True
                 break
         if matched:
+            continue
+        ascii_word = re.match(r"[A-Za-z0-9]+", text[index:])
+        if ascii_word:
+            parts.append(ascii_word.group().lower())
+            index += len(ascii_word.group())
             continue
         char = text[index]
         pinyin = PINYIN_CHAR_TABLE.get(char) or _gbk_pinyin(char)
@@ -2028,7 +2039,9 @@ def _addon_version_string() -> str:
 
 def _search_index_cache_key(context) -> str:
     blender = ".".join(str(part) for part in bpy.app.version)
-    return f"{_addon_version_string()}:{blender}:{_node_tree_id(context)}:{_asset_index_signature()}"
+    tree = getattr(context.space_data, "edit_tree", None)
+    capabilities = hashlib.sha256(repr(node_registry.runtime_signature(tree)).encode()).hexdigest()[:16] if tree else ""
+    return f"{_addon_version_string()}:{node_registry.INDEX_SCHEMA}:{blender}:{_node_tree_id(context)}:{capabilities}:{_asset_index_signature()}"
 
 
 def _entry_to_cache(entry: NodeSearchEntry) -> dict:
@@ -2050,6 +2063,7 @@ def _entry_to_cache(entry: NodeSearchEntry) -> dict:
         "root_pinyin_boundaries": list(entry.root_pinyin_boundaries),
         "root_pinyin_initials": entry.root_pinyin_initials,
         "settings": [list(item) for item in entry.settings],
+        "aliases": list(entry.aliases),
     }
 
 
@@ -2076,6 +2090,7 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
             asset_color_tag=str(item.get("asset_color_tag", "")),
             search_text=_make_search_text(english, chinese, label, node_type),
             settings=settings,
+            aliases=tuple(item.get("aliases", ())),
         )
     except Exception:
         return None
@@ -2247,38 +2262,7 @@ def _translation_label(text: str, translation_context: str | None = None) -> str
     if cached is not None:
         return cached
 
-    view = bpy.context.preferences.view
-    original_language = view.language
-    original_iface = view.use_translate_interface
-    original_data = view.use_translate_new_dataname
-    translated = text
-
-    try:
-        view.language = "zh_HANS"
-        view.use_translate_interface = True
-        view.use_translate_new_dataname = True
-        for translate in (
-            getattr(bpy.app.translations, "pgettext_iface", None),
-            getattr(bpy.app.translations, "pgettext_data", None),
-        ):
-            if not translate:
-                continue
-
-            try:
-                candidate = translate(text, translation_context) if translation_context else translate(text)
-            except Exception:
-                continue
-
-            if candidate and candidate != text:
-                translated = candidate
-                break
-    finally:
-        try:
-            view.language = original_language
-            view.use_translate_interface = original_iface
-            view.use_translate_new_dataname = original_data
-        except Exception:
-            pass
+    translated = node_registry.chinese_label(text, translation_context)
 
     TRANSLATION_LABEL_CACHE[cache_key] = translated
     return translated
@@ -2666,6 +2650,8 @@ def _pinyin_match_level(query: str, compact: str, boundaries: tuple[int, ...], i
         return 0
     if compact == compact_query:
         return 5
+    if initials and compact_query == initials:
+        return 4
     if len(compact_query) >= 3 and compact.startswith(compact_query) and len(compact_query) in boundaries:
         return 4
     if len(compact_query) >= 4:
@@ -2727,6 +2713,7 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     category_chinese_text = _normalize(" ".join(part for part in category_chinese_parts if part))
     category_pinyin_text = _normalize(" ".join(_pinyin_search_text(part) for part in category_chinese_parts if part))
     leaf_parts = [parts[-1] for parts in (english_parts, chinese_parts) if parts]
+    leaf_parts.extend(_normalize(alias) for alias in entry.aliases)
     root_parts = [parts[0] for parts in (english_parts, chinese_parts) if len(parts) > 1]
     compact_query = query.replace(" ", "")
     compact_leaf_parts = [part.replace(" ", "") for part in leaf_parts]
@@ -2757,6 +2744,9 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
         entry.leaf_pinyin_boundaries,
         entry.leaf_pinyin_initials,
     )
+    for alias in entry.aliases:
+        compact, boundaries, initials, _text = _pinyin_profile_for_parts([alias])
+        leaf_pinyin_level = max(leaf_pinyin_level, _pinyin_match_level(compact_query, compact, boundaries, initials))
     for compact, boundaries, initials, _search_text in _alternate_pinyin_profiles(" ".join(chinese_parts[-1:])):
         leaf_pinyin_level = max(leaf_pinyin_level, _pinyin_match_level(compact_query, compact, boundaries, initials))
     root_pinyin_level = _pinyin_match_level(
@@ -3129,22 +3119,7 @@ def _node_tree_allows_node(context, node_type: str) -> bool:
     if not node_tree:
         return False
 
-    bl_rna = bpy.types.Node.bl_rna_get_subclass(node_type)
-    if bl_rna is None:
-        return False
-
-    node_cls = getattr(bpy.types, node_type, None)
-    if node_cls is None:
-        return True
-
-    poll = getattr(node_cls, "poll", None)
-    if not poll:
-        return True
-
-    try:
-        return bool(poll(node_tree))
-    except Exception:
-        return True
+    return node_type in node_registry.inventory(node_tree)
 
 
 def _node_type_exists_in_current_blender(node_type: str) -> bool:
@@ -3152,9 +3127,15 @@ def _node_type_exists_in_current_blender(node_type: str) -> bool:
 
 
 def _entry_available_in_current_blender(context, entry: NodeSearchEntry) -> bool:
+    if entry.kind == "ASSET":
+        return not entry.asset_path or Path(entry.asset_path).is_file()
+    if entry.kind == "ZONE":
+        settings = dict(entry.settings)
+        return all(_node_tree_allows_node(context, settings.get(key, ""))
+                   for key in ("input_node_type", "output_node_type"))
     if entry.kind != "NODE":
         return True
-    return _node_type_exists_in_current_blender(entry.node_type)
+    return _node_tree_allows_node(context, entry.node_type)
 
 
 def _is_redundant_mix_color_entry(entry: NodeSearchEntry) -> bool:
@@ -3171,22 +3152,7 @@ def _iter_node_classes():
         yield from NODE_CLASS_CACHE
         return
 
-    pending = list(bpy.types.Node.__subclasses__())
-    seen = set()
-    classes = []
-
-    while pending:
-        cls = pending.pop()
-        if cls in seen:
-            continue
-
-        seen.add(cls)
-        pending.extend(cls.__subclasses__())
-
-        bl_idname = getattr(cls, "bl_idname", "")
-        bl_label = getattr(cls, "bl_label", "")
-        if bl_idname and bl_label:
-            classes.append(cls)
+    classes = list(node_registry.node_classes())
 
     NODE_CLASS_CACHE = classes
     yield from classes
@@ -3393,7 +3359,7 @@ def _iter_menu_entries(context):
                         add_entry("ShaderNodeMix", category, item_english, item_chinese, settings)
                     continue
 
-                if func.attr not in {"node_operator", "node_operator_with_outputs", "node_operator_with_searchable_enum"}:
+                if func.attr not in {"node_operator", "node_operator_with_outputs", "node_operator_with_searchable_enum", "node_operator_with_searchable_enum_socket"}:
                     continue
 
                 candidates = [_constant_string(arg) for arg in node.args]
@@ -3424,6 +3390,16 @@ def _iter_menu_entries(context):
                         add_entry(node_type, category, output_name, _translation_label(output_name), settings)
                     continue
 
+                if func.attr == "node_operator_with_searchable_enum_socket":
+                    socket_name = next((value for value in candidates if value and value != node_type and "Node" not in value), "")
+                    for arg in node.args:
+                        for enum_name in _constant_string_list(arg):
+                            settings = ((f"inputs[{json.dumps(socket_name)}].default_value", enum_name),)
+                            key = (node_type, settings, category)
+                            if key not in seen:
+                                seen.add(key)
+                                add_entry(node_type, category, enum_name, _translation_label(enum_name), settings)
+                    continue
                 if func.attr != "node_operator_with_searchable_enum":
                     continue
 
@@ -3468,6 +3444,8 @@ def _external_asset_node_directories() -> list[Path]:
     directories = []
     try:
         for library in bpy.context.preferences.filepaths.asset_libraries:
+            if not library.path:
+                continue
             library_path = Path(bpy.path.abspath(library.path))
             if library_path.exists():
                 directories.append(library_path)
@@ -3502,17 +3480,18 @@ def _is_hidden_asset_name(name: str) -> bool:
 
 
 def _read_asset_node_groups(blend_path: Path) -> list[dict]:
+    previous_groups = set(bpy.data.node_groups)
     loaded_groups = []
     try:
         with bpy.data.libraries.load(str(blend_path), assets_only=True) as (data_from, data_to):
             names = list(getattr(data_from, "node_groups", ()))
-            data_to.node_groups = names
+            data_to.node_groups = list(names)
             loaded_groups = data_to.node_groups
     except TypeError:
         try:
             with bpy.data.libraries.load(str(blend_path)) as (data_from, data_to):
                 names = list(getattr(data_from, "node_groups", ()))
-                data_to.node_groups = names
+                data_to.node_groups = list(names)
                 loaded_groups = data_to.node_groups
         except Exception:
             return []
@@ -3520,7 +3499,7 @@ def _read_asset_node_groups(blend_path: Path) -> list[dict]:
         return []
 
     entries = []
-    for node_group in loaded_groups:
+    for original_name, node_group in zip(names, loaded_groups):
         if not node_group:
             continue
         if _is_hidden_asset_name(node_group.name):
@@ -3531,14 +3510,14 @@ def _read_asset_node_groups(blend_path: Path) -> list[dict]:
         color_tag = str(getattr(node_group, "color_tag", "") or "")
         entries.append({
             "path": str(blend_path),
-            "name": node_group.name,
+            "name": original_name,
             "category": _asset_category_from_catalog(catalog_name, blend_path),
             "color_tag": color_tag,
             "description": description,
             "tree_type": str(getattr(node_group, "bl_idname", "") or ""),
         })
 
-    for node_group in loaded_groups:
+    for node_group in set(bpy.data.node_groups) - previous_groups:
         if node_group:
             try:
                 bpy.data.node_groups.remove(node_group)
@@ -3678,6 +3657,34 @@ def _rebuild_search_entries(context):
             return
         if _is_redundant_mix_color_entry(entry):
             return
+        if entry.kind == "ASSET":
+            entry = replace(entry, aliases=tuple(node_registry.aliases().get(entry.english, ())))
+            previous = NODE_ENTRY_BY_ID.get(entry.identifier)
+            if previous and (previous.asset_path, previous.asset_name) != (entry.asset_path, entry.asset_name):
+                identity = json.dumps([entry.asset_path, entry.asset_name], ensure_ascii=False)
+                entry = replace(entry, identifier=entry.identifier + "_" + hashlib.sha256(identity.encode()).hexdigest()[:16])
+        if entry.kind == "NODE":
+            rna = bpy.types.Node.bl_rna_get_subclass(entry.node_type)
+            parts = entry.english.split(" > ")
+            chinese_parts = [_translation_label(parts[0], getattr(rna, "translation_context", None))]
+            enum_context = None
+            for name, _value in entry.settings:
+                prop = rna.properties.get(name) if rna else None
+                if prop and prop.type == 'ENUM':
+                    enum_context = prop.translation_context
+            for part in parts[1:]:
+                chinese_parts.append(_translation_label(part, enum_context))
+            chinese = " > ".join(chinese_parts)
+            if chinese == entry.english and entry.chinese != entry.english:
+                chinese = entry.chinese
+            label = _entry_label(entry.english, chinese)
+            aliases = list(entry.aliases) + list(node_registry.aliases().get(parts[-1], ()))
+            if chinese != entry.chinese:
+                aliases.append(entry.chinese.split(" > ")[-1])
+            entry = replace(entry, chinese=chinese, label=label,
+                            aliases=tuple(dict.fromkeys(aliases)),
+                            search_text=_make_search_text(entry.english, chinese, label, entry.node_type),
+                            leaf_pinyin_compact="", root_pinyin_compact="")
         NODE_SEARCH_ENTRIES.append(entry)
         NODE_ENTRY_BY_ID[entry.identifier] = entry
 
@@ -3700,8 +3707,7 @@ def _rebuild_search_entries(context):
             if _is_hidden_asset_name(asset_name):
                 continue
             key = ("LOCAL_GROUP", asset_name)
-            name_key = _normalize(asset_name)
-            if key in seen_keys or any(_normalize(entry.english) == name_key for entry in NODE_SEARCH_ENTRIES):
+            if key in seen_keys:
                 continue
             seen_keys.add(key)
             asset_data = getattr(node_group, "asset_data", None)
@@ -3824,7 +3830,7 @@ def _rebuild_search_entries(context):
         key = (node_type, tuple(settings))
         if key in seen_keys:
             return
-        if not trusted_menu and not _node_tree_allows_node(context, node_type):
+        if not _node_tree_allows_node(context, node_type):
             return
 
         seen_keys.add(key)
@@ -3833,7 +3839,10 @@ def _rebuild_search_entries(context):
         base_english = bl_rna.name if bl_rna and bl_rna.name else node_type
         if category == "Node":
             category = _fallback_category_for_node_type(node_type, base_english)
-        base_chinese = variant_chinese if variant_chinese and not variant_label else _translation_label(base_english)
+            if category == "Node":
+                color_tag = node_registry.inventory(context.space_data.edit_tree)[node_type]['color_tag']
+                category = _asset_category_from_color_tag(color_tag) or category
+        base_chinese = variant_chinese if variant_chinese and not variant_label else _translation_label(base_english, getattr(bl_rna, "translation_context", None))
         if node_type == "NodeFrame" and base_english == "Frame":
             base_chinese = "框"
         if variant_label:
@@ -3857,6 +3866,7 @@ def _rebuild_search_entries(context):
                 node_type=node_type,
                 search_text=_make_search_text(english, chinese, label, node_type),
                 settings=tuple(settings),
+                asset_color_tag=node_registry.inventory(context.space_data.edit_tree)[node_type]['color_tag'],
             )
         )
 
@@ -3892,24 +3902,17 @@ def _rebuild_search_entries(context):
         for entry in cached_entries:
             add_entry(entry)
             remember_key(entry)
-        add_compositor_manual_entries()
-        for cls in sorted(_iter_node_classes(), key=lambda item: getattr(item, "bl_label", "")):
-            add_builtin_entry(cls.bl_idname)
-        add_zone_entries()
-        add_asset_library_entries()
-        add_local_groups()
-        return
 
     add_compositor_manual_entries()
     for node_type, category, variant_label, variant_chinese, settings in _iter_menu_entries(context):
         add_builtin_entry(node_type, category, variant_label, settings, trusted_menu=True, variant_chinese=variant_chinese)
 
-    for cls in sorted(_iter_node_classes(), key=lambda item: getattr(item, "bl_label", "")):
-        add_builtin_entry(cls.bl_idname)
+    for cls in sorted(_iter_node_classes(), key=lambda item: item.bl_rna.name):
+        add_builtin_entry(cls.bl_rna.identifier)
 
     add_zone_entries()
     add_asset_library_entries(cacheable_entries)
-    _save_search_index_cache(context, cacheable_entries)
+    _save_search_index_cache(context, list(NODE_SEARCH_ENTRIES))
     add_local_groups()
 
 
@@ -3940,7 +3943,7 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str], allow_
     if plain_ascii_query:
         pinyin_threshold = 2 if allow_weak_pinyin else 3
         broad_text_match = match["leaf_pinyin_level"] >= pinyin_threshold or bool(tokens and all(len(token) >= 4 and token in " ".join(match["leaf_parts"]) for token in tokens))
-    if preferred_order < 10_000:
+    if query == english or query == chinese or preferred_order < 10_000:
         score = 110
     elif match["leaf_compact_exact"] or match["leaf_compact_prefix"] or match["leaf_compact_contains"] or broad_text_match:
         score = 100
@@ -4103,6 +4106,11 @@ def _apply_node_settings(node, settings: tuple[tuple[str, str], ...]):
     for name, value in settings:
         try:
             if name.startswith("inputs["):
+                match = re.fullmatch(r"inputs\[(.+)\]\.default_value", name)
+                if match:
+                    socket_key = ast.literal_eval(match.group(1))
+                    if isinstance(socket_key, (str, int)):
+                        node.inputs[socket_key].default_value = value
                 continue
             if name == "visible_output":
                 if hasattr(node, "visible_output"):
@@ -4114,9 +4122,10 @@ def _apply_node_settings(node, settings: tuple[tuple[str, str], ...]):
 
 
 def _load_asset_node_group(entry: NodeSearchEntry):
-    existing = bpy.data.node_groups.get(entry.asset_name)
-    if existing:
-        return existing
+    if not entry.asset_path:
+        return bpy.data.node_groups.get(entry.asset_name)
+    if not Path(entry.asset_path).is_file():
+        return None
 
     try:
         with bpy.data.libraries.load(entry.asset_path, link=False, assets_only=True) as (_data_from, data_to):
@@ -4125,7 +4134,9 @@ def _load_asset_node_group(entry: NodeSearchEntry):
         with bpy.data.libraries.load(entry.asset_path, link=False) as (_data_from, data_to):
             data_to.node_groups = [entry.asset_name]
 
-    return bpy.data.node_groups.get(entry.asset_name)
+    # The appended datablock may be renamed by Blender. Never resolve an
+    # external asset by display name: another library may contain that name.
+    return next((group for group in data_to.node_groups if group), None)
 
 
 def _add_asset_node(context, entry: NodeSearchEntry):
