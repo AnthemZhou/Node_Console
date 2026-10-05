@@ -21,13 +21,13 @@ from gpu_extras.batch import batch_for_shader
 from . import node_registry
 
 
-ADDON_VERSION = "1.2.0"
+ADDON_VERSION = "1.2.1"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 2, 0),
+    "version": (1, 2, 1),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -82,6 +82,8 @@ NODE_TYPE_COLORS = {
     "converter": (0.21, 0.43, 0.58, 1.0),
     "texture": (0.48, 0.27, 0.11, 1.0),
     "geometry": (0.19, 0.50, 0.41, 1.0),
+    "shader": (0.17, 0.40, 0.17, 1.0),
+    "script": (0.08, 0.24, 0.24, 1.0),
     "vector": (0.28, 0.27, 0.58, 1.0),
     "compositor_filter": (0.36, 0.22, 0.48, 1.0),
     "compositor_mask": (0.46, 0.24, 0.24, 1.0),
@@ -119,6 +121,11 @@ NODE_COLOR_TAG_TYPES = {
     "TEXTURE": "texture",
     "GEOMETRY": "geometry",
     "VECTOR": "vector",
+    "SHADER": "shader",
+    "SCRIPT": "script",
+    "FILTER": "compositor_filter",
+    "MATTE": "compositor_mask",
+    "DISTORT": "compositor_distort",
     "NONE": "none",
 }
 NODE_TREE_GROUPS = (
@@ -1500,7 +1507,7 @@ def _snippet_category_color_type(category: str) -> str:
         "INPUT": "input",
         "OUTPUT": "output",
         "GEOMETRY": "geometry",
-        "SHADER": "geometry",
+        "SHADER": "shader",
         "COLOR": "color",
         "CONVERTER": "converter",
         "VECTOR": "vector",
@@ -2439,14 +2446,18 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
 
     if entry.kind == "SNIPPET" and entry.node_type.startswith("Snippet:"):
         return NODE_TYPE_COLORS.get(entry.node_type.split(":", 1)[1], CATEGORY_COLOR_FALLBACK)
-    if entry.node_type == "NodeGroupInput":
+    if entry.node_type in {"NodeGroupInput", "NodeGroupOutput", "GeometryNodeViewer"}:
         return NODE_TYPE_COLORS["output"]
+    # These outputs are red when first created; Viewer and group interfaces
+    # intentionally keep their neutral search colors.
+    if entry.node_type in {"CompositorNodeViewer", "CompositorNodeOutputFile", "ShaderNodeOutputAOV", "ShaderNodeOutputMaterial", "ShaderNodeOutputWorld", "ShaderNodeOutputLight", "ShaderNodeOutputLineStyle", "TextureNodeViewer"}:
+        return NODE_TYPE_COLORS["special_output"]
+    if entry.node_type in {"GeometryNodeCurveLength", "GeometryNodeStringToCurves"}:
+        return NODE_TYPE_COLORS["geometry"]
     if entry.asset_color_tag:
         tag_type = NODE_COLOR_TAG_TYPES.get(entry.asset_color_tag.upper())
         if tag_type:
             return NODE_TYPE_COLORS[tag_type]
-    if entry.node_type == "NodeGroupOutput":
-        return NODE_TYPE_COLORS["output"]
     normalized_english = _normalize(entry.english or "")
     settings = dict(entry.settings)
     if entry.kind == "ZONE":
@@ -2460,17 +2471,13 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
         return NODE_TYPE_COLORS["simulation"]
     if entry.node_type in {"GeometryNodeForeachGeometryElementInput", "GeometryNodeForeachGeometryElementOutput"}:
         return NODE_TYPE_COLORS["for_each"]
-    if entry.node_type in {"CompositorNodeViewer", "CompositorNodeOutputFile", "ShaderNodeOutputAOV", "ShaderNodeOutputMaterial", "ShaderNodeOutputWorld", "TextureNodeViewer"}:
-        return NODE_TYPE_COLORS["special_output"]
     if entry.node_type == "NodeEvaluateClosure" or normalized_english == "evaluate closure":
         return NODE_TYPE_COLORS["converter"]
     if normalized_english == "closure" or entry.node_type in {"NodeClosureInput", "NodeClosureOutput"}:
         return NODE_TYPE_COLORS["closure"]
     if normalized_english == "smooth by angle" or normalized_english == "get geometry bundle":
         return NODE_TYPE_COLORS["geometry"]
-    if normalized_english == "string to curve":
-        return NODE_TYPE_COLORS["geometry"]
-    if entry.node_type == "FunctionNodeStringToCurves":
+    if normalized_english in {"string to curve", "string to curves"}:
         return NODE_TYPE_COLORS["geometry"]
     if normalized_english == "set material index":
         return NODE_TYPE_COLORS["geometry"]
@@ -3472,7 +3479,8 @@ def _asset_category_from_color_tag(color_tag: str) -> str:
     tag_type = NODE_COLOR_TAG_TYPES.get(str(color_tag or "").upper())
     if not tag_type or tag_type == "none":
         return ""
-    return tag_type.title()
+    return {"compositor_filter": "Filter", "compositor_mask": "Matte",
+            "compositor_distort": "Distort"}.get(tag_type, tag_type.title())
 
 
 def _is_hidden_asset_name(name: str) -> bool:
@@ -3664,6 +3672,11 @@ def _rebuild_search_entries(context):
                 identity = json.dumps([entry.asset_path, entry.asset_name], ensure_ascii=False)
                 entry = replace(entry, identifier=entry.identifier + "_" + hashlib.sha256(identity.encode()).hexdigest()[:16])
         if entry.kind == "NODE":
+            # Older seed/cache entries predate these color categories. Read
+            # their real tag without replacing historical variant/zone colors.
+            native_tag = node_registry.inventory(context.space_data.edit_tree)[entry.node_type]['color_tag']
+            if native_tag in {"SHADER", "SCRIPT"}:
+                entry = replace(entry, asset_color_tag=native_tag)
             rna = bpy.types.Node.bl_rna_get_subclass(entry.node_type)
             parts = entry.english.split(" > ")
             chinese_parts = [_translation_label(parts[0], getattr(rna, "translation_context", None))]

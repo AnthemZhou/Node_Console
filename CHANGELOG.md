@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.2.1
+
+### 中文
+
+- 修复 24 个 Shader 节点和 Script 节点的颜色回退，增加独立的着色器绿色与脚本青色，并从当前 Blender 实例补齐旧索引中的对应标签。
+- 修正 Curve Length、String to Curves 的几何类颜色，以及 Light Output、Line Style Output 的输出类暗红色；修正 String to Curves 的 RNA 标识匹配。
+- 补齐 FILTER、MATTE、DISTORT 颜色映射，修复官方 Split Toning 资产组被显示为通用颜色的问题；Shader 类组合点同步使用着色器绿色。
+- 保留未激活 Geometry Viewer、组输入/输出和区域节点的特殊配色；不改快捷键、收藏、使用权重、组合点库或用户设置。
+- 增加实际 Blender 节点/资产创建、颜色映射、旧版对比和缓存重建回归。版本升级自动使运行索引缓存失效，无需重置偏好设置。
+- 实测 Blender 5.2.2 LTS 与 5.1.2，配色、搜索/创建、用户数据保留及 ZIP 安装启停检查均通过，详见 `VALIDATION_1.2.1.md`。
+
+### English
+
+- Added dedicated shader/script colors and restored their native tags in legacy index entries, fixing 24 shader nodes and Script.
+- Corrected Curve Length, String to Curves, Light Output and Line Style Output colors and the String to Curves RNA match.
+- Added FILTER, MATTE and DISTORT mappings, fixing the Split Toning asset fallback. Shader snippets now use shader green.
+- Preserved neutral Geometry Viewer/interface colors and zone styling, without changing shortcuts or user data.
+- Added real Blender color/create regression tests against 1.2.0, including warm-cache checks. The versioned runtime index rebuilds automatically.
+- Tested color/search/create regressions, user-data preservation and ZIP install/enable/disable cycles on Blender 5.2.2 LTS and 5.1.2; see `VALIDATION_1.2.1.md`.
+
 ## 1.2.0
 
 ### 中文

@@ -19,6 +19,9 @@ SOURCES = {
 
 
 def main():
+    if sys.argv[1:] == ['--package-only']:
+        package_release()
+        return
     reports = [json.loads(Path(path).read_text(encoding='utf-8')) for path in sys.argv[1:]]
     assert len(reports) == 2 and all(not report['failures'] for report in reports)
     assert reports[0]['version'].startswith('5.2.')
@@ -83,6 +86,12 @@ def main():
               '## 官方依据', '']
     lines += [f'- [{name}]({url})' for name, url in SOURCES.items()]
     (ROOT / f'VALIDATION_{version}.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    package_release()
+
+
+def package_release():
+    version = next(ast.literal_eval(node.value) for node in ast.parse((ROOT / '__init__.py').read_text()).body
+                   if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'ADDON_VERSION' for t in node.targets))
     output = ROOT / f'Node_Console_{version}.zip'
     files = ('__init__.py', 'node_registry.py', 'node_search_aliases.json', 'node_console_builtin_cache.json',
              'README.md', 'CHANGELOG.md', f'VALIDATION_{version}.md', 'LICENSE')
