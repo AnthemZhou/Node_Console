@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.2
+
+### 中文
+
+- 优化输入检索：复用不可变节点条目的名称、分类和拼音预处理结果；文本缓存有容量上限，收藏与排序仍实时计算。
+- 避免未命中时的拼音回退重复匹配；空查询不再遍历索引。
+- 索引重建复用本次节点能力检查结果，减少重复读取 Blender 运行信息；保留打开窗口时对本地节点组、资产与设置的更新。
+- Blender 5.2.2 实测搜索核心中位耗时降低约 54%–59%，热索引准备耗时降低约 44%–63%；这些数据不代表整体界面帧率。
+- 增加与 1.2.1 的完整搜索结果/排序对照、性能基准与缓存生命周期测试。Blender 5.2.2 与 5.1.2 共 10,935 次查询对照零差异；实测范围和数据见 `PERFORMANCE.md` 和 `VALIDATION_1.2.2.md`。不改变快捷键、收藏、使用数据或持久化格式。
+
+### English
+
+- Reuse immutable entry text/pinyin preprocessing with bounded text caches; evaluate favorites and ranking live.
+- Reuse matches during weak-pinyin fallback and skip matching for empty queries.
+- Reuse capability data within each index rebuild while retaining live group, asset and preference updates.
+- Reduce measured median core search time by approximately 54%–59% and warm index preparation by 44%–63% on Blender 5.2.2; these are not GUI frame-rate measurements.
+- Add baseline result/order comparisons, benchmarks and cache lifecycle regressions: 10,935 queries match 1.2.1 exactly across Blender 5.2.2 and 5.1.2. See `PERFORMANCE.md` and `VALIDATION_1.2.2.md`. Shortcuts, favorites, usage data and persistence formats are unchanged.
+
 ## 1.2.1
 
 ### 中文

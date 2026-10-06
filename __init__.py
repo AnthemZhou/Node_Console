@@ -10,6 +10,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass, replace
+from functools import cached_property, lru_cache
 from pathlib import Path
 
 import blf
@@ -21,13 +22,13 @@ from gpu_extras.batch import batch_for_shader
 from . import node_registry
 
 
-ADDON_VERSION = "1.2.1"
+ADDON_VERSION = "1.2.2"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 2, 1),
+    "version": (1, 2, 2),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -311,6 +312,10 @@ class NodeSearchEntry:
     settings: tuple[tuple[str, str], ...] = ()
     aliases: tuple[str, ...] = ()
 
+    @cached_property
+    def _match_data(self):
+        return _prepare_match_data(self)
+
     def __post_init__(self):
         if self.leaf_pinyin_compact or self.root_pinyin_compact:
             return
@@ -334,6 +339,9 @@ def _clear_search_caches():
     TRANSLATION_LABEL_CACHE.clear()
     NODE_CLASS_CACHE = None
     node_registry.clear()
+    _normalize.cache_clear()
+    _search_words.cache_clear()
+    _officialish_query_key.cache_clear()
 
 
 def _safe_identifier(prefix: str, *parts: str) -> str:
@@ -342,6 +350,7 @@ def _safe_identifier(prefix: str, *parts: str) -> str:
     return f"{prefix}_{text[:80]}"
 
 
+@lru_cache(maxsize=8192)
 def _normalize(text: str) -> str:
     return " ".join(re.sub(r"[^\w\u4e00-\u9fff]+", " ", text.lower()).replace("_", " ").split())
 
@@ -2603,10 +2612,15 @@ def _token_matches_word_prefix(token: str, word: str) -> bool:
     return skipped <= max(1, len(token) // 3)
 
 
+@lru_cache(maxsize=8192)
+def _search_words(text: str) -> tuple[str, ...]:
+    return tuple(_normalize(text).split())
+
+
 def _word_prefix_tokens_match(text: str, tokens: list[str]) -> bool:
     if not tokens:
         return False
-    words = _normalize(text).split()
+    words = _search_words(text)
     if not words:
         return False
     return all(any(_token_matches_word_prefix(token, word) for word in words) for token in tokens)
@@ -2615,7 +2629,7 @@ def _word_prefix_tokens_match(text: str, tokens: list[str]) -> bool:
 def _whole_word_tokens_match(text: str, tokens: list[str]) -> bool:
     if not tokens:
         return False
-    words = set(_normalize(text).split())
+    words = _search_words(text)
     return bool(words) and all(token in words for token in tokens)
 
 
@@ -2707,9 +2721,9 @@ def _is_plain_ascii_query(query: str) -> bool:
     return bool(compact and re.fullmatch(r"[a-z0-9]+", compact))
 
 
-def _query_match_parts(entry: NodeSearchEntry, query: str):
-    query = _normalize(query)
-    tokens = query.split()
+def _prepare_match_data(entry: NodeSearchEntry) -> dict:
+    # Entries are immutable. Only query-independent text belongs in this cache;
+    # favorites, preferences and match scores are evaluated for each search.
     english = _normalize(entry.english)
     chinese = _normalize(entry.chinese)
     english_parts = [_normalize(part) for part in entry.english.split(" > ") if part.strip()]
@@ -2722,8 +2736,35 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     leaf_parts = [parts[-1] for parts in (english_parts, chinese_parts) if parts]
     leaf_parts.extend(_normalize(alias) for alias in entry.aliases)
     root_parts = [parts[0] for parts in (english_parts, chinese_parts) if len(parts) > 1]
-    compact_query = query.replace(" ", "")
     compact_leaf_parts = [part.replace(" ", "") for part in leaf_parts]
+    return {
+        "english": english, "chinese": chinese,
+        "english_parts": english_parts, "chinese_parts": chinese_parts,
+        "category_parts": category_parts, "category_text": category_text,
+        "category_chinese_text": category_chinese_text,
+        "category_pinyin_text": category_pinyin_text,
+        "leaf_parts": leaf_parts, "root_parts": root_parts,
+        "compact_leaf_parts": compact_leaf_parts,
+        "path_text": " ".join([entry.category, entry.english]),
+        "root_text": _path_without_leaf(entry),
+        "leaf_profiles": ([_pinyin_profile_for_parts([alias]) for alias in entry.aliases]
+                          + _alternate_pinyin_profiles(" ".join(chinese_parts[-1:]))),
+        "root_profiles": _alternate_pinyin_profiles(" ".join(chinese_parts[:-1])),
+    }
+
+
+def _query_match_parts(entry: NodeSearchEntry, query: str):
+    query = _normalize(query)
+    tokens = query.split()
+    data = entry._match_data
+    english, chinese = data["english"], data["chinese"]
+    english_parts, chinese_parts = data["english_parts"], data["chinese_parts"]
+    category_parts, category_text = data["category_parts"], data["category_text"]
+    category_chinese_text = data["category_chinese_text"]
+    category_pinyin_text = data["category_pinyin_text"]
+    leaf_parts, root_parts = data["leaf_parts"], data["root_parts"]
+    compact_leaf_parts = data["compact_leaf_parts"]
+    compact_query = query.replace(" ", "")
     category_match = bool(query and (
         query in category_parts
         or any(part.startswith(query) for part in category_parts)
@@ -2740,21 +2781,17 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
     leaf_compact_prefix = bool(compact_query and any(part.startswith(compact_query) for part in compact_leaf_parts))
     leaf_compact_contains = bool(len(compact_query) >= contains_threshold and any(compact_query in part for part in compact_leaf_parts))
     root_exact = any(part == query for part in root_parts)
-    path_text = " ".join([entry.category, entry.english])
     leaf_word_match = any(_word_prefix_tokens_match(part, tokens) for part in leaf_parts)
     leaf_whole_word_match = any(_whole_word_tokens_match(part, tokens) for part in leaf_parts)
-    path_word_match = _word_prefix_tokens_match(path_text, tokens)
-    root_word_match = _word_prefix_tokens_match(_path_without_leaf(entry), tokens)
+    path_word_match = _word_prefix_tokens_match(data["path_text"], tokens)
+    root_word_match = _word_prefix_tokens_match(data["root_text"], tokens)
     leaf_pinyin_level = _pinyin_match_level(
         compact_query,
         entry.leaf_pinyin_compact,
         entry.leaf_pinyin_boundaries,
         entry.leaf_pinyin_initials,
     )
-    for alias in entry.aliases:
-        compact, boundaries, initials, _text = _pinyin_profile_for_parts([alias])
-        leaf_pinyin_level = max(leaf_pinyin_level, _pinyin_match_level(compact_query, compact, boundaries, initials))
-    for compact, boundaries, initials, _search_text in _alternate_pinyin_profiles(" ".join(chinese_parts[-1:])):
+    for compact, boundaries, initials, _search_text in data["leaf_profiles"]:
         leaf_pinyin_level = max(leaf_pinyin_level, _pinyin_match_level(compact_query, compact, boundaries, initials))
     root_pinyin_level = _pinyin_match_level(
         compact_query,
@@ -2762,7 +2799,7 @@ def _query_match_parts(entry: NodeSearchEntry, query: str):
         entry.root_pinyin_boundaries,
         entry.root_pinyin_initials,
     )
-    for compact, boundaries, initials, _search_text in _alternate_pinyin_profiles(" ".join(chinese_parts[:-1])):
+    for compact, boundaries, initials, _search_text in data["root_profiles"]:
         root_pinyin_level = max(root_pinyin_level, _pinyin_match_level(compact_query, compact, boundaries, initials))
     leaf_pinyin_match = leaf_pinyin_level >= 4
     root_pinyin_match = root_pinyin_level >= 4
@@ -3031,6 +3068,7 @@ def _leaf_prefix_sort_key(entry: NodeSearchEntry, query: str, match=None) -> tup
     return (tier, len(leaf_words), first_hit, len(leaf), _category_sort_priority(entry))
 
 
+@lru_cache(maxsize=256)
 def _officialish_query_key(query: str) -> str | None:
     normalized = _normalize(query)
     if normalized in OFFICIALISH_QUERY_ORDER:
@@ -3049,7 +3087,7 @@ def _officialish_preferred_order(entry: NodeSearchEntry, query: str, match=None)
     if not preferred:
         return _dynamic_preferred_order(entry, query, match)
 
-    english_parts = [_normalize(part) for part in entry.english.split(" > ") if part.strip()]
+    english_parts = entry._match_data["english_parts"]
     if not english_parts:
         return 10_000
 
@@ -3133,15 +3171,20 @@ def _node_type_exists_in_current_blender(node_type: str) -> bool:
     return bpy.types.Node.bl_rna_get_subclass(node_type) is not None or getattr(bpy.types, node_type, None) is not None
 
 
-def _entry_available_in_current_blender(context, entry: NodeSearchEntry) -> bool:
+def _entry_available_in_current_blender(context, entry: NodeSearchEntry, capabilities=None) -> bool:
     if entry.kind == "ASSET":
         return not entry.asset_path or Path(entry.asset_path).is_file()
     if entry.kind == "ZONE":
         settings = dict(entry.settings)
+        if capabilities is not None:
+            return all(settings.get(key, "") in capabilities
+                       for key in ("input_node_type", "output_node_type"))
         return all(_node_tree_allows_node(context, settings.get(key, ""))
                    for key in ("input_node_type", "output_node_type"))
     if entry.kind != "NODE":
         return True
+    if capabilities is not None:
+        return entry.node_type in capabilities
     return _node_tree_allows_node(context, entry.node_type)
 
 
@@ -3657,11 +3700,13 @@ def _make_search_text(english: str, chinese: str, label: str, node_type: str) ->
 def _rebuild_search_entries(context):
     NODE_SEARCH_ENTRIES.clear()
     NODE_ENTRY_BY_ID.clear()
+    tree = getattr(context.space_data, "edit_tree", None)
+    capabilities = node_registry.inventory(tree) if tree else {}
 
     seen_keys = set()
 
     def add_entry(entry: NodeSearchEntry):
-        if not _entry_available_in_current_blender(context, entry):
+        if not _entry_available_in_current_blender(context, entry, capabilities):
             return
         if _is_redundant_mix_color_entry(entry):
             return
@@ -3674,7 +3719,7 @@ def _rebuild_search_entries(context):
         if entry.kind == "NODE":
             # Older seed/cache entries predate these color categories. Read
             # their real tag without replacing historical variant/zone colors.
-            native_tag = node_registry.inventory(context.space_data.edit_tree)[entry.node_type]['color_tag']
+            native_tag = capabilities[entry.node_type]['color_tag']
             if native_tag in {"SHADER", "SCRIPT"}:
                 entry = replace(entry, asset_color_tag=native_tag)
             rna = bpy.types.Node.bl_rna_get_subclass(entry.node_type)
@@ -3843,7 +3888,7 @@ def _rebuild_search_entries(context):
         key = (node_type, tuple(settings))
         if key in seen_keys:
             return
-        if not _node_tree_allows_node(context, node_type):
+        if node_type not in capabilities:
             return
 
         seen_keys.add(key)
@@ -3853,7 +3898,7 @@ def _rebuild_search_entries(context):
         if category == "Node":
             category = _fallback_category_for_node_type(node_type, base_english)
             if category == "Node":
-                color_tag = node_registry.inventory(context.space_data.edit_tree)[node_type]['color_tag']
+                color_tag = capabilities[node_type]['color_tag']
                 category = _asset_category_from_color_tag(color_tag) or category
         base_chinese = variant_chinese if variant_chinese and not variant_label else _translation_label(base_english, getattr(bl_rna, "translation_context", None))
         if node_type == "NodeFrame" and base_english == "Frame":
@@ -3879,7 +3924,7 @@ def _rebuild_search_entries(context):
                 node_type=node_type,
                 search_text=_make_search_text(english, chinese, label, node_type),
                 settings=tuple(settings),
-                asset_color_tag=node_registry.inventory(context.space_data.edit_tree)[node_type]['color_tag'],
+                asset_color_tag=capabilities[node_type]['color_tag'],
             )
         )
 
@@ -4032,11 +4077,14 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str], allow_
 
 def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
     normalized_query = _normalize(query)
+    if not normalized_query:
+        return []
+    matches = [_query_match_parts(entry, normalized_query) for entry in NODE_SEARCH_ENTRIES]
 
     def collect(allow_weak_pinyin: bool = False):
         scored_entries = []
         for index, entry in enumerate(NODE_SEARCH_ENTRIES):
-            match = _query_match_parts(entry, normalized_query)
+            match = matches[index]
             score = _score_entry(entry, normalized_query, favorites, allow_weak_pinyin=allow_weak_pinyin, match=match)
             if score is None:
                 continue
@@ -5811,7 +5859,7 @@ class ENS_AddonPreferences(AddonPreferences):
         subdued_url_button(private_left, "B站:", "周圣宇_Anthem", "https://space.bilibili.com/25142156?spm_id_from=333.1007.0.0")
         subdued_url_button(private_left, "小红书:", "一周不剩", "https://xhslink.com/m/6zzQ97wiPAI")
 
-        subdued_url_button(private_right, "飞书:", "飞书技术字典", enabled=False)
+        subdued_url_button(private_right, "飞书:", "飞书技术字典", "https://dcnztj4835bh.feishu.cn/wiki/ClI2wK0nyi2DvckJA5wcbmf7nBe?from=from_copylink")
         subdued_url_button(private_right, "GitHub:", f"Node Console v{ADDON_VERSION}", "https://github.com/AnthemZhou")
 
         settings_box.separator(type="LINE")
