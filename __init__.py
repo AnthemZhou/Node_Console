@@ -19,16 +19,16 @@ import gpu
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
 from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
-from . import node_registry
+from . import addon_updater, node_registry
 
 
-ADDON_VERSION = "1.2.2"
+ADDON_VERSION = "1.3.0"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 2, 2),
+    "version": (1, 3, 0),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -50,6 +50,8 @@ SEARCH_INDEX_MEMORY_KEYS: set[str] = set()
 TRANSLATION_LABEL_CACHE: dict[tuple[str, str | None], str] = {}
 NODE_CLASS_CACHE: list[type] | None = None
 BACKGROUND_ASSET_INDEX = None
+UPDATE_JOB = None
+UPDATE_STATUS = {"state": "idle"}
 GPU_UNIFORM_SHADER = None
 TEXT_WIDTH_CACHE: dict[tuple[str, int], float] = {}
 
@@ -61,8 +63,6 @@ PANEL_MAX_WIDTH = 720
 SEARCH_HEIGHT = 23
 ROW_HEIGHT = 26
 PANEL_PADDING = 8
-SHORTCUT_HEIGHT = 23
-SHORTCUT_GAP = 6
 CONTEXT_MENU_WIDTH = 143
 CONTEXT_MENU_ROW_HEIGHT = 26
 CONTEXT_MENU_TEXT_Y_OFFSET = 1
@@ -261,6 +261,26 @@ UI_TEXT_ZH = {
     "Utility": "实用工具",
     "Layout": "布局",
     "None": "无",
+    "Update": "更新",
+    "Checking GitHub...": "正在检查 GitHub…",
+    "Downloading update...": "正在下载更新…",
+    "Close node search to finish updating": "关闭节点搜索窗口后完成更新",
+    "Already up to date": "已是最新版本",
+    "Restart Blender to activate": "重启 Blender 后生效",
+    "Enable Allow Online Access in Blender Preferences > System": "请在 Blender 偏好设置 > 系统中允许在线访问",
+    "GitHub connection failed; try again later": "连接 GitHub 失败，请稍后重试",
+    "GitHub request limit reached; try again later": "GitHub 请求次数受限，请稍后重试",
+    "No published release found": "未找到已发布的版本",
+    "Release has no matching installation ZIP": "该版本没有对应的插件安装包",
+    "Invalid release information": "版本信息不符合预期",
+    "Invalid installation package; nothing replaced": "安装包校验失败，未替换插件",
+    "This update requires a newer Blender": "此更新需要更高版本的 Blender",
+    "Cannot update a source checkout; install the release ZIP first": "源码工程不自动替换，请先安装正式版 ZIP",
+    "Installation path is not safe to replace": "当前安装路径不适合自动替换",
+    "Cannot write the installation folder": "无法写入插件安装目录",
+    "Update conflicts with a custom data file": "更新与自定义数据文件冲突，已停止",
+    "Update failed; previous files retained": "更新失败，已保留原文件",
+    "Installed files changed; restart Blender before updating": "安装文件已变化，请重启 Blender 后再更新",
 }
 
 TRANSLATIONS = {
@@ -1446,11 +1466,17 @@ def _load_shortcuts_for_tree(tree_id: str) -> list[str]:
     tree_meta = _load_identifier_tree_meta("shortcut_tree_meta")
     if tree_id not in _valid_node_tree_ids():
         return shortcuts
-    return [
+    available = [
         identifier
         for identifier in shortcuts
         if tree_id in _identifier_trees(identifier, tree_meta)
     ]
+    orders = _load_settings().get("shortcut_order_by_tree", {})
+    order = orders.get(tree_id, []) if isinstance(orders, dict) else []
+    if not isinstance(order, list):
+        return available
+    ordered = list(dict.fromkeys(item for item in order if isinstance(item, str) and item in available))
+    return ordered + [item for item in available if item not in ordered]
 
 
 def _load_asset_index() -> list[dict]:
@@ -2220,10 +2246,39 @@ def _remove_shortcut(identifier: str, tree_id: str = ""):
         _save_shortcuts([item for item in _load_shortcuts() if item != identifier])
         tree_meta.pop(identifier, None)
     _save_identifier_tree_meta("shortcut_tree_meta", tree_meta)
+    data = _load_settings()
+    orders = data.get("shortcut_order_by_tree", {})
+    if isinstance(orders, dict):
+        changed = False
+        for key, order in orders.items():
+            if (not tree_id or key == tree_id) and isinstance(order, list) and identifier in order:
+                orders[key] = [item for item in order if item != identifier]
+                changed = True
+        if changed:
+            data["shortcut_order_by_tree"] = orders
+            _write_settings(data)
 
 
-def _move_shortcut(identifier: str, delta: int):
-    shortcuts = _load_shortcuts()
+def _save_shortcut_order_for_tree(tree_id: str, identifiers: list[str]):
+    if tree_id not in _valid_node_tree_ids():
+        return
+    current = _load_shortcuts_for_tree(tree_id)
+    ordered = list(dict.fromkeys(item for item in identifiers if item in current))
+    reordered = iter(ordered)
+    # Keep unavailable shortcuts in their slots when reordering visible rows.
+    updated = [next(reordered) if item in ordered else item for item in current]
+    if updated == current:
+        return
+    data = _load_settings()
+    orders = data.get("shortcut_order_by_tree", {})
+    orders = dict(orders) if isinstance(orders, dict) else {}
+    orders[tree_id] = updated
+    data["shortcut_order_by_tree"] = orders
+    _write_settings(data)
+
+
+def _move_shortcut(identifier: str, delta: int, tree_id: str = ""):
+    shortcuts = _load_shortcuts_for_tree(tree_id)
     if identifier not in shortcuts:
         return
     index = shortcuts.index(identifier)
@@ -2231,7 +2286,10 @@ def _move_shortcut(identifier: str, delta: int):
     if new_index == index:
         return
     shortcuts.insert(new_index, shortcuts.pop(index))
-    _save_shortcuts(shortcuts)
+    if tree_id in _valid_node_tree_ids():
+        _save_shortcut_order_for_tree(tree_id, shortcuts)
+    else:
+        _save_shortcuts(shortcuts)
 
 
 def _remove_favorite(identifier: str, tree_id: str = ""):
@@ -2349,18 +2407,6 @@ def _entry_primary_label(entry: NodeSearchEntry) -> str:
     if display_mode in {"CHINESE", "CHINESE_ENGLISH"} and entry.chinese != entry.english:
         return entry.chinese
     return entry.english
-
-
-def _entry_shortcut_label(entry: NodeSearchEntry) -> str:
-    english_parts = [part.strip() for part in entry.english.split(" > ") if part.strip()]
-    chinese_parts = [part.strip() for part in entry.chinese.split(" > ") if part.strip()]
-    if len(english_parts) <= 1:
-        return _entry_primary_label(entry)
-
-    display_mode = _display_mode()
-    if display_mode in {"CHINESE", "CHINESE_ENGLISH"} and len(chinese_parts) == len(english_parts):
-        return chinese_parts[-1]
-    return english_parts[-1]
 
 
 def _entry_display_label(identifier: str, fallback: str = "") -> str:
@@ -4469,9 +4515,10 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _scroll_remainder = 0.0
     _visible_limit = MAX_RESULTS
     _shortcuts: list[str] = []
-    _shortcut_rects: list[tuple[str, tuple[float, float, float, float]]] = []
-    _shortcut_hover = None
-    _shortcut_hover_started = 0.0
+    _shortcut_press_identifier = None
+    _shortcut_press_mouse = (0, 0)
+    _shortcut_drag_mouse = (0, 0)
+    _shortcut_dragging = False
     _tree_id = ""
     _hovered_result_index = None
     _keyboard_selection_active = False
@@ -4495,6 +4542,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
     def _refresh_results(self):
         if self._snippet_mode:
             self._results = _search_snippets(self._query, self._tree_id, self._favorites)
+        elif self._showing_shortcuts():
+            self._results = [NODE_ENTRY_BY_ID[item] for item in self._shortcuts if item in NODE_ENTRY_BY_ID]
         else:
             self._results = _search_entries(self._query, self._favorites)
         self._close_context_menu()
@@ -4503,6 +4552,77 @@ class ENS_AddNodeByEnglishSearch(Operator):
             self._selected_index = 0
             return
         self._selected_index = max(0, min(self._selected_index, len(self._results) - 1))
+
+    def _showing_shortcuts(self):
+        return not self._snippet_mode and not _normalize(self._query)
+
+    def _reset_shortcut_drag(self):
+        self._shortcut_press_identifier = None
+        self._shortcut_dragging = False
+
+    def _shortcut_drop_index(self, mouse):
+        x, y, width, _height = self._panel_rect
+        mouse_x, mouse_y = mouse
+        if not (x + self._padding <= mouse_x <= x + width - self._padding):
+            return None
+        if not (y + self._padding <= mouse_y <= self._rows_top) or not self._results:
+            return None
+        index = self._scroll_offset + int((self._rows_top - mouse_y) // self._row_height)
+        return min(index, self._scroll_offset + self._visible_limit - 1, len(self._results) - 1)
+
+    def _update_shortcut_drag(self):
+        index = self._shortcut_drop_index(self._shortcut_drag_mouse)
+        source = next((i for i, entry in enumerate(self._results)
+                       if entry.identifier == self._shortcut_press_identifier), None)
+        if index is None or source is None:
+            return
+        self._results.insert(index, self._results.pop(source))
+        self._selected_index = index
+        self._hovered_result_index = index
+
+    def _shortcut_drag_timer(self):
+        if not self._shortcut_dragging or self._shortcut_drop_index(self._shortcut_drag_mouse) is None:
+            return
+        mouse_y = self._shortcut_drag_mouse[1]
+        bottom = self._rows_top - min(self._visible_limit, len(self._results)) * self._row_height
+        if mouse_y > self._rows_top - self._row_height / 2:
+            self._scroll_results(-1)
+        elif mouse_y < bottom + self._row_height / 2:
+            self._scroll_results(1)
+        self._update_shortcut_drag()
+
+    def _handle_shortcut_drag(self, context, event):
+        if event.type == "WINDOW_DEACTIVATE" or (event.type in {"ESC", "RIGHTMOUSE"} and event.value == "PRESS"):
+            self._reset_shortcut_drag()
+            self._refresh_results()
+        elif event.type == "MOUSEMOVE":
+            self._shortcut_drag_mouse = (event.mouse_region_x, event.mouse_region_y)
+            dx = event.mouse_region_x - self._shortcut_press_mouse[0]
+            dy = event.mouse_region_y - self._shortcut_press_mouse[1]
+            if dx * dx + dy * dy >= _scaled(5, _ui_scale()) ** 2:
+                self._shortcut_dragging = True
+            if self._shortcut_dragging:
+                self._update_shortcut_drag()
+        elif event.type in {"WHEELUPMOUSE", "WHEELDOWNMOUSE", "TRACKPADPAN", "MOUSEPAN"}:
+            if self._shortcut_dragging:
+                self._scroll_results(self._scroll_amount_from_event(event))
+                self._update_shortcut_drag()
+        elif event.type == "LEFTMOUSE" and event.value == "RELEASE":
+            self._shortcut_drag_mouse = (event.mouse_region_x, event.mouse_region_y)
+            drop_index = self._shortcut_drop_index(self._shortcut_drag_mouse)
+            identifier = self._shortcut_press_identifier
+            was_dragging = self._shortcut_dragging
+            if was_dragging and drop_index is not None:
+                self._update_shortcut_drag()
+                _save_shortcut_order_for_tree(self._tree_id, [entry.identifier for entry in self._results])
+                self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
+            self._reset_shortcut_drag()
+            if not was_dragging and drop_index is not None and self._results[drop_index].identifier == identifier:
+                self._selected_index = drop_index
+                return self._confirm(context, event)
+            self._refresh_results()
+        self._tag_owner_redraw(context)
+        return {"RUNNING_MODAL"}
 
     def _close_context_menu(self):
         self._context_menu_index = None
@@ -4548,6 +4668,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 pass
             self._timer = None
         self._placing_node = None
+        self._reset_shortcut_drag()
         self._pending_native_transform = False
         self._placement_uses_native_transform = True
         if ACTIVE_CONSOLE_OPERATOR is self:
@@ -4658,22 +4779,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if self._scroll_offset <= index < min(len(self._results), self._scroll_offset + self._visible_limit):
             return index
         return None
-
-    def _shortcut_identifier_from_mouse(self, event):
-        for identifier, rect in self._shortcut_rects:
-            x, y, width, height = rect
-            if x <= event.mouse_region_x <= x + width and y <= event.mouse_region_y <= y + height:
-                return identifier
-        return None
-
-    def _update_shortcut_hover(self, event):
-        identifier = self._shortcut_identifier_from_mouse(event)
-        if identifier != self._shortcut_hover:
-            self._shortcut_hover = identifier
-            self._shortcut_hover_started = time.monotonic() if identifier else 0.0
-
-    def _entry_from_identifier(self, identifier: str):
-        return NODE_ENTRY_BY_ID.get(identifier)
 
     def _mouse_in_panel(self, event):
         x, y, width, height = self._panel_rect
@@ -4820,14 +4925,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
         width = max(_scaled(82, scale), label_width + _scaled(24, scale))
         row_height = _scaled(CONTEXT_MENU_ROW_HEIGHT, scale)
         menu_height = row_height * len(self._context_menu_items())
-        shortcut_rect = next((rect for shortcut_id, rect in self._shortcut_rects if shortcut_id == identifier), None)
-        if shortcut_rect:
-            shortcut_x, shortcut_y, shortcut_width, _shortcut_height = shortcut_rect
-            x = shortcut_x + (shortcut_width - width) / 2
-            y = shortcut_y - menu_height - _scaled(8, scale)
-        else:
-            x = event.mouse_region_x
-            y = event.mouse_region_y - menu_height
+        x = event.mouse_region_x
+        y = event.mouse_region_y - menu_height
         if self._panel_rect[2]:
             panel_x, panel_y, panel_width, panel_height = self._panel_rect
             x = min(max(panel_x, x), panel_x + panel_width - width)
@@ -4853,7 +4952,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._context_menu_hover = self._context_menu_action_from_mouse(event)
 
     def _scroll_results(self, amount: int) -> bool:
-        if not self._query or not self._results or self._visible_limit <= 0:
+        if not self._results or self._visible_limit <= 0:
             return False
 
         max_scroll = max(0, len(self._results) - self._visible_limit)
@@ -4919,7 +5018,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._favorites = _load_favorites_for_tree(self._tree_id)
         self._favorite_meta = _load_favorite_meta()
         self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
-        self._shortcut_hover_started = 0.0
+        self._reset_shortcut_drag()
         self._scroll_offset = 0
         self._scroll_remainder = 0.0
         self._hovered_result_index = None
@@ -4940,6 +5039,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if ACTIVE_CONSOLE_OPERATOR is not self:
             return self._finish(context, {"CANCELLED"})
         if not self._owns_context(context):
+            if self._shortcut_press_identifier is not None:
+                self._reset_shortcut_drag()
+                self._refresh_results()
             if event.type == "TIMER":
                 return {"RUNNING_MODAL"}
             if event.type == "LEFTMOUSE" and event.value == "PRESS":
@@ -4947,8 +5049,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
             return {"PASS_THROUGH"}
 
         if event.type == "TIMER":
+            self._shortcut_drag_timer()
             self._tag_owner_redraw(context)
             return {"RUNNING_MODAL"}
+
+        if self._shortcut_press_identifier is not None:
+            return self._handle_shortcut_drag(context, event)
 
         if self._resizing_width:
             if event.type == "MOUSEMOVE":
@@ -5086,8 +5192,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     if action == "REMOVE_SHORTCUT" and self._context_menu_shortcut:
                         _remove_shortcut(self._context_menu_shortcut, self._tree_id)
                         self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
-                        self._shortcut_hover = None
-                        self._close_context_menu()
+                        self._refresh_results()
                     elif action == "FAVORITE":
                         self._set_favorite(self._context_menu_index, True)
                     elif action == "UNFAVORITE":
@@ -5138,15 +5243,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 index = self._row_index_from_mouse(event)
                 if index is not None:
                     self._selected_index = index
+                    if self._showing_shortcuts():
+                        self._shortcut_press_identifier = self._results[index].identifier
+                        self._shortcut_press_mouse = (event.mouse_region_x, event.mouse_region_y)
+                        self._shortcut_drag_mouse = self._shortcut_press_mouse
+                        self._shortcut_dragging = False
+                        self._tag_owner_redraw(context)
+                        return {"RUNNING_MODAL"}
                     return self._confirm(context, event)
-
-                shortcut_identifier = self._shortcut_identifier_from_mouse(event)
-                if shortcut_identifier:
-                    entry = self._entry_from_identifier(shortcut_identifier)
-                    if entry:
-                        self._results = [entry]
-                        self._selected_index = 0
-                        return self._confirm(context, event)
                 if not self._mouse_in_panel(event):
                     return self._finish(context, {"CANCELLED"})
             elif event.type == "RIGHTMOUSE":
@@ -5157,9 +5261,10 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     if context.area:
                         context.area.tag_redraw()
                     return {"RUNNING_MODAL"}
-                shortcut_identifier = self._shortcut_identifier_from_mouse(event)
-                if shortcut_identifier:
-                    self._open_shortcut_context_menu(event, shortcut_identifier)
+                index = self._row_index_from_mouse(event)
+                if self._showing_shortcuts() and index is not None:
+                    self._selected_index = index
+                    self._open_shortcut_context_menu(event, self._results[index].identifier)
                     if context.area:
                         context.area.tag_redraw()
                     return {"RUNNING_MODAL"}
@@ -5181,10 +5286,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 if index is not None:
                     self._selected_index = index
                     self._keyboard_selection_active = False
-                old_hover = self._shortcut_hover
-                self._update_shortcut_hover(event)
-                if old_hover != self._shortcut_hover and context.area:
-                    context.area.tag_redraw()
 
             if context.area:
                 context.area.tag_redraw()
@@ -5211,10 +5312,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     context.area.tag_redraw()
             elif old_result_hover != self._hovered_result_index and context.area:
                 context.area.tag_redraw()
-            old_hover = self._shortcut_hover
-            self._update_shortcut_hover(event)
-            if old_hover != self._shortcut_hover and context.area:
-                context.area.tag_redraw()
             if old_resize_hover != self._resize_handle_hover and context.area:
                 context.area.tag_redraw()
 
@@ -5232,16 +5329,13 @@ class ENS_AddNodeByEnglishSearch(Operator):
         search_height = _scaled(SEARCH_HEIGHT, scale)
         row_height = _scaled(ROW_HEIGHT, scale)
         gap = _scaled(6, scale)
-        shortcut_height = _scaled(SHORTCUT_HEIGHT, scale)
-        shortcut_gap = gap
         radius = _scaled(5, scale)
         width = min(_scaled(self._console_width_for_draw(), scale), region.width - _scaled(12, scale))
         has_query = bool(_normalize(self._query)) or self._snippet_mode
         search_width = width - padding * 2
         resize_gutter_width = max(_scaled(2, scale), 3)
         search_field_width = max(_scaled(80, scale), search_width - resize_gutter_width)
-        active_shortcuts = [identifier for identifier in self._shortcuts if identifier in NODE_ENTRY_BY_ID]
-        show_shortcuts = bool(active_shortcuts and not has_query)
+        show_rows = has_query or bool(self._results)
 
         if self._panel_x is None:
             self._panel_x = self._anchor_x - padding - search_width * 0.75
@@ -5252,14 +5346,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
         preferred_rows_below = min(4, MAX_RESULTS)
         min_search_y = padding + gap + preferred_rows_below * row_height
         search_y = min(max(min_search_y, self._search_y), region.height - padding - search_height)
-        max_rows_below = max(1, int((search_y - gap - padding) // row_height))
+        more_height = _scaled(12, scale)
+        max_rows_below = max(1, int((search_y - gap - padding - more_height) // row_height))
         visible_limit = min(MAX_RESULTS, max_rows_below)
         self._visible_limit = visible_limit
-        rows = min(visible_limit, max(0, len(self._results) - self._scroll_offset)) if has_query else 0
+        self._scroll_offset = min(self._scroll_offset, max(0, len(self._results) - visible_limit))
+        rows = min(visible_limit, max(0, len(self._results) - self._scroll_offset))
         empty_rows = 1 if has_query and not self._results else 0
-        shortcut_visual_offset = _scaled(2, scale)
-        shortcuts_height = (shortcut_gap + shortcut_visual_offset + shortcut_height) if show_shortcuts else 0
-        height = padding * 2 + search_height + shortcuts_height + (gap + max(rows, empty_rows) * row_height if has_query else 0) + (_scaled(12, scale) if has_query and len(self._results) > rows else 0)
+        height = padding * 2 + search_height + (gap + max(rows, empty_rows) * row_height if show_rows else 0) + (more_height if show_rows and len(self._results) > rows else 0)
         y = search_y + search_height + padding - height
         self._panel_rect = (x, y, width, height)
         self._padding = padding
@@ -5322,50 +5416,6 @@ class ENS_AddNodeByEnglishSearch(Operator):
             _draw_centered_text("x", clear_x, clear_y, clear_size, clear_size, max(9, _scaled(9, scale)), (0.52, 0.52, 0.54, 0.90))
 
         category_color_mode = _category_color_mode()
-        self._shortcut_rects = []
-        shortcuts_y = search_y - shortcut_gap - shortcut_visual_offset - shortcut_height
-        if show_shortcuts:
-            item_gap = _scaled(5, scale)
-            visible_shortcuts = active_shortcuts[:10]
-            layout_slots = max(4, len(visible_shortcuts))
-            item_width = (search_width - item_gap * (layout_slots - 1)) / layout_slots
-            for index, identifier in enumerate(active_shortcuts[:10]):
-                item_x = x + padding + index * (item_width + item_gap)
-                rect = (item_x, shortcuts_y, item_width, shortcut_height)
-                self._shortcut_rects.append((identifier, rect))
-                entry = NODE_ENTRY_BY_ID[identifier]
-                shortcut_hovered = self._shortcut_hover == identifier
-                shortcut_radius = max(3, radius - 1)
-                if category_color_mode == "BLOCK":
-                    shortcut_fill, shortcut_border = _entry_type_colors(entry, active=shortcut_hovered)
-                    shortcut_fill = _blend_color(shortcut_fill, 1.0, FIELD_BACKGROUND)
-                    shortcut_fill = (shortcut_fill[0], shortcut_fill[1], shortcut_fill[2], 1.0)
-                    shortcut_border = (shortcut_border[0], shortcut_border[1], shortcut_border[2], 1.0)
-                    _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, shortcut_radius, shortcut_fill, shortcut_border)
-                    shortcut_text_x = item_x + _scaled(10, scale)
-                    shortcut_text_max_width = item_width - _scaled(18, scale)
-                else:
-                    _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, shortcut_radius, FIELD_BACKGROUND, BORDER_COLOR)
-                    if shortcut_hovered:
-                        _draw_rounded_panel(item_x, shortcuts_y, item_width, shortcut_height, shortcut_radius, HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
-                    shortcut_text_x = item_x + _scaled(10, scale)
-                    shortcut_text_max_width = item_width - _scaled(18, scale)
-                    if category_color_mode == "LINE":
-                        shortcut_block_y = shortcuts_y + _scaled(2, scale)
-                        shortcut_block_height = shortcut_height - _scaled(4, scale)
-                        shortcut_line_width = max(2, _scaled(3, scale))
-                        shortcut_line_height = shortcut_block_height
-                        shortcut_line_y = shortcut_block_y + (shortcut_block_height - shortcut_line_height) / 2
-                        shortcut_base_color = _entry_base_type_color(entry)
-                        shortcut_line_color = _blend_color(shortcut_base_color, 0.95 if shortcut_hovered else 0.82, PANEL_BACKGROUND)
-                        _draw_rounded_rect(item_x, shortcut_line_y, shortcut_line_width, shortcut_line_height, max(1, shortcut_line_width / 2), (shortcut_line_color[0], shortcut_line_color[1], shortcut_line_color[2], 0.95))
-                        shortcut_text_x = item_x + _scaled(10, scale)
-                        shortcut_text_max_width = item_width - _scaled(18, scale)
-                shortcut_text_size = _scaled(13, scale)
-                shortcut_text_y = shortcuts_y + _scaled(7, scale)
-                shortcut_text = _fit_text(_abbreviate_label(_entry_shortcut_label(entry)), shortcut_text_max_width, shortcut_text_size)
-                shortcut_text_color = MUTED_TEXT_COLOR if shortcut_hovered else SECONDARY_TEXT_COLOR
-                _draw_text(shortcut_text, shortcut_text_x, shortcut_text_y, shortcut_text_size, shortcut_text_color)
 
         def draw_context_menu():
             if self._context_menu_kind is None:
@@ -5387,9 +5437,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
             handle_width = max(1, _scaled(1, scale))
             _draw_rounded_rect(handle_x, search_y + _scaled(3, scale), handle_width, max(0, search_height - _scaled(6, scale)), max(1, _scaled(1, scale)), handle_color)
 
-        rows_top = search_y - shortcuts_height - gap
+        rows_top = search_y - gap
         self._rows_top = rows_top
-        if not has_query:
+        if not show_rows:
             draw_resize_hint()
             draw_context_menu()
             return
@@ -5409,6 +5459,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
             is_hovered = index == self._hovered_result_index
             context_menu_target = self._context_menu_kind == "RESULT" and self._context_menu_index == index
             context_menu_dimmed = self._context_menu_kind == "RESULT" and self._context_menu_index is not None and not context_menu_target
+            if self._context_menu_kind == "SHORTCUT":
+                context_menu_target = self._context_menu_shortcut == entry.identifier
+                context_menu_dimmed = not context_menu_target
             is_emphasized = is_selected or context_menu_target
             is_favorite = entry.identifier in self._favorites
 
@@ -5468,28 +5521,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), _multiply_color(secondary_row_color, favorite_strength))
             if context_menu_dimmed:
                 _draw_rounded_rect(x + padding, block_y, search_width, block_height, block_radius, CONTEXT_MENU_DIM_COLOR)
+            if self._shortcut_dragging and entry.identifier == self._shortcut_press_identifier:
+                _draw_rect(x + padding, row_y + row_height - _scaled(1, scale), search_width, max(1, _scaled(1, scale)), MUTED_TEXT_COLOR)
 
-        if has_query and len(self._results) > self._scroll_offset + rows:
+        if show_rows and len(self._results) > self._scroll_offset + rows:
             _draw_text("▼", x + width / 2 - _scaled(4, scale), y + _scaled(4, scale), _scaled(12, scale), TEXT_COLOR)
 
         draw_resize_hint()
         draw_context_menu()
-
-        if (
-            self._shortcut_hover
-            and self._shortcut_hover in NODE_ENTRY_BY_ID
-            and time.monotonic() - self._shortcut_hover_started >= 1.0
-        ):
-            entry = NODE_ENTRY_BY_ID[self._shortcut_hover]
-            tooltip_text = entry.label
-            tooltip_width = _text_width(tooltip_text, _scaled(12, scale)) + _scaled(18, scale)
-            tooltip_height = _scaled(24, scale)
-            tooltip_x = min(max(x + padding, self._anchor_x), x + width - tooltip_width - padding)
-            tooltip_y = shortcuts_y - tooltip_height - _scaled(4, scale)
-            if tooltip_y < y + padding:
-                tooltip_y = shortcuts_y + shortcut_height + _scaled(4, scale)
-            _draw_rounded_panel(tooltip_x, tooltip_y, tooltip_width, tooltip_height, max(3, radius - 1), FIELD_BACKGROUND, BORDER_COLOR)
-            _draw_text(tooltip_text, tooltip_x + _scaled(9, scale), tooltip_y + _scaled(7, scale), _scaled(12, scale), TEXT_COLOR)
 
 
 class NODECONSOLE_OT_RefreshAssetIndex(Operator):
@@ -5677,9 +5716,124 @@ class NODECONSOLE_OT_MoveShortcut(Operator):
 
     identifier: StringProperty()
     direction: StringProperty(default="UP")
+    tree_id: StringProperty(default="")
 
     def execute(self, _context):
-        _move_shortcut(self.identifier, -1 if self.direction == "UP" else 1)
+        _move_shortcut(self.identifier, -1 if self.direction == "UP" else 1, self.tree_id)
+        return {"FINISHED"}
+
+
+def _update_status_text():
+    state = UPDATE_STATUS.get("state", "idle")
+    messages = {
+        "checking": "Checking GitHub...",
+        "downloading": "Downloading update...",
+        "waiting": "Close node search to finish updating",
+        "current": "Already up to date",
+        "installed": "Restart Blender to activate",
+    }
+    errors = {
+        "offline": "Enable Allow Online Access in Blender Preferences > System",
+        "network_error": "GitHub connection failed; try again later",
+        "rate_limit": "GitHub request limit reached; try again later",
+        "no_release": "No published release found",
+        "missing_package": "Release has no matching installation ZIP",
+        "invalid_release": "Invalid release information",
+        "invalid_package": "Invalid installation package; nothing replaced",
+        "incompatible_blender": "This update requires a newer Blender",
+        "development_install": "Cannot update a source checkout; install the release ZIP first",
+        "unsafe_install": "Installation path is not safe to replace",
+        "permission_error": "Cannot write the installation folder",
+        "protected_data": "Update conflicts with a custom data file",
+        "changed_install": "Installed files changed; restart Blender before updating",
+    }
+    text = errors.get(UPDATE_STATUS.get("code"), "Update failed; previous files retained") if state == "error" else messages.get(state, "")
+    label = _ui_text(text)
+    if state in {"downloading", "installed"} and UPDATE_STATUS.get("version"):
+        label += f" (v{UPDATE_STATUS['version']})"
+    return label
+
+
+def _redraw_update_preferences():
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == "PREFERENCES":
+                area.tag_redraw()
+
+
+def _poll_addon_update():
+    global UPDATE_JOB, UPDATE_STATUS
+    job = UPDATE_JOB
+    if job is None:
+        return None
+    try:
+        if not getattr(bpy.app, "online_access", False):
+            raise addon_updater.UpdateError("offline")
+        result = job.poll()
+        if result["state"] == "ready":
+            if ACTIVE_CONSOLE_OPERATOR is not None:
+                UPDATE_STATUS = {"state": "waiting"}
+                _redraw_update_preferences()
+                return 0.25
+            backup = addon_updater.install_release(
+                job.directory / "release.zip", Path(__file__).parent,
+                result["version"], bpy.app.version,
+                protected_paths=(_settings_path(), _snippets_path()), current_version=ADDON_VERSION)
+            result = {"state": "installed", "version": result["version"], "backup": str(backup)}
+        UPDATE_STATUS = result
+    except addon_updater.UpdateError as exc:
+        UPDATE_STATUS = {"state": "error", "code": exc.code}
+        print(f"Node Console update: {exc}")
+    except PermissionError as exc:
+        UPDATE_STATUS = {"state": "error", "code": "permission_error"}
+        print(f"Node Console update: {exc}")
+    except Exception as exc:
+        UPDATE_STATUS = {"state": "error", "code": "install_error"}
+        print(f"Node Console update: {exc}")
+    if UPDATE_STATUS["state"] in {"checking", "downloading"}:
+        _redraw_update_preferences()
+        return 0.25
+    UPDATE_JOB = None
+    job.close()
+    _redraw_update_preferences()
+    return None
+
+
+def _stop_addon_update():
+    global UPDATE_JOB, UPDATE_STATUS
+    if bpy.app.timers.is_registered(_poll_addon_update):
+        bpy.app.timers.unregister(_poll_addon_update)
+    if UPDATE_JOB is not None:
+        UPDATE_JOB.close()
+        UPDATE_JOB = None
+        UPDATE_STATUS = {"state": "idle"}
+
+
+class NODECONSOLE_OT_UpdateAddon(Operator):
+    bl_idname = "node_console.update_addon"
+    bl_label = "Update Node Console"
+    bl_description = "Install the latest GitHub release with a local backup; restart Blender to activate"
+    bl_options = {"INTERNAL"}
+
+    @classmethod
+    def poll(cls, _context):
+        return UPDATE_JOB is None and UPDATE_STATUS.get("state") != "installed"
+
+    def execute(self, _context):
+        global UPDATE_JOB, UPDATE_STATUS
+        try:
+            if not getattr(bpy.app, "online_access", False):
+                raise addon_updater.UpdateError("offline")
+            addon_updater.validate_target(Path(__file__).parent)
+            UPDATE_JOB = addon_updater.UpdateJob(ADDON_VERSION)
+            UPDATE_STATUS = {"state": "checking"}
+            bpy.app.timers.register(_poll_addon_update, first_interval=0.25, persistent=True)
+        except Exception as exc:
+            _stop_addon_update()
+            UPDATE_STATUS = {"state": "error", "code": getattr(exc, "code", "install_error")}
+            self.report({"WARNING"}, _update_status_text())
+            return {"CANCELLED"}
+        _redraw_update_preferences()
         return {"FINISHED"}
 
 
@@ -5844,6 +5998,16 @@ class ENS_AddonPreferences(AddonPreferences):
     def draw(self, _context):
         layout = self.layout
 
+        update_row = layout.split(factor=0.78, align=True)
+        update_row.label(text=f"Node Console v{ADDON_VERSION}")
+        update_row.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text=_ui_text("Update"), icon="FILE_REFRESH")
+        if UPDATE_STATUS.get("state") != "idle":
+            status_row = layout.row(align=True)
+            status_row.alert = UPDATE_STATUS.get("state") == "error"
+            status_row.label(text=_update_status_text())
+            if UPDATE_STATUS.get("backup"):
+                status_row.operator("wm.path_open", text="", icon="FILE_FOLDER").filepath = UPDATE_STATUS["backup"]
+
         settings_box = layout.box()
         private_links = settings_box.split(factor=0.5, align=False)
         private_left = private_links.column(align=True)
@@ -5986,6 +6150,8 @@ class ENS_AddonPreferences(AddonPreferences):
             box.label(text=_ui_text("No node shortcuts"))
         else:
             grouped_shortcuts = _group_identifiers_by_tree(shortcuts, shortcut_tree_meta)
+            for tree_id in _valid_node_tree_ids():
+                grouped_shortcuts[tree_id] = _load_shortcuts_for_tree(tree_id)
             for tree_id, label in NODE_TREE_GROUPS:
                 identifiers = grouped_shortcuts.get(tree_id, [])
                 if not identifiers:
@@ -6001,9 +6167,11 @@ class ENS_AddonPreferences(AddonPreferences):
                     up_op = row.operator(NODECONSOLE_OT_MoveShortcut.bl_idname, text="", icon="TRIA_UP")
                     up_op.identifier = identifier
                     up_op.direction = "UP"
+                    up_op.tree_id = tree_id
                     down_op = row.operator(NODECONSOLE_OT_MoveShortcut.bl_idname, text="", icon="TRIA_DOWN")
                     down_op.identifier = identifier
                     down_op.direction = "DOWN"
+                    down_op.tree_id = tree_id
                     remove_op = row.operator(NODECONSOLE_OT_RemoveShortcut.bl_idname, text="", icon="X")
                     remove_op.identifier = identifier
                     remove_op.tree_id = tree_id
@@ -6068,6 +6236,7 @@ classes = (
     NODECONSOLE_OT_RemoveFavorite,
     NODECONSOLE_OT_RemoveShortcut,
     NODECONSOLE_OT_MoveShortcut,
+    NODECONSOLE_OT_UpdateAddon,
     ENS_AddonPreferences,
 )
 
@@ -6329,6 +6498,7 @@ def register():
 
 def unregister():
     global BACKGROUND_ASSET_INDEX
+    _stop_addon_update()
     BACKGROUND_ASSET_INDEX = None
     unregister_keymap()
 

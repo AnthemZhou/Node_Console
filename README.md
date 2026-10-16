@@ -4,13 +4,13 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.2.2-blue)
+![Version](https://img.shields.io/badge/version-1.3.0-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.2.2
+版本：1.3.0
 
 ## 中文
 
@@ -30,7 +30,7 @@ Node Console 将拼音搜索作为主要中文检索方式。你可以直接输�
 
 ### 安装
 
-1. 选择 `Node_Console_1.2.2.zip` 安装包。
+1. 选择 `Node_Console_1.3.0.zip` 安装包。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -44,6 +44,8 @@ Node Console 将拼音搜索作为主要中文检索方式。你可以直接输�
 5. 移动鼠标决定节点位置。
 6. 点击鼠标左键，或按 Enter 落位。
 7. 右键搜索结果，可以添加或取消收藏，也可以添加快捷节点。
+
+空搜索时的快捷节点使用纵向普通节点行，沿用类目颜色和中英文显示模式。可拖动节点行排序，松开保存；按 Esc、右键或拖到列表外松开可取消。顺序按几何、材质、合成编辑器分别保存。输入文字后仍是正常节点搜索，不先弹出官方添加菜单。
 
 ### 组合点
 
@@ -71,15 +73,25 @@ Node Console 将拼音搜索作为主要中文检索方式。你可以直接输�
 - `收藏`（Favorites）：查看并删除收藏节点。
 - `快捷节点`（Shortcuts）：查看、删除或调整快捷节点顺序。
 
+### 在线更新
+
+在 Node Console 偏好设置中点击「更新」，检查 [GitHub 最新正式版](https://github.com/AnthemZhou/Node_Console/releases/latest)。有新版本时自动下载对应的插件 ZIP，校验后替换安装文件；没有新版本则保持不变。不会在启动 Blender 时自动联网，也不会安装预发布版或降级。
+
+- 需要在 Blender 的 `偏好设置 > 系统` 中允许在线访问；不会替你修改该权限。
+- 下载在独立进程中执行，不占用搜索界面的主线程。网络失败、损坏的包或不兼容的 Blender 版本会提示错误，不替换插件。
+- 替换前保留本地备份；收藏、快捷节点、排序、使用记录和组合点库不清空。成功后的文件夹按钮可打开旧文件备份，备份保留在插件目录旁的 `.node-console-update-*/previous` 中。
+- 完成后请保存工程并重启 Blender，新版才会生效；更新不会重置或重新注册 Blender 和其他插件的快捷键。
+- Git 源码工程不接受自动替换。首次使用此按钮需要先安装包含此功能的版本。
+
 ### 说明
 
 - Node Console 以普通 Blender 插件 zip 格式发布。
 - 插件不会修改 Blender 的语言文件、节点标签或接口标签。
-- 1.2.2 优化搜索匹配与索引准备。Blender 5.2.2 实测搜索核心中位耗时降低约 54%–59%，两版 Blender 共 10,935 次查询对照保持原有结果与排序；详见[性能验证](PERFORMANCE.md)及[1.2.2 实测明细](VALIDATION_1.2.2.md)。
+- 1.2.2 优化搜索匹配与索引准备。Blender 5.2.2 实测搜索核心中位耗时降低约 54%–59%，两版 Blender 共 10,935 次查询对照保持原有结果与排序；详见[性能验证](PERFORMANCE.md)。
 - 1.2.1 修正着色器、脚本、部分几何与输出节点及 Split Toning 资产的颜色标签；Shader 类组合点也使用专用着色器绿色。节点仍按当前版本的真实注册类型与创建能力生成索引，不会在旧版中展示不存在的新节点。
 - 中文名优先读取当前 Blender 的官方简中词典及翻译上下文，不切换你的界面语言；人工搜索别名单独记录。英文、中文、全拼和完整首字母均可检索，例如 `Mesh Bevel`、`网格倒角`、`wanggedaojiao`、`wgdj`。
 - 升级 Blender 后，可用「刷新资产索引」发现新版自带的资产节点组。只索引本地可读取的 `.blend` 资产，不会把未下载的在线资产当作可直接添加的节点。
-- [变更日志](CHANGELOG.md)与[1.2.1 实测明细](VALIDATION_1.2.1.md)记录了配色修正与回归范围；节点覆盖和译名来源见 [1.2.0 验证报告](VALIDATION_1.2.0.md)。
+- 节点支持、译名处理与配色修正的版本变化见[变更日志](CHANGELOG.md)。
 
 ## English
 
@@ -99,7 +111,7 @@ Node Console treats pinyin as the primary way to search Chinese node names. You 
 
 ### Install
 
-1. Choose the `Node_Console_1.2.2.zip` installation package.
+1. Choose the `Node_Console_1.3.0.zip` installation package.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -113,6 +125,8 @@ Node Console treats pinyin as the primary way to search Chinese node names. You 
 5. Move the mouse to choose the node position.
 6. Click the left mouse button, or press Enter to place the node.
 7. Right-click a result to add or remove favorites and shortcuts.
+
+An empty query shows shortcuts as regular vertical node rows with the selected category colors and bilingual display mode. Drag a row and release to save its order; Escape, right-click or an outside drop cancels. Geometry, Shader and Compositor editors keep independent orders. Typing still searches nodes directly, without opening the native Add menu first.
 
 ### Snippet Nodes
 
@@ -140,12 +154,22 @@ Snippet Nodes are stored in an external JSON library file. Preferences provide c
 - `Favorites`: lists favorite nodes and lets you remove them.
 - `Shortcuts`: lists shortcut nodes and lets you remove or reorder them.
 
+### Online Updates
+
+Click Update in Node Console Preferences to check the [latest stable GitHub release](https://github.com/AnthemZhou/Node_Console/releases/latest). A newer version's installation ZIP is downloaded, validated and installed automatically. No startup checks, prerelease installation or downgrades occur.
+
+- Enable Allow Online Access in Blender Preferences > System. The add-on never changes this permission for you.
+- A separate process handles downloads. Network errors, invalid packages and incompatible Blender versions leave the installation untouched.
+- A local backup is kept before replacement. Favorites, shortcuts, ordering, usage, settings and snippet libraries are preserved. The folder button after a successful update opens the backup at `.node-console-update-*/previous` beside the installation.
+- Save your project and restart Blender to activate the new version. Updating does not reset or re-register Blender or other add-ons' keymaps.
+- Git source checkouts cannot be replaced through this button. Install a version containing the updater before using this feature for the first time.
+
 ### Notes
 
 - Node Console is released as a regular Blender add-on zip.
 - The add-on does not modify Blender language files, node labels, or socket labels.
-- Version 1.2.2 optimizes matching and index preparation. Median core search time is approximately 54%–59% lower on Blender 5.2.2; 10,935 queries across two Blender versions retain identical results and ordering. See [performance results](PERFORMANCE.md) and [1.2.2 validation](VALIDATION_1.2.2.md).
+- Version 1.2.2 optimizes matching and index preparation. Median core search time is approximately 54%–59% lower on Blender 5.2.2; 10,935 queries across two Blender versions retain identical results and ordering. See [performance results](PERFORMANCE.md).
 - Version 1.2.1 corrects shader, script, selected geometry/output and Split Toning asset colors. Shader snippets now use dedicated shader green. Runtime registration and native creation checks still determine which nodes are offered in each editor.
 - Chinese labels use the running Blender's official Simplified Chinese catalog and translation contexts without changing the UI language. Editorial search aliases are stored separately. Search supports English, Chinese, full pinyin and complete initials, such as `Mesh Bevel`, `网格倒角`, `wanggedaojiao` and `wgdj`.
 - After upgrading Blender, use Refresh Asset Index to discover new bundled node groups. Only locally readable `.blend` assets are indexed; undownloaded online assets are not presented as directly creatable nodes.
-- See the [changelog](CHANGELOG.md) and [1.2.1 validation details](VALIDATION_1.2.1.md) for color fixes and testing limits. Node coverage and translation sources remain documented in the [1.2.0 report](VALIDATION_1.2.0.md).
+- See the [changelog](CHANGELOG.md) for changes to node support, translation handling and category colors.

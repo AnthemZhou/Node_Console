@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.0
+
+### 中文
+
+- 将空搜索时的快捷节点按钮改为纵向节点行，复用普通搜索结果的类目颜色和中英文显示模式，支持滚动查看完整快捷列表。
+- 支持拖动快捷节点行排序，松开鼠标保存；Esc、右键或拖出列表后松开可取消，不会误添加节点。
+- 几何、材质、合成节点编辑器分别保存快捷节点顺序，偏好设置中的上下移动与搜索窗口保持同步；保留已有快捷节点、收藏和使用数据。
+- 未修改 Shift+A 的入口或 Blender 原生菜单搜索逻辑。
+- 偏好设置新增「更新」按钮：主动点击后检查 GitHub 最新正式版，后台下载并校验安装包，保留本地备份后替换插件；重启 Blender 生效，不在运行中重载快捷键。
+- 更新遵守 Blender 联网权限，保留收藏、快捷节点顺序、使用记录、设置和组合点库；安装包异常、版本不兼容或源码工程不会被自动替换。
+
+### English
+
+- Show shortcuts as scrollable node rows when the query is empty, using the regular result category colors and bilingual display modes.
+- Reorder shortcut rows by dragging; release to save, or cancel with Escape, right-click or an outside drop without creating a node.
+- Store ordering separately for each node editor and share it with the Preferences reorder controls, preserving existing shortcuts, favorites and usage data.
+- Keep the Shift+A entry point and native Blender menu-search behavior unchanged.
+- Add a Preferences Update button to check the latest stable GitHub release on demand, download and validate it in the background, and replace the installation with a local backup. Restart Blender to activate; no live keymap reload.
+- Respect Blender's online-access permission and preserve favorites, shortcut order, usage, settings and snippet libraries. Reject invalid/incompatible packages and refuse to overwrite a source checkout.
+
 ## 1.2.2
 
 ### 中文
@@ -8,7 +28,7 @@
 - 避免未命中时的拼音回退重复匹配；空查询不再遍历索引。
 - 索引重建复用本次节点能力检查结果，减少重复读取 Blender 运行信息；保留打开窗口时对本地节点组、资产与设置的更新。
 - Blender 5.2.2 实测搜索核心中位耗时降低约 54%–59%，热索引准备耗时降低约 44%–63%；这些数据不代表整体界面帧率。
-- 增加与 1.2.1 的完整搜索结果/排序对照、性能基准与缓存生命周期测试。Blender 5.2.2 与 5.1.2 共 10,935 次查询对照零差异；实测范围和数据见 `PERFORMANCE.md` 和 `VALIDATION_1.2.2.md`。不改变快捷键、收藏、使用数据或持久化格式。
+- 增加与 1.2.1 的完整搜索结果/排序对照、性能基准与缓存生命周期测试。Blender 5.2.2 与 5.1.2 共 10,935 次查询对照零差异；实测范围和数据见 [性能验证](PERFORMANCE.md)。不改变快捷键、收藏、使用数据或持久化格式。
 
 ### English
 
@@ -16,7 +36,7 @@
 - Reuse matches during weak-pinyin fallback and skip matching for empty queries.
 - Reuse capability data within each index rebuild while retaining live group, asset and preference updates.
 - Reduce measured median core search time by approximately 54%–59% and warm index preparation by 44%–63% on Blender 5.2.2; these are not GUI frame-rate measurements.
-- Add baseline result/order comparisons, benchmarks and cache lifecycle regressions: 10,935 queries match 1.2.1 exactly across Blender 5.2.2 and 5.1.2. See `PERFORMANCE.md` and `VALIDATION_1.2.2.md`. Shortcuts, favorites, usage data and persistence formats are unchanged.
+- Add baseline result/order comparisons, benchmarks and cache lifecycle regressions: 10,935 queries match 1.2.1 exactly across Blender 5.2.2 and 5.1.2. See [performance results](PERFORMANCE.md). Shortcuts, favorites, usage data and persistence formats are unchanged.
 
 ## 1.2.1
 
@@ -27,7 +47,7 @@
 - 补齐 FILTER、MATTE、DISTORT 颜色映射，修复官方 Split Toning 资产组被显示为通用颜色的问题；Shader 类组合点同步使用着色器绿色。
 - 保留未激活 Geometry Viewer、组输入/输出和区域节点的特殊配色；不改快捷键、收藏、使用权重、组合点库或用户设置。
 - 增加实际 Blender 节点/资产创建、颜色映射、旧版对比和缓存重建回归。版本升级自动使运行索引缓存失效，无需重置偏好设置。
-- 实测 Blender 5.2.2 LTS 与 5.1.2，配色、搜索/创建、用户数据保留及 ZIP 安装启停检查均通过，详见 `VALIDATION_1.2.1.md`。
+- 实测 Blender 5.2.2 LTS 与 5.1.2，配色、搜索/创建、用户数据保留及 ZIP 安装启停检查均通过。
 
 ### English
 
@@ -36,7 +56,7 @@
 - Added FILTER, MATTE and DISTORT mappings, fixing the Split Toning asset fallback. Shader snippets now use shader green.
 - Preserved neutral Geometry Viewer/interface colors and zone styling, without changing shortcuts or user data.
 - Added real Blender color/create regression tests against 1.2.0, including warm-cache checks. The versioned runtime index rebuilds automatically.
-- Tested color/search/create regressions, user-data preservation and ZIP install/enable/disable cycles on Blender 5.2.2 LTS and 5.1.2; see `VALIDATION_1.2.1.md`.
+- Tested color/search/create regressions, user-data preservation and ZIP install/enable/disable cycles on Blender 5.2.2 LTS and 5.1.2.
 
 ## 1.2.0
 
@@ -49,7 +69,7 @@
 - 修复完整拼音首字母不能稳定命中的问题；改善空格、大小写、多音字和包含英文缩写的拼音处理；支持 5.2 的枚举插口搜索变体。
 - 搜索缓存按 Blender 版本、构建、索引结构和实验开关失效。保留已有收藏、快捷节点、使用数据及偏好设置，不改快捷键逻辑。
 - 修复资产扫描时名称被载入重命名污染，以及同名不同库资产添加时串用的问题。保留本地资产扫描机制，不增加在线资产下载系统。
-- 实测 Blender 5.2.2 LTS、5.1.2。详细节点与验证范围见 `VALIDATION_1.2.0.md`。
+- 在 macOS arm64 上实测 Blender 5.2.2 LTS、5.1.2 的节点检索、实际创建、双语与拼音搜索及本地资产兼容性；未进行 Windows/Linux 原生运行或全部节点的数值、渲染与交互放置测试。
 
 ### English
 
@@ -59,4 +79,4 @@
 - Fixed complete pinyin-initial matching, whitespace handling and selected polyphonic readings. Added support for searchable enum-socket variants.
 - Versioned the index by Blender build, schema and experimental settings while preserving user data and existing shortcuts.
 - Fixed asset source-name preservation and same-name library isolation. Undownloaded online assets remain outside the local index.
-- Tested on Blender 5.2.2 LTS and 5.1.2; see the validation report for exact coverage and limitations.
+- Tested node discovery, actual creation, bilingual/pinyin search and local assets on Blender 5.2.2 LTS and 5.1.2 on macOS arm64. Native Windows/Linux runs and exhaustive numerical, rendering and interactive-placement tests were not performed.

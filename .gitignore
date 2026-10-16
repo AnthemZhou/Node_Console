@@ -189,3 +189,6 @@ cython_debug/
 
 # Local promotional display assets
 Display/
+
+# Local per-version validation reports
+/VALIDATION_*.md

@@ -11,7 +11,9 @@ assert os.environ.get('BLENDER_USER_SCRIPTS', '').startswith('/private/tmp/')
 archive = Path(sys.argv[sys.argv.index('--') + 1]).resolve()
 bpy.ops.preferences.addon_install(filepath=str(archive), overwrite=True)
 module = addon_utils.enable('Node_Console', default_set=True)
-assert module and module.ADDON_VERSION == '1.2.2'
+expected_version = archive.stem.removeprefix('Node_Console_')
+assert module and module.ADDON_VERSION == expected_version
+assert module.bl_info['version'] == tuple(map(int, expected_version.split('.')))
 assert str(Path(module.__file__)).startswith(os.environ['BLENDER_USER_SCRIPTS'])
 for tree_type in ('GeometryNodeTree', 'ShaderNodeTree', 'CompositorNodeTree'):
     tree = bpy.data.node_groups.new('Package smoke test', tree_type)

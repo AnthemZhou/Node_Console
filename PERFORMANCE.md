@@ -33,9 +33,10 @@ Blender 5.1.2 also improves: search medians are 18.47 / 8.16 ms (Geometry), 10.3
 - Blender 5.2.2 and 5.1.2 (`ec6e62d40fa9`): actual search/create checks, menu and registered-type coverage, bilingual display, fallback pinyin, warm-cache identities, same-name asset isolation and preservation of settings/language pass.
 - Blender 5.2.2: 1,063 native entry/variant creations and 83 asset creations retain the audited colors; zero failures.
 - Both Blender versions: ten cache checks pass, covering preprocessing reuse, live favorites, serialization, changed names/aliases, empty/missed searches, bounded caches, cache reset, local group rename/removal and snippet edits/deletion.
+- The released 1.2.2 ZIP passed installation, enable/disable/re-enable and three-editor index checks in isolated temporary directories on both Blender versions.
 - Python compilation and whitespace checks pass. Tests use factory-startup processes and temporary settings, not the user's project or preferences.
 
-No Windows/Linux native run, GUI input-to-paint measurement, third-party custom-node stress test or interactive snippet-placement test was performed in this round. Shortcuts and snippet placement were not changed. Release-package verification is recorded in `VALIDATION_1.2.2.md`.
+No Windows/Linux native run, GUI input-to-paint measurement, third-party custom-node stress test or interactive snippet-placement test was performed in this round. Shortcuts and snippet placement were not changed.
 
 ## Reproduction
 
