@@ -90,16 +90,33 @@ def main():
                 bpy.data.node_groups.remove(group)
             bpy.data.node_groups.remove(tree)
 
-    # Snippet content is not cached: favorites and edits remain live too.
+    # Cached snippet entries still observe favorites, edits and external deletion.
     snippets = [dict(id='one', name='Sample One', category='NONE', tree_type='GeometryNodeTree'),
                 dict(id='two', name='Sample Two', category='NONE', tree_type='GeometryNodeTree')]
-    with patch.object(nc, '_load_snippets', return_value=snippets):
+    with tempfile.TemporaryDirectory(prefix='nc-snippet-cache-') as directory:
+        nc._snippets_path = lambda: Path(directory) / 'snippets.json'
+        nc._save_snippets(snippets)
         assert nc._search_snippets('', 'GeometryNodeTree', set())[0].identifier == 'snippet:one'
-        assert nc._search_snippets('', 'GeometryNodeTree', {'snippet:two'})[0].identifier == 'snippet:two'
+        with patch.object(nc, '_snippet_to_entry', wraps=nc._snippet_to_entry) as prepare:
+            assert nc._search_snippets('', 'GeometryNodeTree', {'snippet:two'})[0].identifier == 'snippet:two'
+            assert nc._search_snippets('sample', 'GeometryNodeTree', set())
+            assert prepare.call_count == 0
+        passed.append('snippet entries reused across keystrokes and favorites')
         snippets[1]['name'] = 'Renamed Snippet'
+        nc._save_snippets(snippets)
         assert nc._search_snippets('renamed', 'GeometryNodeTree', set())[0].identifier == 'snippet:two'
         snippets.pop()
+        nc._snippets_path().write_text(json.dumps({'snippets': snippets}), encoding='utf-8')
         assert not nc._search_snippets('renamed', 'GeometryNodeTree', set())
+        with patch.object(nc, '_display_mode', return_value='CHINESE'):
+            with patch.object(nc, '_snippet_to_entry', wraps=nc._snippet_to_entry) as prepare:
+                nc._search_snippets('sample', 'GeometryNodeTree', set())
+                assert prepare.call_count == 1
+        passed.append('snippet display changes invalidate cached entries')
+        nc._snippets_path().write_text('{"version": "invalid", "snippets": []}', encoding='utf-8')
+        assert nc._load_snippet_store() == {'version': nc.SNIPPET_SCHEMA_VERSION, 'snippets': []}
+        assert not nc._search_snippets('', 'GeometryNodeTree', set())
+        passed.append('invalid snippet schema value does not crash search')
     passed.append('snippet favorites, rename and deletion remain live')
 
     report = {'version': bpy.app.version_string, 'passed': passed}

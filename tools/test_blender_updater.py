@@ -28,7 +28,7 @@ def main():
         root = Path(directory)
         target = root / "Node_Console"
         target.mkdir()
-        names = ("__init__.py", "addon_updater.py", "addon_reloader.py", "node_registry.py", "node_search_aliases.json", "node_console_builtin_cache.json")
+        names = ("__init__.py", "addon_updater.py", "addon_reloader.py", "json_store.py", "node_registry.py", "node_search_aliases.json", "node_console_builtin_cache.json")
         for name in names:
             shutil.copyfile(ROOT / name, target / name)
         spec = importlib.util.spec_from_file_location("NCUpdateTest", target / "__init__.py", submodule_search_locations=[str(target)])

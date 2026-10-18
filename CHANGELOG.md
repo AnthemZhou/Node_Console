@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.2
+
+### 中文
+
+- 缓存未变化的设置文件，按需读取收藏、快捷节点与当前编辑器索引，避免反复解析整份节点缓存；保留原有文件格式、使用数据和未知设置字段。
+- 组合点搜索复用名称、分类和拼音条目，不再每次输入都加载整份节点数据；收藏排序保持实时，外部修改、切换库及显示模式变化后自动刷新。
+- 收起组合点列表时跳过隐藏内容的加载；展开时使用轻量摘要，创建组合点时再读取对应的完整节点数据，并检查该组合点是否已被外部删除。
+- 设置和组合点库改为同目录临时文件写入后原子替换，拒绝覆盖无法解析的原文件；组合点保存或删除失败时明确报错，失败或重复保存不再遗留新 Frame 或改动原 Frame 名称。
+- 修复组合点库版本字段异常时的转换错误，补充数据缓存、保存失败、外部编辑、快捷键交互及热更新回归。实测范围与性能数据见 [性能验证](PERFORMANCE.md)。
+
+### English
+
+- Cache unchanged settings files and copy only requested favorites, shortcuts and editor indexes, preserving the file format, usage data and unknown settings.
+- Reuse snippet names, categories and pinyin entries across keystrokes without loading every graph payload. Favorites stay live; external edits, library switches and display changes invalidate the cache.
+- Skip hidden snippet-list work; use lightweight summaries when expanded. Read the selected graph on insertion and reject results deleted externally since the search.
+- Atomically replace settings and snippet libraries through same-directory temporary files, refusing to overwrite unreadable originals. Report failed snippet saves/deletions and restore frames after failed or duplicate saves.
+- Tolerate malformed snippet schema-version values and add persistence, cache, external-edit, interaction and hot-reload regression coverage. See [performance results](PERFORMANCE.md) for measured scope and limitations.
+
 ## 1.3.1
 
 ### 中文

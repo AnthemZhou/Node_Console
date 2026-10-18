@@ -30,8 +30,17 @@ class Layout:
     def label(self, **props):
         return self.add('label', **props)
 
-    def separator(self):
-        return self.add('separator')
+    def separator(self, **props):
+        return self.add('separator', **props)
+
+    def box(self, **props):
+        return self.add('box', **props)
+
+    def split(self, **props):
+        return self.add('split', **props)
+
+    def prop(self, obj, name, **props):
+        return self.add('prop', name=name, **props)
 
     def operator(self, name, **props):
         return self.add('operator', name=name, **props)
@@ -82,6 +91,21 @@ def main():
                     backup = next(item for item in buttons if item.props['name'] == 'wm.path_open')
                     assert backup.filepath == state['backup']
                 cases += 1
+    prefs = SimpleNamespace(layout=Layout(), snippet_nodes_expanded=False)
+    context = SimpleNamespace(region=SimpleNamespace(width=1200))
+    with patch.object(nc, '_load_asset_index', return_value=[]), \
+            patch.object(nc, '_load_favorite_meta', return_value={}), \
+            patch.object(nc, '_load_identifier_tree_meta', return_value={}), \
+            patch.object(nc, '_load_favorites', return_value=set()), \
+            patch.object(nc, '_load_shortcuts', return_value=[]), \
+            patch.object(nc, '_shortcut_conflict_labels', return_value=[]), \
+            patch.object(nc, '_snippet_search_snapshot', return_value={'snippets': []}) as snippets:
+        nc.ENS_AddonPreferences.draw(prefs, context)
+        snippets.assert_not_called()
+        prefs.snippet_nodes_expanded = True
+        nc.ENS_AddonPreferences.draw(prefs, context)
+        snippets.assert_called_once()
+    cases += 1
     print('PREFERENCES_UI_REGRESSION', bpy.app.version_string, cases, 'passed', flush=True)
 
 

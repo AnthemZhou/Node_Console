@@ -14,7 +14,7 @@ from tools import build_local_release
 class ReleasePackageTests(unittest.TestCase):
     def check_package(self, include_local_reports):
         sources = (
-            '__init__.py', 'addon_updater.py', 'addon_reloader.py', 'node_registry.py', 'node_search_aliases.json',
+            '__init__.py', 'addon_updater.py', 'addon_reloader.py', 'json_store.py', 'node_registry.py', 'node_search_aliases.json',
             'node_console_builtin_cache.json', 'README.md', 'CHANGELOG.md',
             'PERFORMANCE.md', 'LICENSE',
         )

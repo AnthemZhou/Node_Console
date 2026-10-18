@@ -14,7 +14,7 @@ import bpy
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('__init__.py', 'addon_reloader.py', 'addon_updater.py', 'node_registry.py',
+FILES = ('__init__.py', 'addon_reloader.py', 'addon_updater.py', 'json_store.py', 'node_registry.py',
          'node_search_aliases.json', 'node_console_builtin_cache.json')
 
 

@@ -22,19 +22,19 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 # Blender may reload only this file when an installed add-on is re-enabled.
-for _child_name in ("addon_reloader", "addon_updater", "node_registry"):
+for _child_name in ("addon_reloader", "addon_updater", "node_registry", "json_store"):
     if _child_name in globals():
         importlib.reload(globals()[_child_name])
-from . import addon_reloader, addon_updater, node_registry
+from . import addon_reloader, addon_updater, node_registry, json_store
 
 
-ADDON_VERSION = "1.3.1"
+ADDON_VERSION = "1.3.2"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 3, 1),
+    "version": (1, 3, 2),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -62,6 +62,9 @@ UPDATE_JOB = None
 UPDATE_STATUS = {"state": "idle"}
 GPU_UNIFORM_SHADER = None
 TEXT_WIDTH_CACHE: dict[tuple[str, int], float] = {}
+SETTINGS_STORE = json_store.JsonStore()
+SNIPPETS_STORE = json_store.JsonStore()
+SNIPPET_SEARCH_CACHE = {}
 
 FONT_ID = 0
 MAX_RESULTS = 12
@@ -254,6 +257,7 @@ UI_TEXT_ZH = {
     "Name is required": "必须输入名称",
     "Select nodes to save as a snippet": "请选择要保存为组合点的节点",
     "This snippet already exists": "这个组合点已经保存过",
+    "Could not save snippet library": "无法保存组合点库",
     "Existing snippet": "已有组合点",
     "Input": "输入",
     "Output": "输出",
@@ -369,6 +373,7 @@ def _clear_search_caches():
     global NODE_CLASS_CACHE
     MENU_ENTRY_CACHE.clear()
     TRANSLATION_LABEL_CACHE.clear()
+    SNIPPET_SEARCH_CACHE.clear()
     NODE_CLASS_CACHE = None
     node_registry.clear()
     _normalize.cache_clear()
@@ -1212,43 +1217,33 @@ def _snippets_path() -> Path:
 
 
 def _load_settings() -> dict:
-    path = _settings_path()
-    if not path.exists():
-        return {}
+    return SETTINGS_STORE.read(_settings_path())
 
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
 
-    return data if isinstance(data, dict) else {}
+def _settings_value(name, default=None):
+    # Read small settings without copying the much larger node-index cache.
+    return SETTINGS_STORE.read(_settings_path(), name, default)
 
 
 def _write_settings(data: dict):
-    path = _settings_path()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
-    except Exception:
-        pass
+        SETTINGS_STORE.write(_settings_path(), data)
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Node Console: could not save settings: {exc}")
+        return False
+    return True
 
 
 def _load_snippet_store() -> dict:
-    path = _snippets_path()
-    if not path.exists():
-        return {"version": SNIPPET_SCHEMA_VERSION, "snippets": []}
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {"version": SNIPPET_SCHEMA_VERSION, "snippets": []}
-
-    if not isinstance(data, dict):
-        return {"version": SNIPPET_SCHEMA_VERSION, "snippets": []}
+    data = SNIPPETS_STORE.read(_snippets_path())
     snippets = data.get("snippets", [])
     if not isinstance(snippets, list):
         snippets = []
-    return {"version": int(data.get("version", SNIPPET_SCHEMA_VERSION) or SNIPPET_SCHEMA_VERSION), "snippets": [item for item in snippets if isinstance(item, dict)]}
+    try:
+        version = int(data.get("version", SNIPPET_SCHEMA_VERSION) or SNIPPET_SCHEMA_VERSION)
+    except (TypeError, ValueError, OverflowError):
+        version = SNIPPET_SCHEMA_VERSION
+    return {"version": version, "snippets": [item for item in snippets if isinstance(item, dict)]}
 
 
 def _save_snippet_store(data: dict):
@@ -1256,12 +1251,8 @@ def _save_snippet_store(data: dict):
         "version": SNIPPET_SCHEMA_VERSION,
         "snippets": data.get("snippets", []) if isinstance(data.get("snippets", []), list) else [],
     }
-    path = _snippets_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
-    except Exception:
-        pass
+    SNIPPETS_STORE.write(_snippets_path(), payload)
+    SNIPPET_SEARCH_CACHE.clear()
 
 
 def _load_snippets() -> list[dict]:
@@ -1359,7 +1350,7 @@ def _scaled(value: float, scale: float) -> float:
 
 
 def _load_string_list(name: str) -> list[str]:
-    raw = _load_settings().get(name, [])
+    raw = _settings_value(name, [])
     if not isinstance(raw, list):
         return []
     return [item for item in raw if isinstance(item, str)]
@@ -1386,7 +1377,7 @@ def _load_shortcuts() -> list[str]:
 
 
 def _load_favorite_meta() -> dict[str, str]:
-    raw = _load_settings().get("favorite_meta", {})
+    raw = _settings_value("favorite_meta", {})
     if not isinstance(raw, dict):
         return {}
     return {key: value for key, value in raw.items() if isinstance(key, str) and isinstance(value, str)}
@@ -1407,7 +1398,7 @@ def _available_trees_for_identifier(identifier: str, fallback_tree_id: str = "")
 
 
 def _load_identifier_tree_meta(name: str) -> dict[str, set[str]]:
-    raw = _load_settings().get(name, {})
+    raw = _settings_value(name, {})
     if not isinstance(raw, dict):
         return {}
     valid_trees = _valid_node_tree_ids()
@@ -1490,7 +1481,7 @@ def _load_shortcuts_for_tree(tree_id: str) -> list[str]:
         for identifier in shortcuts
         if tree_id in _identifier_trees(identifier, tree_meta)
     ]
-    orders = _load_settings().get("shortcut_order_by_tree", {})
+    orders = _settings_value("shortcut_order_by_tree", {})
     order = orders.get(tree_id, []) if isinstance(orders, dict) else []
     if not isinstance(order, list):
         return available
@@ -1499,7 +1490,7 @@ def _load_shortcuts_for_tree(tree_id: str) -> list[str]:
 
 
 def _load_asset_index() -> list[dict]:
-    raw = _load_settings().get("asset_index", [])
+    raw = _settings_value("asset_index", [])
     if not isinstance(raw, list):
         return []
 
@@ -1625,7 +1616,7 @@ def _snippet_tree_for_identifier(identifier: str) -> str:
     if not isinstance(identifier, str) or not identifier.startswith("snippet:"):
         return ""
     snippet_id = identifier.split(":", 1)[1]
-    for snippet in _load_snippets():
+    for snippet in _snippet_search_snapshot()["snippets"]:
         if snippet.get("id") == snippet_id:
             return str(snippet.get("tree_type", ""))
     return ""
@@ -1936,19 +1927,41 @@ def _snippet_to_entry(snippet: dict) -> NodeSearchEntry:
     )
 
 
-def _snippets_for_tree(tree_id: str) -> list[dict]:
-    return [item for item in _load_snippets() if item.get("tree_type") == tree_id]
+def _snippet_summaries(items):
+    summaries = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        summary = {key: item[key] for key in ("id", "name", "category", "tree_type", "description") if key in item}
+        payload = item.get("payload", {})
+        for source, target in (("nodes", "node_count"), ("links", "link_count")):
+            values = payload.get(source) if isinstance(payload, dict) else None
+            summary[target] = len(values) if isinstance(values, list) else 0
+        summaries.append(summary)
+    return summaries
+
+
+def _snippet_search_snapshot():
+    revision = SNIPPETS_STORE.refresh(_snippets_path())
+    key = (revision, _is_chinese_interface(), _display_mode())
+    if SNIPPET_SEARCH_CACHE.get("key") != key:
+        snippets = SNIPPETS_STORE.read(_snippets_path(), "snippets", [], project=_snippet_summaries)
+        SNIPPET_SEARCH_CACHE.clear()
+        SNIPPET_SEARCH_CACHE.update(key=key, snippets=snippets, trees={})
+    return SNIPPET_SEARCH_CACHE
 
 
 def _search_snippets(query: str, tree_id: str, favorites: set[str]) -> list[NodeSearchEntry]:
     global SNIPPET_ENTRY_BY_ID
-    SNIPPET_ENTRY_BY_ID = {}
-    entries = []
-    for snippet in _snippets_for_tree(tree_id):
-        entry = _snippet_to_entry(snippet)
-        SNIPPET_ENTRY_BY_ID[entry.identifier] = snippet
-        entries.append(entry)
-    entries.sort(key=lambda entry: (entry.identifier not in favorites, entry.label.lower()))
+    snapshot = _snippet_search_snapshot()
+    if tree_id not in snapshot["trees"]:
+        snippets = [item for item in snapshot["snippets"] if item.get("tree_type") == tree_id]
+        entries = [_snippet_to_entry(snippet) for snippet in snippets]
+        snapshot["trees"][tree_id] = (entries, {entry.identifier: snippet
+                                                for entry, snippet in zip(entries, snippets)})
+    cached_entries, SNIPPET_ENTRY_BY_ID = snapshot["trees"][tree_id]
+    # Favorites are live; sort a separate list, never mutate the cached source order.
+    entries = sorted(cached_entries, key=lambda entry: (entry.identifier not in favorites, entry.label.lower()))
     if not _normalize(query):
         return entries
     return _search_entries_from_list(entries, query, favorites)
@@ -1984,7 +1997,14 @@ def _search_entries_from_list(entries: list[NodeSearchEntry], query: str, favori
 
 
 def _insert_snippet(context, entry: NodeSearchEntry):
-    snippet = SNIPPET_ENTRY_BY_ID.get(entry.identifier)
+    tree_id = _node_tree_id(context)
+
+    def selected_snippet(items):
+        return next((item for item in items if isinstance(item, dict)
+                     and f"snippet:{item.get('id', '')}" == entry.identifier
+                     and item.get("tree_type") == tree_id), None) if isinstance(items, list) else None
+
+    snippet = SNIPPETS_STORE.read(_snippets_path(), "snippets", [], project=selected_snippet)
     if not snippet:
         return None
     tree = _current_edit_tree(context)
@@ -2159,10 +2179,7 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
 
 def _load_search_index_cache(context) -> list[NodeSearchEntry] | None:
     cache_key = _search_index_cache_key(context)
-    cache = _load_settings().get("search_index_cache", {})
-    if not isinstance(cache, dict):
-        return None
-    raw_entries = cache.get(cache_key)
+    raw_entries = _settings_value(("search_index_cache", cache_key))
     if not isinstance(raw_entries, list):
         return None
 
@@ -2218,8 +2235,8 @@ def _save_search_index_cache(context, entries: list[NodeSearchEntry]):
         for key in list(cache.keys())[:-12]:
             cache.pop(key, None)
     data["search_index_cache"] = cache
-    _write_settings(data)
-    SEARCH_INDEX_MEMORY_KEYS.add(cache_key)
+    if _write_settings(data):
+        SEARCH_INDEX_MEMORY_KEYS.add(cache_key)
 
 
 def _save_favorites(favorites: set[str], favorite_meta: dict[str, str] | None = None, favorite_tree_meta: dict[str, set[str]] | None = None):
@@ -4921,7 +4938,11 @@ class ENS_AddNodeByEnglishSearch(Operator):
         snippet_id = entry.identifier.split(":", 1)[1] if ":" in entry.identifier else ""
         if not snippet_id:
             return
-        _save_snippets([snippet for snippet in _load_snippets() if snippet.get("id") != snippet_id])
+        try:
+            _save_snippets([snippet for snippet in _load_snippets() if snippet.get("id") != snippet_id])
+        except (OSError, ValueError, TypeError) as exc:
+            self.report({"ERROR"}, f"{_ui_text('Could not save snippet library')}: {exc}")
+            return
         _remove_favorite(entry.identifier, self._tree_id)
         self._favorites = _load_favorites_for_tree(self._tree_id)
         self._favorite_meta = _load_favorite_meta()
@@ -5672,15 +5693,28 @@ class NODECONSOLE_OT_SaveSnippet(Operator):
             return {"CANCELLED"}
         tree_id = _node_tree_id(context)
         self.category = _coerce_snippet_category_for_tree(getattr(self, "category", "NONE"), tree_id)
+        selected, _top_units = _selected_snippet_seed_nodes(tree)
+        original_nodes = {node: (node.parent, node.location.copy(), node.label) for node in selected}
         nodes, root_frame = _ensure_snippet_frame(tree, name)
         if not nodes or root_frame is None:
             self.report({"WARNING"}, _ui_text("Select nodes to save as a snippet"))
             return {"CANCELLED"}
+
+        def restore_frame():
+            # A cancelled save must not leave an un-undoable new frame or label.
+            for node, (parent, location, label) in original_nodes.items():
+                node.parent = parent
+                node.location = location
+                node.label = label
+            if root_frame not in original_nodes:
+                tree.nodes.remove(root_frame)
+
         payload = _serialize_snippet_nodes(tree, nodes, root_frame)
         content_hash = _snippet_content_hash(payload)
         snippets = _load_snippets()
         for snippet in snippets:
             if snippet.get("tree_type") == tree_id and snippet.get("content_hash") == content_hash:
+                restore_frame()
                 duplicate_name = str(snippet.get("name") or _ui_text("Snippet Node"))
                 self.report(
                     {"WARNING"},
@@ -5697,7 +5731,12 @@ class NODECONSOLE_OT_SaveSnippet(Operator):
             "updated_at": time.time(),
             "payload": payload,
         })
-        _save_snippets(snippets)
+        try:
+            _save_snippets(snippets)
+        except (OSError, ValueError, TypeError) as exc:
+            restore_frame()
+            self.report({"ERROR"}, f"{_ui_text('Could not save snippet library')}: {exc}")
+            return {"CANCELLED"}
         if context.area:
             context.area.tag_redraw()
         self.report({"INFO"}, f"{_ui_text('Save Snippet Node')}: {name}")
@@ -5715,7 +5754,11 @@ class NODECONSOLE_OT_RemoveSnippet(Operator):
     def execute(self, context):
         snippet_id = self.snippet_id
         snippets = [snippet for snippet in _load_snippets() if snippet.get("id") != snippet_id]
-        _save_snippets(snippets)
+        try:
+            _save_snippets(snippets)
+        except (OSError, ValueError, TypeError) as exc:
+            self.report({"ERROR"}, f"{_ui_text('Could not save snippet library')}: {exc}")
+            return {"CANCELLED"}
         if context.area:
             context.area.tag_redraw()
         return {"FINISHED"}
@@ -6288,9 +6331,9 @@ class ENS_AddonPreferences(AddonPreferences):
         header = snippets_box.row(align=True)
         header.prop(self, "snippet_nodes_expanded", text="", icon="TRIA_DOWN" if self.snippet_nodes_expanded else "TRIA_RIGHT", emboss=False)
         header.label(text=_ui_text("Snippet Nodes"))
-        snippets = sorted(_load_snippets(), key=lambda item: (str(item.get("tree_type", "")), str(item.get("category", "")), str(item.get("name", "")).lower()))
         if not self.snippet_nodes_expanded:
             return
+        snippets = sorted(_snippet_search_snapshot()["snippets"], key=lambda item: (str(item.get("tree_type", "")), str(item.get("category", "")), str(item.get("name", "")).lower()))
         if not snippets:
             snippets_box.label(text=_ui_text("No snippet nodes"))
         else:
@@ -6306,9 +6349,8 @@ class ENS_AddonPreferences(AddonPreferences):
                 header.enabled = False
                 header.label(text=_ui_text(label))
                 for snippet in group:
-                    payload = snippet.get("payload", {})
-                    node_count = len(payload.get("nodes", [])) if isinstance(payload, dict) else 0
-                    link_count = len(payload.get("links", [])) if isinstance(payload, dict) else 0
+                    node_count = snippet["node_count"]
+                    link_count = snippet["link_count"]
                     row = snippets_box.row(align=True)
                     row.label(text=f"{_snippet_category_label(snippet.get('category', 'NONE'))} > {snippet.get('name', '')}  ({node_count} {_ui_text('nodes')} / {link_count} {_ui_text('links')})")
                     remove_op = row.operator(NODECONSOLE_OT_RemoveSnippet.bl_idname, text="", icon="X")
@@ -6592,6 +6634,9 @@ def unregister():
     global BACKGROUND_ASSET_INDEX, KEYMAP_REFRESH_PENDING, ACTIVE_SNIPPET_DIALOG
     addon_reloader.cancel()
     _stop_addon_update()
+    SETTINGS_STORE.clear()
+    SNIPPETS_STORE.clear()
+    SNIPPET_SEARCH_CACHE.clear()
     for callback in (_background_asset_index_step, _retry_register_keymap, _refresh_keymap_from_timer):
         if bpy.app.timers.is_registered(callback):
             bpy.app.timers.unregister(callback)
