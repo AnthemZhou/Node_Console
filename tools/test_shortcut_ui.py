@@ -16,8 +16,10 @@ SHADER = 'ShaderNodeTree'
 
 
 def event(kind, value='PRESS', x=100, y=87, **kwargs):
-    return SimpleNamespace(type=kind, value=value, mouse_region_x=x, mouse_region_y=y,
-                           unicode='', ctrl=False, alt=False, oskey=False, **kwargs)
+    values = dict(type=kind, value=value, mouse_region_x=x, mouse_region_y=y,
+                  unicode='', ctrl=False, alt=False, oskey=False)
+    values.update(kwargs)
+    return SimpleNamespace(**values)
 
 
 def main():
@@ -33,7 +35,8 @@ def main():
         if not key.startswith('__')})
     entries = [nc.NodeSearchEntry(name, 'Geometry', name, name, name, '', 'NODE')
                for name in ('a', 'b', 'c')]
-    context = SimpleNamespace(area=SimpleNamespace(tag_redraw=Mock()))
+    context = SimpleNamespace(area=SimpleNamespace(tag_redraw=Mock()),
+                              window_manager=SimpleNamespace(clipboard=''))
 
     def console():
         op = Console()
@@ -189,14 +192,17 @@ def main():
                 assert op._panel_rect[1] >= 0
         passed.append('shortcut rows use normal category and label rendering in all color modes')
 
-        for query, snippet in (('', False), ('node', False), ('snippet', True)):
+        for query, snippet in (('', False), ('', True), ('node', False), ('snippet', True)):
             for mode in ('LINE', 'BLOCK', 'NONE'):
                 op = console()
                 op._query, op._snippet_mode = query, snippet
-                op._results = [nc.replace(entry, kind='SNIPPET') for entry in entries] if snippet else entries
+                results = [nc.replace(entry, kind='SNIPPET') for entry in entries] if snippet else entries
                 op._anchor_x, op._anchor_y = 450, 400
                 with contextlib.ExitStack() as stack:
                     stack.enter_context(patch.object(nc, '_category_color_mode', return_value=mode))
+                    stack.enter_context(patch.object(nc, '_search_entries', return_value=results))
+                    stack.enter_context(patch.object(nc, '_search_snippets', return_value=results))
+                    op._refresh_query_results()
                     mocks = {name: stack.enter_context(patch.object(nc, name)) for name in draw_names}
 
                     def highlighted_rows():
@@ -205,9 +211,15 @@ def main():
                         op._draw_callback(draw_context)
                         return [call for call in panel.call_args_list if call.args[5] == nc.HIGHLIGHT_COLOR]
 
-                    assert not highlighted_rows(), (query, snippet, mode)
+                    assert len(highlighted_rows()) == int(bool(query)), (query, snippet, mode)
+                    assert op._selected_index == 0
                     op.modal(context, event('TIMER'))
-                    assert not highlighted_rows()
+                    assert len(highlighted_rows()) == int(bool(query))
+                    if query:
+                        op.modal(context, event('DOWN_ARROW'))
+                        assert op._selected_index == 1 and len(highlighted_rows()) == 1
+                        op.modal(context, event('UP_ARROW'))
+                        assert op._selected_index == 0 and len(highlighted_rows()) == 1
                     row_x = op._panel_rect[0] + op._padding + 20
                     row_y = op._rows_top - op._row_height * 1.5
                     op.modal(context, event('MOUSEMOVE', 'NOTHING', x=row_x, y=row_y))
@@ -220,7 +232,46 @@ def main():
                     assert op._selected_index == 1 and len(highlighted_rows()) == 1
                     op.modal(context, event('RET'))
                     op._confirm.assert_called_once()
-        passed.append('initial/timer rows are unhighlighted; hover, leave and arrow keys work in every mode')
+        passed.append('blank lists stay unhighlighted; typed queries select first; hover and arrows work in every mode')
+
+        with patch.object(nc, '_search_entries', side_effect=lambda query, favorites: [] if query == 'missing' else entries), \
+                patch.object(nc, '_search_snippets', return_value=entries):
+            op = console()
+            op._selected_index, op._hovered_result_index, op._scroll_offset = 2, 2, 2
+            op.modal(context, event('N', unicode='n'))
+            assert op._query == 'n' and op._selected_index == 0 and op._scroll_offset == 0
+            assert op._keyboard_selection_active and op._hovered_result_index is None
+            op.modal(context, event('DOWN_ARROW'))
+            assert op._selected_index == 1
+            op.modal(context, event('O', unicode='o'))
+            assert op._selected_index == 0 and op._keyboard_selection_active
+            op.modal(context, event('BACK_SPACE'))
+            assert op._query == 'n' and op._keyboard_selection_active
+            op.modal(context, event('BACK_SPACE'))
+            assert op._query == '' and not op._keyboard_selection_active
+            for modifiers in ({'ctrl': True}, {'oskey': True}):
+                context.window_manager.clipboard = 'noise'
+                op.modal(context, event('V', **modifiers))
+                assert op._query == 'noise' and op._keyboard_selection_active and op._selected_index == 0
+                op.modal(context, event('RET'))
+                assert op._confirm.call_count >= 1
+                op.modal(context, event('DEL'))
+                assert not op._query and not op._keyboard_selection_active
+            op.modal(context, event('N', unicode='n'))
+            for kind, text in (('ACCENT_GRAVE', '`'), ('UNKNOWN', '·')):
+                op.modal(context, event(kind, unicode=text))
+                assert op._query == 'n' and op._keyboard_selection_active and op._selected_index == 0
+            assert not op._snippet_mode
+            op._clear_query()
+            op.modal(context, event('SPACE', unicode=' '))
+            assert not op._keyboard_selection_active
+            op._clear_query()
+            context.window_manager.clipboard = 'missing'
+            op.modal(context, event('V', ctrl=True))
+            assert not op._results and not op._keyboard_selection_active
+            op.modal(context, event('BACK_SPACE'))
+            assert op._results and op._keyboard_selection_active and op._selected_index == 0
+        passed.append('typing, paste, backspace and mode switches select first; clear, whitespace and no matches do not')
 
         op = console()
         op.modal(context, event('RET'))

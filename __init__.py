@@ -28,13 +28,13 @@ for _child_name in ("addon_reloader", "addon_updater", "node_registry", "json_st
 from . import addon_reloader, addon_updater, node_registry, json_store
 
 
-ADDON_VERSION = "1.3.2"
+ADDON_VERSION = "1.3.3"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 3, 2),
+    "version": (1, 3, 3),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -4591,6 +4591,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
             return
         self._selected_index = max(0, min(self._selected_index, len(self._results) - 1))
 
+    def _refresh_query_results(self):
+        self._selected_index = 0
+        self._scroll_offset = 0
+        self._hovered_result_index = None
+        self._keyboard_selection_active = False
+        self._refresh_results()
+        self._keyboard_selection_active = bool(_normalize(self._query) and self._results)
+
     def _showing_shortcuts(self):
         return not self._snippet_mode and not _normalize(self._query)
 
@@ -4873,12 +4881,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
     def _clear_query(self):
         self._query = ""
-        self._selected_index = 0
-        self._scroll_offset = 0
         self._scroll_remainder = 0.0
-        self._hovered_result_index = None
-        self._keyboard_selection_active = False
-        self._refresh_results()
+        self._refresh_query_results()
 
     def _context_menu_items(self):
         if self._context_menu_kind == "RESIZE":
@@ -5159,11 +5163,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             clipboard = getattr(context.window_manager, "clipboard", "")
             if clipboard:
                 self._query += clipboard
-                self._selected_index = 0
-                self._scroll_offset = 0
-                self._hovered_result_index = None
-                self._keyboard_selection_active = False
-                self._refresh_results()
+                self._refresh_query_results()
                 if context.area:
                     context.area.tag_redraw()
             return {"RUNNING_MODAL"}
@@ -5173,22 +5173,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
 
         if event.value == "PRESS" and (event.type in {"ACCENT_GRAVE", "GRLESS"} or event.unicode in {"`", "·"}):
             self._snippet_mode = not self._snippet_mode
-            self._selected_index = 0
-            self._scroll_offset = 0
-            self._hovered_result_index = None
-            self._keyboard_selection_active = False
-            self._refresh_results()
+            self._refresh_query_results()
             if context.area:
                 context.area.tag_redraw()
             return {"RUNNING_MODAL"}
 
         if event.unicode and not event.ctrl and not event.alt and not event.oskey and event.type not in {"RET", "NUMPAD_ENTER", "ESC", "BACK_SPACE", "DEL"}:
             self._query += event.unicode
-            self._selected_index = 0
-            self._scroll_offset = 0
-            self._hovered_result_index = None
-            self._keyboard_selection_active = False
-            self._refresh_results()
+            self._refresh_query_results()
             if context.area:
                 context.area.tag_redraw()
             return {"RUNNING_MODAL"}
@@ -5222,11 +5214,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     self._clear_query()
                 else:
                     self._query = self._query[:-1]
-                    self._selected_index = 0
-                    self._scroll_offset = 0
-                    self._hovered_result_index = None
-                    self._keyboard_selection_active = False
-                    self._refresh_results()
+                    self._refresh_query_results()
             elif event.type in {"DEL", "FORWARD_DEL"}:
                 if self._snippet_mode:
                     self._snippet_mode = False
@@ -5257,9 +5245,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         self._favorite_meta = favorite_meta
                         self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
                         self._close_context_menu()
-                        self._query = ""
-                        self._scroll_offset = 0
-                        self._refresh_results()
+                        self._clear_query()
                     elif action == "RESET_WIDTH":
                         prefs = _preferences()
                         if prefs:

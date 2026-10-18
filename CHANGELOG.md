@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.3
+
+### 中文
+
+- 保留 Shift+A 刚打开、未输入时不高亮条目的行为；输入或粘贴搜索词后，自动高亮第一条匹配结果。
+- 编辑搜索词或带搜索词切换组合点模式时，选择回到第一条结果；清空、只有空格或没有匹配结果时不自动高亮。保留鼠标悬停、方向键与回车操作。
+
+### English
+
+- Keep an empty Shift+A popup unhighlighted; automatically select and highlight the first match after typing or pasting a query.
+- Reset selection to the first match when editing a query or switching snippet mode with text. Clearing, whitespace-only queries and no matches do not auto-highlight; mouse, arrow-key and Enter controls remain available.
+
 ## 1.3.2
 
 ### 中文
