@@ -121,6 +121,8 @@ def main():
 
         op = console()
         op.modal(context, event('DOWN_ARROW'))
+        assert op._selected_index == 0 and op._keyboard_selection_active
+        op.modal(context, event('DOWN_ARROW'))
         assert op._selected_index == 1
         op.modal(context, event('RET'))
         assert op._confirm.called
@@ -186,6 +188,54 @@ def main():
                 assert labels[0].args[2] > labels[1].args[2] > labels[2].args[2]
                 assert op._panel_rect[1] >= 0
         passed.append('shortcut rows use normal category and label rendering in all color modes')
+
+        for query, snippet in (('', False), ('node', False), ('snippet', True)):
+            for mode in ('LINE', 'BLOCK', 'NONE'):
+                op = console()
+                op._query, op._snippet_mode = query, snippet
+                op._results = [nc.replace(entry, kind='SNIPPET') for entry in entries] if snippet else entries
+                op._anchor_x, op._anchor_y = 450, 400
+                with contextlib.ExitStack() as stack:
+                    stack.enter_context(patch.object(nc, '_category_color_mode', return_value=mode))
+                    mocks = {name: stack.enter_context(patch.object(nc, name)) for name in draw_names}
+
+                    def highlighted_rows():
+                        panel = mocks['_draw_rounded_panel']
+                        panel.reset_mock()
+                        op._draw_callback(draw_context)
+                        return [call for call in panel.call_args_list if call.args[5] == nc.HIGHLIGHT_COLOR]
+
+                    assert not highlighted_rows(), (query, snippet, mode)
+                    op.modal(context, event('TIMER'))
+                    assert not highlighted_rows()
+                    row_x = op._panel_rect[0] + op._padding + 20
+                    row_y = op._rows_top - op._row_height * 1.5
+                    op.modal(context, event('MOUSEMOVE', 'NOTHING', x=row_x, y=row_y))
+                    assert op._hovered_result_index == 1 and len(highlighted_rows()) == 1
+                    op.modal(context, event('MOUSEMOVE', 'NOTHING', x=0, y=0))
+                    assert op._hovered_result_index is None and not highlighted_rows()
+                    op.modal(context, event('DOWN_ARROW'))
+                    assert op._selected_index == 0 and len(highlighted_rows()) == 1
+                    op.modal(context, event('DOWN_ARROW'))
+                    assert op._selected_index == 1 and len(highlighted_rows()) == 1
+                    op.modal(context, event('RET'))
+                    op._confirm.assert_called_once()
+        passed.append('initial/timer rows are unhighlighted; hover, leave and arrow keys work in every mode')
+
+        op = console()
+        op.modal(context, event('RET'))
+        assert op._selected_index == 0 and op._confirm.call_count == 1
+        op = console()
+        op._context_menu_kind, op._context_menu_shortcut = 'SHORTCUT', 'b'
+        op._anchor_x, op._anchor_y = 450, 400
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(patch.object(nc, '_category_color_mode', return_value='BLOCK'))
+            stack.enter_context(patch.object(nc, '_draw_text_vcenter'))
+            mocks = {name: stack.enter_context(patch.object(nc, name)) for name in draw_names}
+            op._draw_callback(draw_context)
+            assert len([call for call in mocks['_draw_rounded_panel'].call_args_list
+                        if call.args[5] == nc.HIGHLIGHT_COLOR]) == 1
+        passed.append('implicit Enter and right-click target emphasis are retained')
 
         many = [nc.NodeSearchEntry(str(i), 'Geometry', str(i), str(i), str(i), '', 'NODE')
                 for i in range(18)]

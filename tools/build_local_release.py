@@ -93,7 +93,7 @@ def package_release():
     version = next(ast.literal_eval(node.value) for node in ast.parse((ROOT / '__init__.py').read_text()).body
                    if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'ADDON_VERSION' for t in node.targets))
     output = ROOT / f'Node_Console_{version}.zip'
-    files = ('__init__.py', 'addon_updater.py', 'node_registry.py', 'node_search_aliases.json', 'node_console_builtin_cache.json',
+    files = ('__init__.py', 'addon_updater.py', 'addon_reloader.py', 'node_registry.py', 'node_search_aliases.json', 'node_console_builtin_cache.json',
              'README.md', 'CHANGELOG.md', 'PERFORMANCE.md', 'LICENSE')
     with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
         for name in files:

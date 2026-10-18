@@ -28,7 +28,7 @@ def main():
         root = Path(directory)
         target = root / "Node_Console"
         target.mkdir()
-        names = ("__init__.py", "addon_updater.py", "node_registry.py", "node_search_aliases.json", "node_console_builtin_cache.json")
+        names = ("__init__.py", "addon_updater.py", "addon_reloader.py", "node_registry.py", "node_search_aliases.json", "node_console_builtin_cache.json")
         for name in names:
             shutil.copyfile(ROOT / name, target / name)
         spec = importlib.util.spec_from_file_location("NCUpdateTest", target / "__init__.py", submodule_search_locations=[str(target)])
@@ -88,20 +88,21 @@ def main():
                     archive.writestr("Node_Console/" + name, content)
             job.poll.return_value = {"state": "ready", "version": next_version}
             nc.UPDATE_JOB = job
-            with patch.object(nc, "bpy", wrapper):
+            with patch.object(nc, "bpy", wrapper), patch.object(nc.addon_reloader, "schedule") as schedule:
                 nc.ACTIVE_CONSOLE_OPERATOR = object()
                 assert nc._poll_addon_update() == 0.25
                 assert nc.UPDATE_STATUS["state"] == "waiting"
                 nc.ACTIVE_CONSOLE_OPERATOR = None
                 assert nc._poll_addon_update() is None
-            assert nc.UPDATE_STATUS["state"] == "installed", nc.UPDATE_STATUS
+                schedule.assert_called_once()
+            assert nc.UPDATE_STATUS["state"] == "reloading", nc.UPDATE_STATUS
             assert not bpy.ops.node_console.update_addon.poll()
             assert f'ADDON_VERSION = "{next_version}"' in (target / "__init__.py").read_text()
             assert nc.ADDON_VERSION == current_version
             assert Path(nc.UPDATE_STATUS["backup"]).is_dir()
             assert settings.read_bytes() == saved_settings and snippets.read_bytes() == saved_snippets
             assert keymaps() == baseline_maps
-            passed.append("real staged replacement and backup; loaded code, keymaps, favorites, usage and snippets unchanged")
+            passed.append("staged replacement schedules deferred activation; current callback, keymaps and user data unchanged")
 
             nc.UPDATE_STATUS = {"state": "error", "code": "incompatible_blender"}
             original_language = bpy.context.preferences.view.language

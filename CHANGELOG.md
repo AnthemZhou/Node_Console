@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.1
+
+### 中文
+
+- 在线更新完成后自动热重载 Node Console，无需退出 Blender；等待当前节点操作结束，保留设置与组合点，启用失败时尝试恢复旧版。
+- 完善注销时的计时器与绘制回调清理，避免重载后残留旧回调；不重载其他插件或重置其快捷键。
+- 热重载后同步刷新插件列表中的版本信息，确保偏好设置仍可正常显示和访问。
+- 更新区改为紧凑的版本号、灰度状态与更新按钮单行布局；窄窗口和较长错误提示自动换行。
+- 搜索栏打开时不再默认高亮首项，悬停后高亮、移开后恢复；保留直接回车确认，首次方向键选择从第一项开始。
+
+### English
+
+- Activate downloaded updates without restarting Blender, deferring until node operations finish and preserving preferences and snippets. Attempt recovery to the previous version if activation fails.
+- Clean up timers and drawing callbacks on unregister so old callbacks cannot survive a reload; other add-ons and their keymaps remain untouched.
+- Refresh add-on metadata after activation so Preferences continues to display the add-on and its current version.
+- Compact the update header into one row with version, subdued status and a content-sized action; wrap longer messages on narrow layouts.
+- Open search without an initially highlighted row. Highlight on hover and clear on leave, preserving quick Enter and starting keyboard selection at the first result.
+
 ## 1.3.0
 
 ### 中文

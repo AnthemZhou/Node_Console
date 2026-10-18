@@ -4,13 +4,13 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.1-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.3.0
+版本：1.3.1
 
 ## 中文
 
@@ -30,7 +30,7 @@ Node Console 将拼音搜索作为主要中文检索方式。你可以直接输�
 
 ### 安装
 
-1. 选择 `Node_Console_1.3.0.zip` 安装包。
+1. 选择 `Node_Console_1.3.1.zip` 安装包。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -80,8 +80,9 @@ Node Console 将拼音搜索作为主要中文检索方式。你可以直接输�
 - 需要在 Blender 的 `偏好设置 > 系统` 中允许在线访问；不会替你修改该权限。
 - 下载在独立进程中执行，不占用搜索界面的主线程。网络失败、损坏的包或不兼容的 Blender 版本会提示错误，不替换插件。
 - 替换前保留本地备份；收藏、快捷节点、排序、使用记录和组合点库不清空。成功后的文件夹按钮可打开旧文件备份，备份保留在插件目录旁的 `.node-console-update-*/previous` 中。
-- 完成后请保存工程并重启 Blender，新版才会生效；更新不会重置或重新注册 Blender 和其他插件的快捷键。
+- 下载完成后自动热更新，无需重启 Blender。搜索、节点放置或组合点命名尚未结束时会等待，完成后只重载 Node Console，不重置或重新注册 Blender 和其他插件的快捷键。新版启用失败会尝试恢复原版本；若无法自动恢复，界面会提示重启并检查备份。
 - Git 源码工程不接受自动替换。首次使用此按钮需要先安装包含此功能的版本。
+- 从 1.3.0 的更新按钮升级到 1.3.1 时，首次仍需重启 Blender；1.3.1 生效后的后续在线更新支持热加载。
 
 ### 说明
 
@@ -111,7 +112,7 @@ Node Console treats pinyin as the primary way to search Chinese node names. You 
 
 ### Install
 
-1. Choose the `Node_Console_1.3.0.zip` installation package.
+1. Choose the `Node_Console_1.3.1.zip` installation package.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -161,8 +162,9 @@ Click Update in Node Console Preferences to check the [latest stable GitHub rele
 - Enable Allow Online Access in Blender Preferences > System. The add-on never changes this permission for you.
 - A separate process handles downloads. Network errors, invalid packages and incompatible Blender versions leave the installation untouched.
 - A local backup is kept before replacement. Favorites, shortcuts, ordering, usage, settings and snippet libraries are preserved. The folder button after a successful update opens the backup at `.node-console-update-*/previous` beside the installation.
-- Save your project and restart Blender to activate the new version. Updating does not reset or re-register Blender or other add-ons' keymaps.
+- Updates activate without restarting Blender. Activation waits for node search, placement or snippet naming to finish, then reloads only Node Console. Blender and other add-ons' keymaps are not reset or re-registered. Failed activation attempts to restore the previous version; if recovery fails, a message asks you to restart and check the backup.
 - Git source checkouts cannot be replaced through this button. Install a version containing the updater before using this feature for the first time.
+- Updating from 1.3.0 to 1.3.1 through the old updater still requires one restart. Subsequent updates support hot activation once 1.3.1 is running.
 
 ### Notes
 

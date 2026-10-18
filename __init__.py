@@ -4,6 +4,7 @@ import ast
 import ctypes
 import ctypes.util
 import hashlib
+import importlib
 import json
 import math
 import re
@@ -19,16 +20,21 @@ import gpu
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
 from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
-from . import addon_updater, node_registry
+
+# Blender may reload only this file when an installed add-on is re-enabled.
+for _child_name in ("addon_reloader", "addon_updater", "node_registry"):
+    if _child_name in globals():
+        importlib.reload(globals()[_child_name])
+from . import addon_reloader, addon_updater, node_registry
 
 
-ADDON_VERSION = "1.3.0"
+ADDON_VERSION = "1.3.1"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 3, 0),
+    "version": (1, 3, 1),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -45,6 +51,8 @@ KEYMAP_REFRESH_PENDING = False
 NODE_SEARCH_ENTRIES: list["NodeSearchEntry"] = []
 SNIPPET_ENTRY_BY_ID: dict[str, dict] = {}
 ACTIVE_CONSOLE_OPERATOR = None
+ACTIVE_SNIPPET_DIALOG = None
+PREFERENCES_LOADING = False
 MENU_ENTRY_CACHE: dict[str, list[tuple[str, str, str, str, tuple[tuple[str, str], ...]]]] = {}
 SEARCH_INDEX_MEMORY_KEYS: set[str] = set()
 TRANSLATION_LABEL_CACHE: dict[tuple[str, str | None], str] = {}
@@ -264,7 +272,11 @@ UI_TEXT_ZH = {
     "Update": "更新",
     "Checking GitHub...": "正在检查 GitHub…",
     "Downloading update...": "正在下载更新…",
-    "Close node search to finish updating": "关闭节点搜索窗口后完成更新",
+    "Finish the current node operation to update": "完成当前节点操作后自动更新",
+    "Activating update...": "正在启用新版…",
+    "Updated and active": "更新完成，已生效",
+    "Update activation failed; previous version restored": "新版启用失败，已恢复原版本",
+    "Could not restore the add-on; restart Blender and check the backup": "插件恢复失败，请重启 Blender 并检查备份",
     "Already up to date": "已是最新版本",
     "Restart Blender to activate": "重启 Blender 后生效",
     "Enable Allow Online Access in Blender Preferences > System": "请在 Blender 偏好设置 > 系统中允许在线访问",
@@ -1261,6 +1273,8 @@ def _save_snippets(snippets: list[dict]):
 
 
 def _save_preference_settings():
+    if PREFERENCES_LOADING:
+        return
     prefs = _preferences()
     if not prefs:
         return
@@ -1293,6 +1307,7 @@ def _save_preference_settings():
 
 
 def _load_preferences_from_settings():
+    global PREFERENCES_LOADING
     prefs = _preferences()
     if not prefs:
         return
@@ -1304,12 +1319,16 @@ def _load_preferences_from_settings():
         _write_settings(data)
     if "category_color_mode" not in data and "show_category_color_tags" in data:
         data["category_color_mode"] = "BLOCK" if data.get("show_category_color_tags") else "OFF"
-    for name in ("display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "snippet_shortcut_key", "snippet_shortcut_shift", "snippet_shortcut_ctrl", "snippet_shortcut_alt", "snippet_shortcut_oskey", "scan_asset_libraries", "category_color_mode", "console_width", "snippet_library_path", "snippet_nodes_expanded"):
-        if name in data:
-            try:
-                setattr(prefs, name, data[name])
-            except Exception:
-                pass
+    PREFERENCES_LOADING = True
+    try:
+        for name in ("display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "snippet_shortcut_key", "snippet_shortcut_shift", "snippet_shortcut_ctrl", "snippet_shortcut_alt", "snippet_shortcut_oskey", "scan_asset_libraries", "category_color_mode", "console_width", "snippet_library_path", "snippet_nodes_expanded"):
+            if name in data:
+                try:
+                    setattr(prefs, name, data[name])
+                except Exception:
+                    pass
+    finally:
+        PREFERENCES_LOADING = False
 
 
 def _resolution_scale() -> float:
@@ -2323,6 +2342,8 @@ def _visual_preference_changed(_self, _context):
 
 
 def _shortcut_changed(_self, _context):
+    if PREFERENCES_LOADING:
+        return
     _save_preference_settings()
     _schedule_keymap_refresh()
 
@@ -4556,6 +4577,19 @@ class ENS_AddNodeByEnglishSearch(Operator):
     def _showing_shortcuts(self):
         return not self._snippet_mode and not _normalize(self._query)
 
+    def _move_result_selection(self, direction):
+        if not self._results:
+            return
+        if self._keyboard_selection_active or self._hovered_result_index is not None:
+            self._selected_index = max(0, min(len(self._results) - 1, self._selected_index + direction))
+        else:
+            self._selected_index = 0
+        self._hovered_result_index = None
+        self._keyboard_selection_active = True
+        self._scroll_offset = min(self._scroll_offset, self._selected_index)
+        if self._selected_index >= self._scroll_offset + self._visible_limit:
+            self._scroll_offset = self._selected_index - self._visible_limit + 1
+
     def _reset_shortcut_drag(self):
         self._shortcut_press_identifier = None
         self._shortcut_dragging = False
@@ -5158,16 +5192,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 return self._confirm(context, event)
 
             if event.type == "UP_ARROW":
-                self._selected_index = max(0, self._selected_index - 1)
-                self._hovered_result_index = None
-                self._keyboard_selection_active = True
-                self._scroll_offset = min(self._scroll_offset, self._selected_index)
+                self._move_result_selection(-1)
             elif event.type == "DOWN_ARROW":
-                self._selected_index = min(max(0, len(self._results) - 1), self._selected_index + 1)
-                self._hovered_result_index = None
-                self._keyboard_selection_active = True
-                if self._selected_index >= self._scroll_offset + self._visible_limit:
-                    self._scroll_offset = self._selected_index - self._visible_limit + 1
+                self._move_result_selection(1)
             elif event.type == "BACK_SPACE":
                 if self._snippet_mode and not self._query:
                     self._snippet_mode = False
@@ -5243,6 +5270,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 index = self._row_index_from_mouse(event)
                 if index is not None:
                     self._selected_index = index
+                    self._hovered_result_index = index
+                    self._keyboard_selection_active = False
                     if self._showing_shortcuts():
                         self._shortcut_press_identifier = self._results[index].identifier
                         self._shortcut_press_mouse = (event.mouse_region_x, event.mouse_region_y)
@@ -5455,14 +5484,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
         for visible_index, entry in enumerate(visible_results):
             index = self._scroll_offset + visible_index
             row_y = rows_top - (visible_index + 1) * row_height
-            is_selected = index == self._selected_index
+            is_selected = self._keyboard_selection_active and index == self._selected_index
             is_hovered = index == self._hovered_result_index
             context_menu_target = self._context_menu_kind == "RESULT" and self._context_menu_index == index
             context_menu_dimmed = self._context_menu_kind == "RESULT" and self._context_menu_index is not None and not context_menu_target
             if self._context_menu_kind == "SHORTCUT":
                 context_menu_target = self._context_menu_shortcut == entry.identifier
                 context_menu_dimmed = not context_menu_target
-            is_emphasized = is_selected or context_menu_target
+            is_emphasized = is_selected or is_hovered or context_menu_target
             is_favorite = entry.identifier in self._favorites
 
             row_text_y = row_y + _scaled(7, scale)
@@ -5593,6 +5622,7 @@ class NODECONSOLE_OT_SaveSnippet(Operator):
         return bool(tree and any(getattr(node, "select", False) for node in tree.nodes))
 
     def invoke(self, context, _event):
+        global ACTIVE_SNIPPET_DIALOG
         tree = _current_edit_tree(context)
         if not tree:
             return {"CANCELLED"}
@@ -5606,7 +5636,17 @@ class NODECONSOLE_OT_SaveSnippet(Operator):
             self.snippet_name = label if label != "Frame" else ""
         tree_id = _node_tree_id(context)
         self.category = _coerce_snippet_category_for_tree(_snippet_default_category(tree, included, tree_id), tree_id)
-        return context.window_manager.invoke_props_dialog(self, width=270)
+        ACTIVE_SNIPPET_DIALOG = self
+        try:
+            return context.window_manager.invoke_props_dialog(self, width=270)
+        except Exception:
+            ACTIVE_SNIPPET_DIALOG = None
+            raise
+
+    def cancel(self, _context):
+        global ACTIVE_SNIPPET_DIALOG
+        if ACTIVE_SNIPPET_DIALOG is self:
+            ACTIVE_SNIPPET_DIALOG = None
 
     def draw(self, _context):
         layout = self.layout
@@ -5622,6 +5662,7 @@ class NODECONSOLE_OT_SaveSnippet(Operator):
                 control_row.label(text=getattr(self, prop_name, ""))
 
     def execute(self, context):
+        self.cancel(context)
         name = self.snippet_name.strip()
         if not name:
             self.report({"WARNING"}, _ui_text("Name is required"))
@@ -5728,9 +5769,12 @@ def _update_status_text():
     messages = {
         "checking": "Checking GitHub...",
         "downloading": "Downloading update...",
-        "waiting": "Close node search to finish updating",
+        "waiting": "Finish the current node operation to update",
+        "waiting_reload": "Finish the current node operation to update",
+        "reloading": "Activating update...",
         "current": "Already up to date",
         "installed": "Restart Blender to activate",
+        "updated": "Updated and active",
     }
     errors = {
         "offline": "Enable Allow Online Access in Blender Preferences > System",
@@ -5746,12 +5790,60 @@ def _update_status_text():
         "permission_error": "Cannot write the installation folder",
         "protected_data": "Update conflicts with a custom data file",
         "changed_install": "Installed files changed; restart Blender before updating",
+        "reload_rolled_back": "Update activation failed; previous version restored",
+        "reload_failed": "Could not restore the add-on; restart Blender and check the backup",
     }
     text = errors.get(UPDATE_STATUS.get("code"), "Update failed; previous files retained") if state == "error" else messages.get(state, "")
     label = _ui_text(text)
-    if state in {"downloading", "installed"} and UPDATE_STATUS.get("version"):
+    if state in {"downloading", "installed", "updated"} and UPDATE_STATUS.get("version"):
         label += f" (v{UPDATE_STATUS['version']})"
     return label
+
+
+def _wrap_update_status(text, width, font_size):
+    while text and _text_width(text, font_size) > width:
+        end = 1
+        while end < len(text) and _text_width(text[:end + 1], font_size) <= width:
+            end += 1
+        space = text.rfind(" ", 0, end + 1)
+        if space > end // 2:
+            end = space
+        yield text[:end]
+        text = text[end:].lstrip()
+    if text:
+        yield text
+
+
+def _draw_update_header(layout, context):
+    state = UPDATE_STATUS.get("state", "idle")
+    title = f"Node Console v{ADDON_VERSION}"
+    status_text = _update_status_text()
+    scale = _resolution_scale()
+    font_size = _scaled(13, scale)
+    region_width = getattr(getattr(context, "region", None), "width", 800)
+    available_width = max(120 * scale, region_width - 160 * scale)
+    inline_status = bool(status_text) and state != "error" and (
+        _text_width(title + status_text, font_size) + 160 * scale <= available_width)
+
+    header = layout.row()
+    header.label(text=title)
+    actions = header.row(align=True)
+    actions.alignment = "RIGHT"
+    if inline_status:
+        status = actions.row(align=True)
+        status.alignment = "RIGHT"
+        status.enabled = False
+        status.label(text=status_text, icon="CHECKMARK" if state in {"current", "updated"} else "NONE")
+        actions.separator()
+    actions.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text=_ui_text("Update"), icon="FILE_REFRESH")
+    if UPDATE_STATUS.get("backup"):
+        actions.operator("wm.path_open", text="", icon="FILE_FOLDER").filepath = UPDATE_STATUS["backup"]
+    if status_text and not inline_status:
+        status = layout.column(align=True)
+        status.alert = state == "error"
+        status.enabled = state == "error"
+        for line in _wrap_update_status(status_text, available_width, font_size):
+            status.label(text=line)
 
 
 def _redraw_update_preferences():
@@ -5771,7 +5863,7 @@ def _poll_addon_update():
             raise addon_updater.UpdateError("offline")
         result = job.poll()
         if result["state"] == "ready":
-            if ACTIVE_CONSOLE_OPERATOR is not None:
+            if addon_reloader.is_busy(sys.modules[__name__]):
                 UPDATE_STATUS = {"state": "waiting"}
                 _redraw_update_preferences()
                 return 0.25
@@ -5779,7 +5871,12 @@ def _poll_addon_update():
                 job.directory / "release.zip", Path(__file__).parent,
                 result["version"], bpy.app.version,
                 protected_paths=(_settings_path(), _snippets_path()), current_version=ADDON_VERSION)
-            result = {"state": "installed", "version": result["version"], "backup": str(backup)}
+            result = {"state": "reloading", "version": result["version"], "backup": str(backup)}
+            try:
+                addon_reloader.schedule(ADDON_ID, backup, result["version"])
+            except Exception:
+                result["state"] = "installed"
+                print("Node Console: could not schedule activation; restart required")
         UPDATE_STATUS = result
     except addon_updater.UpdateError as exc:
         UPDATE_STATUS = {"state": "error", "code": exc.code}
@@ -5812,12 +5909,12 @@ def _stop_addon_update():
 class NODECONSOLE_OT_UpdateAddon(Operator):
     bl_idname = "node_console.update_addon"
     bl_label = "Update Node Console"
-    bl_description = "Install the latest GitHub release with a local backup; restart Blender to activate"
+    bl_description = "Install and activate the latest GitHub release with a local recovery backup"
     bl_options = {"INTERNAL"}
 
     @classmethod
     def poll(cls, _context):
-        return UPDATE_JOB is None and UPDATE_STATUS.get("state") != "installed"
+        return UPDATE_JOB is None and UPDATE_STATUS.get("state") not in {"installed", "reloading", "waiting_reload"}
 
     def execute(self, _context):
         global UPDATE_JOB, UPDATE_STATUS
@@ -5998,15 +6095,7 @@ class ENS_AddonPreferences(AddonPreferences):
     def draw(self, _context):
         layout = self.layout
 
-        update_row = layout.split(factor=0.78, align=True)
-        update_row.label(text=f"Node Console v{ADDON_VERSION}")
-        update_row.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text=_ui_text("Update"), icon="FILE_REFRESH")
-        if UPDATE_STATUS.get("state") != "idle":
-            status_row = layout.row(align=True)
-            status_row.alert = UPDATE_STATUS.get("state") == "error"
-            status_row.label(text=_update_status_text())
-            if UPDATE_STATUS.get("backup"):
-                status_row.operator("wm.path_open", text="", icon="FILE_FOLDER").filepath = UPDATE_STATUS["backup"]
+        _draw_update_header(layout, _context)
 
         settings_box = layout.box()
         private_links = settings_box.split(factor=0.5, align=False)
@@ -6489,21 +6578,33 @@ def register():
     except Exception:
         pass
     bpy.app.translations.register(ADDON_ID, TRANSLATIONS)
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
-    _load_preferences_from_settings()
-    register_keymap()
+    try:
+        for cls in classes:
+            bpy.utils.register_class(cls)
+        _load_preferences_from_settings()
+        register_keymap()
+    except Exception:
+        unregister()
+        raise
 
 
 def unregister():
-    global BACKGROUND_ASSET_INDEX
+    global BACKGROUND_ASSET_INDEX, KEYMAP_REFRESH_PENDING, ACTIVE_SNIPPET_DIALOG
+    addon_reloader.cancel()
     _stop_addon_update()
+    for callback in (_background_asset_index_step, _retry_register_keymap, _refresh_keymap_from_timer):
+        if bpy.app.timers.is_registered(callback):
+            bpy.app.timers.unregister(callback)
     BACKGROUND_ASSET_INDEX = None
+    KEYMAP_REFRESH_PENDING = False
+    ACTIVE_SNIPPET_DIALOG = None
+    if ACTIVE_CONSOLE_OPERATOR is not None:
+        ACTIVE_CONSOLE_OPERATOR._finish(bpy.context, {"CANCELLED"})
     unregister_keymap()
 
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        if cls.is_registered:
+            bpy.utils.unregister_class(cls)
     try:
         bpy.app.translations.unregister(ADDON_ID)
     except Exception:

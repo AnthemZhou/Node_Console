@@ -260,7 +260,7 @@ def _package_files(archive_path, expected_version, blender_version):
 def install_release(archive, target, expected_version, blender_version, protected_paths=(), current_version=None):
     """Stage beside the installation, preserve local data, and keep a recovery copy.
 
-    Loaded modules remain untouched until Blender restarts. No add-on/keymap reload.
+    Loaded modules are untouched here; Blender-side activation is a separate step.
     """
     target = Path(target)
     validate_target(target)
