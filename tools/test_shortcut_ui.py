@@ -35,8 +35,10 @@ def main():
         if not key.startswith('__')})
     entries = [nc.NodeSearchEntry(name, 'Geometry', name, name, name, '', 'NODE')
                for name in ('a', 'b', 'c')]
-    context = SimpleNamespace(area=SimpleNamespace(tag_redraw=Mock()),
-                              window_manager=SimpleNamespace(clipboard=''))
+    context = SimpleNamespace(area=SimpleNamespace(tag_redraw=Mock()), window=object(),
+                              window_manager=SimpleNamespace(clipboard='',
+                                  event_timer_add=Mock(side_effect=lambda *args, **kwargs: object()),
+                                  event_timer_remove=Mock()))
 
     def console():
         op = Console()
@@ -168,11 +170,79 @@ def main():
         op._panel_rect = (0, 40, 400, 100)
         op.modal(context, event('LEFTMOUSE'))
         op.modal(context, event('MOUSEMOVE', 'NOTHING', y=50))
-        op.modal(context, event('TIMER'))
+        with patch.object(nc.time, 'monotonic', return_value=op._shortcut_press_time + 0.2):
+            op.modal(context, event('TIMER'))
         assert op._scroll_offset == 1 and ids(op) == ['b', 'c', 'a']
         op.modal(context, event('LEFTMOUSE', 'RELEASE', y=50))
         assert nc._load_shortcuts_for_tree(GEOMETRY) == ['b', 'missing', 'c', 'a']
         passed.append('edge timer scrolls during drag without creating nodes')
+
+        nc._write_settings(initial)
+        op = console()
+        with patch.object(nc.time, 'monotonic', return_value=10.0):
+            op.modal(context, event('LEFTMOUSE'))
+            timer = op._shortcut_animation_timer
+            assert timer is not None and op._shortcut_press_time == 10.0
+            op.modal(context, event('MOUSEMOVE', 'NOTHING', y=60))
+            assert ids(op) == ['b', 'a', 'c']
+            assert op._shortcut_row_offsets['b'] == -26
+            assert op._shortcut_floating_y() == 47
+        with patch.object(nc.time, 'monotonic', return_value=10.055):
+            op.modal(context, event('TIMER'))
+            assert -26 < op._shortcut_row_offsets['b'] < 0
+            assert op._scroll_offset == 0
+        op.modal(context, event('LEFTMOUSE', 'RELEASE', y=60))
+        assert op._shortcut_row_offsets['a'] == -1
+        assert op._shortcut_animation_timer is timer
+        with patch.object(nc.time, 'monotonic', return_value=11.0):
+            op.modal(context, event('TIMER'))
+        assert not op._shortcut_row_offsets and op._shortcut_animation_timer is None
+        context.window_manager.event_timer_remove.assert_called_with(timer)
+        assert not op._confirm.called
+        passed.append('neighbors ease, lifted row follows grab point, drop settles and animation timer stops')
+
+        op = console()
+        op._visible_limit = 2
+        op._panel_rect = (0, 40, 400, 100)
+        op.modal(context, event('LEFTMOUSE'))
+        op.modal(context, event('MOUSEMOVE', 'NOTHING', y=50))
+        timer = op._shortcut_animation_timer
+        for i in range(20):
+            with patch.object(nc.time, 'monotonic', return_value=op._shortcut_press_time + i * 0.009):
+                op.modal(context, event('TIMER'))
+                assert op._scroll_offset == 0
+        with patch.object(nc.time, 'monotonic', return_value=op._shortcut_press_time + 0.2):
+            op.modal(context, event('TIMER'))
+        assert op._scroll_offset == 1
+        op._owns_context = lambda ctx: False
+        op.modal(context, event('MOUSEMOVE', 'NOTHING'))
+        assert op._shortcut_animation_timer is None and not op._shortcut_row_offsets
+        passed.append('animation and foreign timers do not accelerate scrolling; context loss cleans up')
+
+        for cancel in (event('ESC'), event('RIGHTMOUSE'), event('WINDOW_DEACTIVATE'),
+                       event('LEFTMOUSE', 'RELEASE', x=500, y=35)):
+            op = console()
+            op.modal(context, event('LEFTMOUSE'))
+            op.modal(context, event('MOUSEMOVE', 'NOTHING', y=35))
+            op.modal(context, cancel)
+            assert op._shortcut_animation_timer is None and not op._shortcut_row_offsets
+        op = console()
+        op.modal(context, event('LEFTMOUSE'))
+        op._finish(context, {'CANCELLED'})
+        assert op._shortcut_animation_timer is None
+        passed.append('cancel and close remove transient animation timers')
+
+        nc._write_settings(initial)
+        op = console()
+        op.report = Mock()
+        op.modal(context, event('LEFTMOUSE'))
+        op.modal(context, event('MOUSEMOVE', 'NOTHING', y=35))
+        with patch.object(nc, '_save_shortcut_order_for_tree', side_effect=OSError('Read-only settings')):
+            assert op.modal(context, event('LEFTMOUSE', 'RELEASE', y=35)) == {'RUNNING_MODAL'}
+        assert ids(op) == ['a', 'b', 'c'] and nc._load_settings() == initial
+        assert op._shortcut_animation_timer is None and op._shortcut_press_identifier is None
+        assert op.report.called and not op._confirm.called
+        passed.append('failed order save restores rows, reports failure and cleans up animation')
 
         # Exercise actual row layout and display helpers, but avoid GPU drawing in background.
         op = console()
@@ -191,6 +261,74 @@ def main():
                 assert labels[0].args[2] > labels[1].args[2] > labels[2].args[2]
                 assert op._panel_rect[1] >= 0
         passed.append('shortcut rows use normal category and label rendering in all color modes')
+
+        for scale, width in ((0.5, 250), (1.0, 250), (1.0, 400), (2.0, 400)):
+            op = console()
+            op._anchor_x, op._anchor_y = 450, 400
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(patch.object(nc, '_ui_scale', return_value=scale))
+                stack.enter_context(patch.object(nc, '_console_width', return_value=width))
+                mocks = {name: stack.enter_context(patch.object(nc, name)) for name in draw_names}
+                grips = stack.enter_context(patch.object(nc, '_draw_drag_grip'))
+                op._draw_callback(draw_context)
+                assert len(grips.call_args_list) == 3
+                assert not any(call.kwargs['active'] for call in grips.call_args_list)
+                for label, grip in zip(mocks['_draw_label_text'].call_args_list, grips.call_args_list):
+                    assert label.args[1] + label.args[3] < grip.args[0]
+                    assert grip.args[0] + nc._scaled(10, scale) < op._panel_rect[0] + op._panel_rect[2]
+                for query, snippet in (('query', False), ('', True)):
+                    op._query, op._snippet_mode = query, snippet
+                    grips.reset_mock()
+                    op._draw_callback(draw_context)
+                    assert not grips.called
+        with patch.object(nc, '_draw_rounded_rect') as lines:
+            nc._draw_drag_grip(100, 50, 1.0)
+            assert lines.call_count == 3
+            assert [c.args[1] for c in lines.call_args_list] == [46.5, 49.5, 52.5]
+        passed.append('three-line grips only on shortcut rows, reserved from labels and favorite tags at all scales')
+
+        op = console()
+        op._anchor_x, op._anchor_y = 450, 400
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(patch.object(nc, '_category_color_mode', return_value='LINE'))
+            mocks = {name: stack.enter_context(patch.object(nc, name)) for name in draw_names}
+            op._draw_callback(draw_context)
+            px = op._panel_rect[0] + op._padding + 20
+            py = op._rows_top - op._row_height / 2
+            with patch.object(nc.time, 'monotonic', return_value=20.0):
+                op.modal(context, event('LEFTMOUSE', x=px, y=py))
+                mocks['_draw_rounded_panel'].reset_mock()
+                op._draw_callback(draw_context)
+                assert any(c.args[5] == nc.HIGHLIGHT_COLOR for c in mocks['_draw_rounded_panel'].call_args_list)
+            with patch.object(nc.time, 'monotonic', return_value=20.12):
+                mocks['_draw_rounded_panel'].reset_mock()
+                op._draw_callback(draw_context)
+                assert any(abs(c.args[5][0] - 0.32) < 1e-6 for c in mocks['_draw_rounded_panel'].call_args_list)
+            op.modal(context, event('MOUSEMOVE', 'NOTHING', x=px, y=py - op._row_height * 1.4))
+            mocks['_draw_label_text'].reset_mock()
+            op._draw_callback(draw_context)
+            assert mocks['_draw_label_text'].call_args_list[-1].args[0] == 'a'
+            assert mocks['_draw_label_text'].call_args_list[-1].args[2] == op._shortcut_floating_y() + 7
+            op.modal(context, event('ESC'))
+        passed.append('press brightness eases and dragged row is drawn last at its pointer position')
+
+        chinese = nc.NodeSearchEntry('noise', 'Texture', 'Noise Texture', '\u566a\u6ce2\u7eb9\u7406',
+                                     'Noise Texture', '', 'NODE')
+        with patch.object(nc, 'NODE_SEARCH_ENTRIES', [chinese]):
+            for text in ('\u566a\u6ce2\u7eb9\u7406', 'zaobowenli', 'zbwl', 'noise'):
+                op = console()
+                context.window_manager.clipboard = text
+                op.modal(context, event('V', oskey=True))
+                assert ids(op) == ['noise'] and op._query == text and op._keyboard_selection_active
+            op = console()
+            for char in '\u566a\u6ce2':
+                op.modal(context, event('TEXTINPUT', unicode=char))
+            assert op._query == '\u566a\u6ce2' and ids(op) == ['noise']
+            op.modal(context, event('BACK_SPACE'))
+            assert op._query == '\u566a'
+            op.modal(context, event('DEL'))
+            assert op._query == ''
+        passed.append('Chinese paste, delivered Unicode, backspace, English, full pinyin and initials work (not OS IME composition)')
 
         for query, snippet in (('', False), ('', True), ('node', False), ('snippet', True)):
             for mode in ('LINE', 'BLOCK', 'NONE'):

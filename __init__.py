@@ -28,13 +28,13 @@ for _child_name in ("addon_reloader", "addon_updater", "node_registry", "json_st
 from . import addon_reloader, addon_updater, node_registry, json_store
 
 
-ADDON_VERSION = "1.3.3"
+ADDON_VERSION = "1.3.4"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 3, 3),
+    "version": (1, 3, 4),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -4435,6 +4435,14 @@ def _draw_text(text: str, x: float, y: float, size: int, color: tuple[float, flo
     blf.draw(FONT_ID, text)
 
 
+def _draw_drag_grip(x, center_y, scale, active=False):
+    color = (0.68, 0.68, 0.70, 0.80) if active else (0.48, 0.48, 0.50, 0.38)
+    thickness = max(1, _scaled(1, scale))
+    for offset in (-3, 0, 3):
+        _draw_rounded_rect(x, center_y + _scaled(offset, scale) - thickness / 2,
+                           _scaled(10, scale), thickness, thickness / 2, color)
+
+
 def _draw_label_text(label: str, x: float, y: float, max_width: float, size: int, secondary_color: tuple[float, float, float, float] = SECONDARY_TEXT_COLOR):
     if " / " not in label:
         _draw_text(_clip_text(label, max_width, size), x, y, size, TEXT_COLOR)
@@ -4557,6 +4565,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
     _shortcut_press_mouse = (0, 0)
     _shortcut_drag_mouse = (0, 0)
     _shortcut_dragging = False
+    _shortcut_press_time = 0.0
+    _shortcut_grab_offset = 0.0
+    _shortcut_row_offsets = None
+    _shortcut_animation_timer = None
+    _shortcut_animation_time = 0.0
+    _shortcut_next_scroll_time = 0.0
     _tree_id = ""
     _hovered_result_index = None
     _keyboard_selection_active = False
@@ -4592,6 +4606,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._selected_index = max(0, min(self._selected_index, len(self._results) - 1))
 
     def _refresh_query_results(self):
+        self._shortcut_row_offsets = {}
         self._selected_index = 0
         self._scroll_offset = 0
         self._hovered_result_index = None
@@ -4615,9 +4630,41 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if self._selected_index >= self._scroll_offset + self._visible_limit:
             self._scroll_offset = self._selected_index - self._visible_limit + 1
 
-    def _reset_shortcut_drag(self):
+    def _stop_shortcut_animation(self, context):
+        if self._shortcut_animation_timer is not None:
+            context.window_manager.event_timer_remove(self._shortcut_animation_timer)
+            self._shortcut_animation_timer = None
+
+    def _start_shortcut_animation(self, context):
+        self._shortcut_animation_time = time.monotonic()
+        if self._shortcut_animation_timer is None:
+            self._shortcut_animation_timer = context.window_manager.event_timer_add(1 / 60, window=context.window)
+
+    def _step_shortcut_animation(self, context):
+        now = time.monotonic()
+        decay = math.exp(-max(0.0, now - self._shortcut_animation_time) / 0.055)
+        self._shortcut_animation_time = now
+        self._shortcut_row_offsets = {
+            identifier: offset * decay
+            for identifier, offset in (self._shortcut_row_offsets or {}).items()
+            if abs(offset * decay) > 0.25
+        }
+        if self._shortcut_press_identifier is None and not self._shortcut_row_offsets:
+            self._stop_shortcut_animation(context)
+
+    def _reset_shortcut_drag(self, context=None, settle=False):
         self._shortcut_press_identifier = None
         self._shortcut_dragging = False
+        self._shortcut_next_scroll_time = 0.0
+        if not settle:
+            self._shortcut_row_offsets = {}
+            if context is not None:
+                self._stop_shortcut_animation(context)
+
+    def _shortcut_floating_y(self):
+        bottom = self._rows_top - min(self._visible_limit, len(self._results)) * self._row_height
+        return max(bottom, min(self._rows_top - self._row_height,
+                               self._shortcut_drag_mouse[1] - self._shortcut_grab_offset))
 
     def _shortcut_drop_index(self, mouse):
         x, y, width, _height = self._panel_rect
@@ -4633,14 +4680,27 @@ class ENS_AddNodeByEnglishSearch(Operator):
         index = self._shortcut_drop_index(self._shortcut_drag_mouse)
         source = next((i for i, entry in enumerate(self._results)
                        if entry.identifier == self._shortcut_press_identifier), None)
-        if index is None or source is None:
+        if index is None or source is None or index == source:
             return
+        old_indices = {entry.identifier: i for i, entry in enumerate(self._results)}
         self._results.insert(index, self._results.pop(source))
+        offsets = self._shortcut_row_offsets or {}
+        # Keep each neighbor at its previous screen position, then ease into its new slot.
+        self._shortcut_row_offsets = {
+            entry.identifier: offsets.get(entry.identifier, 0.0) + (i - old_indices[entry.identifier]) * self._row_height
+            for i, entry in enumerate(self._results)
+            if entry.identifier != self._shortcut_press_identifier
+        }
         self._selected_index = index
         self._hovered_result_index = index
 
     def _shortcut_drag_timer(self):
         if not self._shortcut_dragging or self._shortcut_drop_index(self._shortcut_drag_mouse) is None:
+            return
+        # RNA Event has no timer identity. Throttle scrolling by elapsed time,
+        # independent of animation ticks and timers belonging to other add-ons.
+        now = time.monotonic()
+        if now < self._shortcut_next_scroll_time:
             return
         mouse_y = self._shortcut_drag_mouse[1]
         bottom = self._rows_top - min(self._visible_limit, len(self._results)) * self._row_height
@@ -4648,11 +4708,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
             self._scroll_results(-1)
         elif mouse_y < bottom + self._row_height / 2:
             self._scroll_results(1)
+        else:
+            return
+        self._shortcut_next_scroll_time = now + 0.2
         self._update_shortcut_drag()
 
     def _handle_shortcut_drag(self, context, event):
         if event.type == "WINDOW_DEACTIVATE" or (event.type in {"ESC", "RIGHTMOUSE"} and event.value == "PRESS"):
-            self._reset_shortcut_drag()
+            self._reset_shortcut_drag(context)
             self._refresh_results()
         elif event.type == "MOUSEMOVE":
             self._shortcut_drag_mouse = (event.mouse_region_x, event.mouse_region_y)
@@ -4673,9 +4736,18 @@ class ENS_AddNodeByEnglishSearch(Operator):
             was_dragging = self._shortcut_dragging
             if was_dragging and drop_index is not None:
                 self._update_shortcut_drag()
-                _save_shortcut_order_for_tree(self._tree_id, [entry.identifier for entry in self._results])
+                try:
+                    _save_shortcut_order_for_tree(self._tree_id, [entry.identifier for entry in self._results])
+                except (OSError, ValueError) as exc:
+                    self._reset_shortcut_drag(context)
+                    self._refresh_results()
+                    self.report({"WARNING"}, str(exc))
+                    self._tag_owner_redraw(context)
+                    return {"RUNNING_MODAL"}
                 self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
-            self._reset_shortcut_drag()
+                target_y = self._rows_top - (drop_index - self._scroll_offset + 1) * self._row_height
+                self._shortcut_row_offsets[identifier] = self._shortcut_floating_y() - target_y
+            self._reset_shortcut_drag(context, settle=was_dragging and drop_index is not None)
             if not was_dragging and drop_index is not None and self._results[drop_index].identifier == identifier:
                 self._selected_index = drop_index
                 return self._confirm(context, event)
@@ -4727,7 +4799,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 pass
             self._timer = None
         self._placing_node = None
-        self._reset_shortcut_drag()
+        self._reset_shortcut_drag(context)
         self._pending_native_transform = False
         self._placement_uses_native_transform = True
         if ACTIVE_CONSOLE_OPERATOR is self:
@@ -5077,7 +5149,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._favorites = _load_favorites_for_tree(self._tree_id)
         self._favorite_meta = _load_favorite_meta()
         self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
-        self._reset_shortcut_drag()
+        self._reset_shortcut_drag(context)
         self._scroll_offset = 0
         self._scroll_remainder = 0.0
         self._hovered_result_index = None
@@ -5098,8 +5170,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if ACTIVE_CONSOLE_OPERATOR is not self:
             return self._finish(context, {"CANCELLED"})
         if not self._owns_context(context):
-            if self._shortcut_press_identifier is not None:
-                self._reset_shortcut_drag()
+            if self._shortcut_press_identifier is not None or self._shortcut_animation_timer is not None:
+                self._reset_shortcut_drag(context)
                 self._refresh_results()
             if event.type == "TIMER":
                 return {"RUNNING_MODAL"}
@@ -5108,6 +5180,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
             return {"PASS_THROUGH"}
 
         if event.type == "TIMER":
+            if self._shortcut_animation_timer is not None:
+                self._step_shortcut_animation(context)
             self._shortcut_drag_timer()
             self._tag_owner_redraw(context)
             return {"RUNNING_MODAL"}
@@ -5284,6 +5358,11 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         self._shortcut_press_mouse = (event.mouse_region_x, event.mouse_region_y)
                         self._shortcut_drag_mouse = self._shortcut_press_mouse
                         self._shortcut_dragging = False
+                        self._shortcut_press_time = time.monotonic()
+                        self._shortcut_next_scroll_time = self._shortcut_press_time + 0.2
+                        row_y = self._rows_top - (index - self._scroll_offset + 1) * self._row_height
+                        self._shortcut_grab_offset = event.mouse_region_y - row_y
+                        self._start_shortcut_animation(context)
                         self._tag_owner_redraw(context)
                         return {"RUNNING_MODAL"}
                     return self._confirm(context, event)
@@ -5487,10 +5566,33 @@ class ENS_AddNodeByEnglishSearch(Operator):
             draw_context_menu()
             return
 
-        visible_results = self._results[self._scroll_offset:self._scroll_offset + visible_limit]
-        for visible_index, entry in enumerate(visible_results):
+        shortcut_rows = self._showing_shortcuts()
+        visible_results = list(enumerate(self._results[self._scroll_offset:self._scroll_offset + visible_limit]))
+        # Draw the lifted row last so it stays above the smoothly moving neighbors.
+        if self._shortcut_dragging:
+            for visible_index, entry in visible_results:
+                if entry.identifier == self._shortcut_press_identifier:
+                    slot_y = rows_top - (visible_index + 1) * row_height
+                    _draw_rounded_panel(x + padding, slot_y + _scaled(2, scale), search_width,
+                                        row_height - _scaled(4, scale), max(3, radius - 2),
+                                        (0.08, 0.08, 0.085, 1.0), (0.22, 0.22, 0.24, 0.65))
+                    break
+            visible_results.sort(key=lambda item: item[1].identifier == self._shortcut_press_identifier)
+        for visible_index, entry in visible_results:
             index = self._scroll_offset + visible_index
             row_y = rows_top - (visible_index + 1) * row_height
+            is_pressed = entry.identifier == self._shortcut_press_identifier
+            is_floating = is_pressed and self._shortcut_dragging
+            is_sliding = False
+            if is_floating:
+                row_y = self._shortcut_floating_y()
+                _draw_rounded_rect(x + padding, row_y - _scaled(1, scale), search_width,
+                                   row_height, radius, (0.0, 0.0, 0.0, 0.28))
+            elif shortcut_rows:
+                offset = (self._shortcut_row_offsets or {}).get(entry.identifier, 0.0)
+                is_sliding = abs(offset) > 0.25
+                bottom = rows_top - rows * row_height
+                row_y = max(bottom, min(rows_top - row_height, row_y + offset))
             is_selected = self._keyboard_selection_active and index == self._selected_index
             is_hovered = index == self._hovered_result_index
             context_menu_target = self._context_menu_kind == "RESULT" and self._context_menu_index == index
@@ -5498,14 +5600,25 @@ class ENS_AddNodeByEnglishSearch(Operator):
             if self._context_menu_kind == "SHORTCUT":
                 context_menu_target = self._context_menu_shortcut == entry.identifier
                 context_menu_dimmed = not context_menu_target
-            is_emphasized = is_selected or is_hovered or context_menu_target
+            is_emphasized = is_selected or is_hovered or context_menu_target or is_pressed
             is_favorite = entry.identifier in self._favorites
+            row_highlight = HIGHLIGHT_COLOR
+            if is_pressed:
+                press_progress = min(1.0, max(0.0, (time.monotonic() - self._shortcut_press_time) / 0.12))
+                press_progress = press_progress * press_progress * (3 - 2 * press_progress)
+                row_highlight = _blend_color((0.32, 0.32, 0.34, 1.0), press_progress, HIGHLIGHT_COLOR)
+            if is_floating or is_sliding:
+                _draw_rounded_rect(x + padding, row_y + _scaled(2, scale), search_width,
+                                   row_height - _scaled(4, scale), max(3, radius - 2), PANEL_BACKGROUND)
 
             row_text_y = row_y + _scaled(7, scale)
             category_x = x + padding + _scaled(10, scale)
             fav_width = _scaled(12, scale)
             fav_height = _scaled(18, scale)
             fav_x = x + width - padding - fav_width - _scaled(8, scale)
+            grip_x = x + width - padding - _scaled(18, scale)
+            if shortcut_rows:
+                fav_x -= _scaled(18, scale)
             fade_width = _scaled(46, scale)
             fade_x = fav_x - fade_width
             label_size = _scaled(13, scale)
@@ -5534,9 +5647,9 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 category_border = (category_border[0], category_border[1], category_border[2], 1.0)
                 _draw_rounded_panel(category_block_x, block_y, category_block_width, block_height, block_radius, category_fill, category_border)
             if is_emphasized and row_category_color_mode == "BLOCK":
-                _draw_rounded_panel(label_block_x, block_y, label_block_width, block_height, block_radius, HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
+                _draw_rounded_panel(label_block_x, block_y, label_block_width, block_height, block_radius, row_highlight, HIGHLIGHT_BORDER_COLOR)
             elif is_emphasized:
-                _draw_rounded_panel(category_block_x, block_y, search_width, block_height, block_radius, HIGHLIGHT_COLOR, HIGHLIGHT_BORDER_COLOR)
+                _draw_rounded_panel(category_block_x, block_y, search_width, block_height, block_radius, row_highlight, HIGHLIGHT_BORDER_COLOR)
             if row_category_color_mode == "LINE":
                 line_width = max(2, _scaled(3, scale))
                 line_height = block_height - _scaled(2, scale)
@@ -5548,17 +5661,17 @@ class ENS_AddNodeByEnglishSearch(Operator):
             secondary_row_color = MUTED_TEXT_COLOR if is_emphasized else SECONDARY_TEXT_COLOR
             _draw_text(category_text, category_x, row_text_y, category_size, secondary_row_color)
             _draw_label_text(display_label, label_x, row_text_y, label_max_width, label_size, secondary_row_color)
-            fade_color = HIGHLIGHT_COLOR if is_emphasized else PANEL_BACKGROUND
+            fade_color = row_highlight if is_emphasized else PANEL_BACKGROUND
             _draw_horizontal_fade(fade_x, block_y, fade_width, block_height, fade_color, steps=10)
             _draw_right_rounded_fill(fav_x, block_y, max(0, x + width - padding - fav_x), block_height, block_radius, fade_color)
             if is_favorite:
                 fav_y = row_y + (row_height - fav_height) / 2
                 favorite_strength = 0.66 if is_emphasized else 0.5
                 _draw_rounded_rect(fav_x, fav_y, fav_width, fav_height, max(3, radius - 2), _multiply_color(secondary_row_color, favorite_strength))
+            if shortcut_rows:
+                _draw_drag_grip(grip_x, row_y + row_height / 2, scale, active=is_emphasized)
             if context_menu_dimmed:
                 _draw_rounded_rect(x + padding, block_y, search_width, block_height, block_radius, CONTEXT_MENU_DIM_COLOR)
-            if self._shortcut_dragging and entry.identifier == self._shortcut_press_identifier:
-                _draw_rect(x + padding, row_y + row_height - _scaled(1, scale), search_width, max(1, _scaled(1, scale)), MUTED_TEXT_COLOR)
 
         if show_rows and len(self._results) > self._scroll_offset + rows:
             _draw_text("▼", x + width / 2 - _scaled(4, scale), y + _scaled(4, scale), _scaled(12, scale), TEXT_COLOR)

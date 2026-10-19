@@ -4,13 +4,13 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.3-blue)
+![Version](https://img.shields.io/badge/version-1.3.4-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.3.3
+版本：1.3.4
 
 ## 中文
 
@@ -28,9 +28,11 @@ Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器�
 
 Node Console 将拼音搜索作为主要中文检索方式。你可以直接输入 `shili`、`suiji`、`zhuoseqi` 这类拼音来搜索中文节点名，不需要在建模过程中频繁切换输入法，也不需要先把拼音转换成中文。这样可以减少输入法切换带来的停顿感，让 `Shift + A` 搜索保持更连贯的操作节奏。
 
+也支持粘贴中文节点名后检索（macOS：`Command + V`，Windows/Linux：`Ctrl + V`）。当前自绘搜索框没有完整接入系统中文输入法的组词与候选确认流程，不能把“支持中文搜索”理解为“支持原生中文输入法直接输入”。组合点命名使用 Blender 原生输入框，不受这一自绘框限制。
+
 ### 安装
 
-1. 选择 `Node_Console_1.3.3.zip` 安装包。
+1. 选择 `Node_Console_1.3.4.zip` 安装包。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -46,6 +48,8 @@ Node Console 将拼音搜索作为主要中文检索方式。你可以直接输�
 7. 右键搜索结果，可以添加或取消收藏，也可以添加快捷节点。
 
 空搜索时的快捷节点使用纵向普通节点行，沿用类目颜色和中英文显示模式。可拖动节点行排序，松开保存；按 Esc、右键或拖到列表外松开可取消。顺序按几何、材质、合成编辑器分别保存。输入文字后仍是正常节点搜索，不先弹出官方添加菜单。
+
+快捷节点行右侧的三条浅色横线表示可拖动；整行均可按住拖动。按下后轻微提亮，拖动行跟随鼠标，相邻行平滑让位，松开后归位。普通搜索结果和组合点结果不显示排序标记。
 
 ### 组合点
 
@@ -110,9 +114,11 @@ Node Console is a custom node search add-on for Blender. It replaces the default
 
 Node Console treats pinyin as the primary way to search Chinese node names. You can type pinyin such as `shili`, `suiji`, or `zhuoseqi` directly, without switching input methods or converting it into Chinese characters first. This keeps `Shift + A` search responsive and avoids the small interruptions that can come from input-method switching during node work.
 
+Chinese node names can also be pasted and searched (`Command + V` on macOS, `Ctrl + V` on Windows/Linux). The custom search field does not implement the full system IME composition and candidate-confirmation workflow; Chinese search support is not native Chinese IME support. Snippet naming uses a native Blender text field instead.
+
 ### Install
 
-1. Choose the `Node_Console_1.3.3.zip` installation package.
+1. Choose the `Node_Console_1.3.4.zip` installation package.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -128,6 +134,8 @@ Node Console treats pinyin as the primary way to search Chinese node names. You 
 7. Right-click a result to add or remove favorites and shortcuts.
 
 An empty query shows shortcuts as regular vertical node rows with the selected category colors and bilingual display mode. Drag a row and release to save its order; Escape, right-click or an outside drop cancels. Geometry, Shader and Compositor editors keep independent orders. Typing still searches nodes directly, without opening the native Add menu first.
+
+Three subtle horizontal lines at the right of each shortcut row indicate dragging; the entire row remains draggable. Pressing gently brightens it, dragging lifts it under the pointer while neighbors slide aside, and releasing settles it into place. Regular search and snippet results do not show reorder grips.
 
 ### Snippet Nodes
 

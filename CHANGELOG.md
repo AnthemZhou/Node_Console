@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.4
+
+### 中文
+
+- 空搜索的快捷节点行末尾增加三条浅色横线，提示整行可按住拖动；与收藏标签分开预留空间，不在普通搜索或组合点结果上显示。
+- 增加按下渐亮、拖动悬浮、相邻行平滑让位和落位动画；保留轻点创建、松开保存排序与取消拖动的规则。高频计时器仅在按住或动画期间运行，不加快边缘滚动。
+- 补充中文粘贴、Unicode 字符、退格及中英文/拼音检索回归，明确自绘搜索框尚未完整支持系统中文输入法组词与候选确认；不宣称新增原生 IME 支持。
+
+### English
+
+- Add subtle three-line drag grips to shortcut rows, reserving separate space for favorite tags. Regular search and snippet results do not show reorder grips.
+- Ease press feedback, lift the dragged row under the pointer, slide neighboring rows and settle on drop. Preserve click-to-create, release-to-save and cancellation behavior. Run the animation timer only during interaction/settling without accelerating edge scrolling.
+- Add regressions for Chinese paste, delivered Unicode, backspace and bilingual/pinyin search. Clarify that the custom field does not implement full native IME composition and candidate confirmation; no new native IME support is claimed.
+
 ## 1.3.3
 
 ### 中文
