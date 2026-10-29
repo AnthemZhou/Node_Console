@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.4.0
+
+### 中文
+
+- macOS 原生中文输入：在现有自绘搜索框内直接使用系统输入法组词、选择候选词并上屏，无需粘贴或额外输入窗口；原有英文、拼音、中英双语检索继续保留。
+- 区分候选确认与节点创建：组词时回车确认候选词，Esc 取消组词；中文上屏后回车创建节点。关闭、重复打开和进入节点放置时正确释放及恢复输入焦点。
+- 预编辑拼音显示下划线，候选框跟随输入位置；中文及中英混排文字下移 2 个缩放像素，改善输入框内的纵向对齐。
+- 原生模块离线随包提供、校验后加载；加载失败保留原有搜索。输入轮询不再额外提高空闲重绘频率，保留快捷节点拖动与排序交互。沿用原有快捷键注册，不重置其他插件或 Blender 快捷键。
+- 原生中文输入实测范围为 Apple Silicon Mac、Blender 5.2.2 LTS、系统拼音输入法。Windows/Linux 暂无原生 IME 支持；Intel Mac 和第三方输入法未实机验证。
+
+### English
+
+- Add native Chinese IME composition, system candidates and committed input inside the existing custom search field on macOS, without pasting or a separate input window. Keep English, pinyin and bilingual search.
+- Separate candidate confirmation from node creation: Enter confirms composition, Escape cancels it, and Enter after committing creates the node. Release and restore focus when closing, reopening or placing nodes.
+- Underline preedit text and position system candidates at the search caret. Lower Chinese and mixed-text baselines by two scaled pixels for improved vertical alignment.
+- Bundle the native receiver offline with integrity validation and standard-input fallback. Keep idle redraws at their original rate while polling input; preserve shortcut drag sorting and existing keymap ownership.
+- Native Chinese input was tested on Apple Silicon, Blender 5.2.2 LTS and macOS Pinyin. Windows/Linux do not yet have native IME support; Intel Macs and third-party IMEs have not been tested live.
+
 ## 1.3.4
 
 ### 中文

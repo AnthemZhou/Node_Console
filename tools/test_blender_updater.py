@@ -11,6 +11,9 @@ from zipfile import ZipFile
 
 import bpy
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from build_local_release import RUNTIME_FILES
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,8 +31,9 @@ def main():
         root = Path(directory)
         target = root / "Node_Console"
         target.mkdir()
-        names = ("__init__.py", "addon_updater.py", "addon_reloader.py", "json_store.py", "node_registry.py", "node_search_aliases.json", "node_console_builtin_cache.json")
+        names = RUNTIME_FILES
         for name in names:
+            (target / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, target / name)
         spec = importlib.util.spec_from_file_location("NCUpdateTest", target / "__init__.py", submodule_search_locations=[str(target)])
         nc = importlib.util.module_from_spec(spec)

@@ -7,6 +7,10 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_FILES = ('__init__.py', 'addon_updater.py', 'addon_reloader.py', 'json_store.py',
+                 'node_registry.py', 'node_search_aliases.json', 'node_console_builtin_cache.json',
+                 'ime_input/__init__.py', 'ime_input/adapter.py', 'ime_input/session.py',
+                 'ime_input/library.py', 'ime_input/macos.json')
 SOURCES = {
     '几何节点': 'https://developer.blender.org/docs/release_notes/5.2/geometry_nodes/',
     '合成器': 'https://developer.blender.org/docs/release_notes/5.2/compositor/',
@@ -93,8 +97,10 @@ def package_release():
     version = next(ast.literal_eval(node.value) for node in ast.parse((ROOT / '__init__.py').read_text()).body
                    if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'ADDON_VERSION' for t in node.targets))
     output = ROOT / f'Node_Console_{version}.zip'
-    files = ('__init__.py', 'addon_updater.py', 'addon_reloader.py', 'json_store.py', 'node_registry.py', 'node_search_aliases.json', 'node_console_builtin_cache.json',
-             'README.md', 'CHANGELOG.md', 'PERFORMANCE.md', 'LICENSE')
+    resource = json.loads((ROOT / 'ime_input/macos.json').read_text())
+    assert resource['version'] == version, 'Rebuild native input with tools/build_ime.py'
+    assert resource['source_sha256'] == hashlib.sha256((ROOT / 'ime_input/ime_cocoa.m').read_bytes()).hexdigest(), 'Native input source changed; rebuild first'
+    files = RUNTIME_FILES + ('README.md', 'CHANGELOG.md', 'PERFORMANCE.md', 'LICENSE')
     with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
         for name in files:
             archive.write(ROOT / name, 'Node_Console/' + name)

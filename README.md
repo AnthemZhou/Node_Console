@@ -4,35 +4,38 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.3.4-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.3.4
+版本：1.4.0
 
 ## 中文
 
-Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。拼音搜索可以减少在 Blender 中切换输入法带来的操作卡顿感。界面保持紧凑，视觉风格接近 Blender 原生搜索。
+Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。1.4.0 在 macOS 自绘搜索框中加入原生中文输入法支持，无需粘贴或另开输入窗口。界面保持紧凑，视觉风格接近 Blender 原生搜索。
 
 ### 功能
 
 - 支持英文和拼音搜索，并提供中英双语结果显示，不依赖当前 Blender 界面语言。
+- macOS 支持在现有搜索框内直接输入中文，使用系统输入法组词、选择候选词和确认上屏。
 - 支持收藏节点和快捷节点。favorite 和 shortcut 可以自定义搜索权重，也方便快速创建常用节点。
 - 在搜索结果左侧显示节点类型颜色标签，方便根据节点类型快速检索。
 - 支持手动刷新节点库，可以检索并分类 Asset Library 和外部导入的节点组。
 - 支持将一组节点及其连接保存为可复用的「组合点」，并通过英文或拼音快速检索。
 
-### 拼音搜索
+### 中文输入与拼音搜索
 
-Node Console 将拼音搜索作为主要中文检索方式。你可以直接输入 `shili`、`suiji`、`zhuoseqi` 这类拼音来搜索中文节点名，不需要在建模过程中频繁切换输入法，也不需要先把拼音转换成中文。这样可以减少输入法切换带来的停顿感，让 `Shift + A` 搜索保持更连贯的操作节奏。
+macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「集合」「噪波」等节点名。组词中的拼音带下划线，候选词由系统输入法提供；确认中文上屏后更新搜索结果。组词时的回车只确认候选词，不会误创建节点；Esc 先取消组词，搜索框仍然保留。中文上屏后，再按回车即可创建并放置节点。
 
-也支持粘贴中文节点名后检索（macOS：`Command + V`，Windows/Linux：`Ctrl + V`）。当前自绘搜索框没有完整接入系统中文输入法的组词与候选确认流程，不能把“支持中文搜索”理解为“支持原生中文输入法直接输入”。组合点命名使用 Blender 原生输入框，不受这一自绘框限制。
+英文和拼音检索仍然保留，例如 `instance`、`shili`、`zaobo`，不必先转换成中文。也支持粘贴中文节点名后检索（macOS：`Command + V`，Windows/Linux：`Ctrl + V`）。
+
+**平台范围：** 原生中文输入实测于 Apple Silicon Mac、Blender 5.2.2 LTS 和系统拼音输入法。安装包同时包含 arm64/x86_64 原生模块，但 Intel Mac、第三方输入法及多显示器候选框位置尚未实机验证。Windows/Linux 仍使用原有英文、拼音和中文粘贴方式，暂不支持此自绘框内的原生中文组词。组合点命名继续使用 Blender 原生输入框。macOS 原生模块加载失败时，插件保留原有搜索输入方式，不阻止打开搜索框。
 
 ### 安装
 
-1. 选择 `Node_Console_1.3.4.zip` 安装包。
+1. 选择 `Node_Console_1.4.0.zip` 安装包。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -41,7 +44,7 @@ Node Console 将拼音搜索作为主要中文检索方式。你可以直接输�
 
 1. 打开任意节点编辑器。
 2. 按 `Shift + A`。
-3. 输入英文或拼音，例如 `instance`、`shili`、`noise`、`zaobo`。
+3. 输入英文或拼音，例如 `instance`、`shili`、`noise`、`zaobo`；macOS 也可用中文输入法输入节点名。
 4. 按 Enter，或点击搜索结果来创建节点。
 5. 移动鼠标决定节点位置。
 6. 点击鼠标左键，或按 Enter 落位。
@@ -100,25 +103,28 @@ Node Console 将拼音搜索作为主要中文检索方式。你可以直接输�
 
 ## English
 
-Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. You can search nodes by English name or pinyin, and use favorites and shortcuts to customize search weighting. Pinyin search helps avoid the small interaction stutter that can happen when switching input methods inside Blender. The layout stays compact and is inspired by Blender native search.
+Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. Version 1.4.0 adds native Chinese IME input inside the existing custom search field on macOS, without pasting or opening a separate field. The layout stays compact and is inspired by Blender native search.
 
 ### Features
 
 - Supports English and pinyin search with bilingual result display, independent of the current Blender interface language.
+- Supports native Chinese composition, system candidates and committed text in the existing search field on macOS.
 - Supports favorite nodes and shortcut nodes. Favorites and shortcuts can customize search weighting and make common nodes faster to create.
 - Shows colored node type tags on the left side of search results, making nodes easier to scan by type.
 - Supports manual node library refresh, including searchable and categorized Asset Library or externally imported node groups.
 - Saves connected node sets as reusable Snippet Nodes that can be found by English or pinyin.
 
-### Pinyin Search
+### Chinese Input and Pinyin Search
 
-Node Console treats pinyin as the primary way to search Chinese node names. You can type pinyin such as `shili`, `suiji`, or `zhuoseqi` directly, without switching input methods or converting it into Chinese characters first. This keeps `Shift + A` search responsive and avoids the small interruptions that can come from input-method switching during node work.
+On macOS, press `Shift + A` and use your system Chinese input method to type node names such as `集合` or `噪波`. Composition text is underlined; the system provides candidates. Committed Chinese updates search results. Enter during composition confirms a candidate without creating a node; Escape cancels composition while keeping search open. After committing Chinese, press Enter again to create and place the node.
 
-Chinese node names can also be pasted and searched (`Command + V` on macOS, `Ctrl + V` on Windows/Linux). The custom search field does not implement the full system IME composition and candidate-confirmation workflow; Chinese search support is not native Chinese IME support. Snippet naming uses a native Blender text field instead.
+English and direct pinyin search, such as `instance`, `shili` and `zaobo`, remain available. Chinese can still be pasted (`Command + V` on macOS, `Ctrl + V` on Windows/Linux).
+
+**Platform scope:** Native Chinese input was tested on Apple Silicon, Blender 5.2.2 LTS and macOS Pinyin. The package includes arm64/x86_64 code, but Intel Macs, third-party IMEs and multi-monitor candidate positioning have not been tested live. Windows/Linux retain English, pinyin and Chinese paste, without native Chinese composition in this custom field. Snippet naming still uses Blender's native text field. If the macOS receiver cannot load, search falls back to the existing input path.
 
 ### Install
 
-1. Choose the `Node_Console_1.3.4.zip` installation package.
+1. Choose the `Node_Console_1.4.0.zip` installation package.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -127,7 +133,7 @@ Chinese node names can also be pasted and searched (`Command + V` on macOS, `Ctr
 
 1. Open any node editor.
 2. Press `Shift + A`.
-3. Type an English name or pinyin, such as `instance`, `shili`, `noise`, or `zaobo`.
+3. Type an English name or pinyin, such as `instance`, `shili`, `noise`, or `zaobo`; macOS users can also use a Chinese IME.
 4. Press Enter, or click a result to create the node.
 5. Move the mouse to choose the node position.
 6. Click the left mouse button, or press Enter to place the node.

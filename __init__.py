@@ -22,19 +22,19 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 # Blender may reload only this file when an installed add-on is re-enabled.
-for _child_name in ("addon_reloader", "addon_updater", "node_registry", "json_store"):
+for _child_name in ("addon_reloader", "addon_updater", "node_registry", "json_store", "ime_input"):
     if _child_name in globals():
         importlib.reload(globals()[_child_name])
 from . import addon_reloader, addon_updater, node_registry, json_store
 
 
-ADDON_VERSION = "1.3.4"
+ADDON_VERSION = "1.4.0"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 3, 4),
+    "version": (1, 4, 0),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -52,6 +52,7 @@ NODE_SEARCH_ENTRIES: list["NodeSearchEntry"] = []
 SNIPPET_ENTRY_BY_ID: dict[str, dict] = {}
 ACTIVE_CONSOLE_OPERATOR = None
 ACTIVE_SNIPPET_DIALOG = None
+IME_UNINSTALL = None
 PREFERENCES_LOADING = False
 MENU_ENTRY_CACHE: dict[str, list[tuple[str, str, str, str, tuple[tuple[str, str], ...]]]] = {}
 SEARCH_INDEX_MEMORY_KEYS: set[str] = set()
@@ -5489,11 +5490,16 @@ class ENS_AddNodeByEnglishSearch(Operator):
         _draw_rounded_rect(handle_x, search_y + _scaled(3, scale), handle_width, max(0, search_height - _scaled(6, scale)), max(1, _scaled(1, scale)), handle_color)
 
         placeholder = _ui_text("Search nodes...")
-        query_text = self._query if self._query else placeholder
-        query_color = TEXT_COLOR if self._query else SECONDARY_TEXT_COLOR
+        preedit = getattr(self, "_ime_preedit", "")
+        display_query = self._query + preedit
+        query_text = display_query if display_query else placeholder
+        query_color = TEXT_COLOR if display_query else SECONDARY_TEXT_COLOR
         query_size = _scaled(13, scale)
         search_text_y = search_y + (search_height - _scaled(13, scale)) / 2 + _scaled(1, scale)
         input_text_y = search_text_y + _scaled(1, scale)
+        # CJK glyphs need a lower baseline than the existing Latin input text.
+        if re.search(r"[\u3400-\u9fff\uf900-\ufaff\U00020000-\U000323af]", display_query):
+            input_text_y -= _scaled(2, scale)
         placeholder_text_y = search_text_y
         _draw_text("⌕", x + padding + _scaled(10, scale), search_text_y - _scaled(1, scale), _scaled(20, scale), MUTED_TEXT_COLOR)
         query_x = x + padding + _scaled(32, scale)
@@ -5511,7 +5517,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             _draw_rounded_panel(tag_x, tag_y, tag_width, tag_height, max(3, radius - 2), tag_fill, tag_border)
             _draw_text(tag_text, tag_x + tag_pad_x, tag_y + _scaled(4, scale), tag_size, TEXT_COLOR)
             query_x = tag_x + tag_width + _scaled(8, scale)
-        text_x = query_x if self._query else query_x + _scaled(9, scale)
+        text_x = query_x if display_query else query_x + _scaled(9, scale)
         clear_size = max(_scaled(13, scale), 12)
         clear_x = x + padding + search_field_width - clear_size - _scaled(6, scale)
         clear_y = search_y + (search_height - clear_size) / 2
@@ -5521,10 +5527,18 @@ class ENS_AddNodeByEnglishSearch(Operator):
         else:
             self._clear_button_rect = (0, 0, 0, 0)
             text_max_width = search_field_width - (text_x - (x + padding)) - _scaled(6, scale)
-        text_y = input_text_y if self._query else placeholder_text_y
+        text_y = input_text_y if display_query else placeholder_text_y
         _draw_text(_clip_text(query_text, text_max_width, query_size), text_x, text_y, query_size, query_color)
+        caret_x = query_x + min(_text_width(display_query, query_size), text_max_width) + _scaled(2, scale)
+        if getattr(self, "_ime_session", None) is not None:
+            self._ime_caret_rect = (region.x + caret_x, region.y + search_y,
+                                    max(1, _scaled(1, scale)), search_height)
+        if preedit:
+            start_x = query_x + min(_text_width(self._query, query_size), text_max_width)
+            _draw_rect(start_x, text_y - _scaled(2, scale), max(0, caret_x - start_x),
+                       max(1, _scaled(1, scale)), SECONDARY_TEXT_COLOR)
         if int(time.monotonic() * 2) % 2 == 0:
-            cursor_x = query_x + min(_text_width(self._query, query_size), text_max_width) + _scaled(2, scale)
+            cursor_x = caret_x
             _draw_rect(cursor_x, search_y + _scaled(5, scale), max(1, _scaled(1, scale)), search_height - _scaled(10, scale), TEXT_COLOR)
         if self._query:
             _draw_rounded_rect(clear_x, clear_y, clear_size, clear_size, clear_size / 2, (0.235, 0.235, 0.25, 0.86))
@@ -6714,12 +6728,16 @@ def unregister_keymap():
 
 
 def register():
+    global IME_UNINSTALL
     try:
         bpy.app.translations.unregister(ADDON_ID)
     except Exception:
         pass
     bpy.app.translations.register(ADDON_ID, TRANSLATIONS)
     try:
+        from .ime_input import install_if_available
+        if IME_UNINSTALL is None:
+            IME_UNINSTALL = install_if_available(sys.modules[__name__])
         for cls in classes:
             bpy.utils.register_class(cls)
         _load_preferences_from_settings()
@@ -6730,9 +6748,13 @@ def register():
 
 
 def unregister():
-    global BACKGROUND_ASSET_INDEX, KEYMAP_REFRESH_PENDING, ACTIVE_SNIPPET_DIALOG
+    global BACKGROUND_ASSET_INDEX, KEYMAP_REFRESH_PENDING, ACTIVE_SNIPPET_DIALOG, IME_UNINSTALL
     addon_reloader.cancel()
     _stop_addon_update()
+    if IME_UNINSTALL is not None:
+        uninstall_ime = IME_UNINSTALL
+        IME_UNINSTALL = None
+        uninstall_ime(bpy.context)
     SETTINGS_STORE.clear()
     SNIPPETS_STORE.clear()
     SNIPPET_SEARCH_CACHE.clear()

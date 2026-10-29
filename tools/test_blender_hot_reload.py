@@ -12,10 +12,12 @@ from zipfile import ZipFile
 import addon_utils
 import bpy
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from build_local_release import RUNTIME_FILES
+
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('__init__.py', 'addon_reloader.py', 'addon_updater.py', 'json_store.py', 'node_registry.py',
-         'node_search_aliases.json', 'node_console_builtin_cache.json')
+FILES = RUNTIME_FILES
 
 
 def keymaps():
@@ -42,6 +44,8 @@ def package(directory, current, next_version, failure=None):
                     content += '\nraise RuntimeError("intentional import failure")\n'
             if name == 'node_registry.py':
                 content += f'\nHOT_RELOAD_TEST_MARKER = "{next_version}"\n'
+            if name == 'ime_input/adapter.py':
+                content += f'\nHOT_RELOAD_TEST_MARKER = "{next_version}"\n'
             output.writestr('Node_Console/' + name, content)
     return archive
 
@@ -54,6 +58,7 @@ def main():
         target = root / 'Node_Console'
         target.mkdir()
         for name in FILES:
+            (target / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / name, target / name)
         sys.path.insert(0, str(root))
         nc = addon_utils.enable('Node_Console', default_set=True, persistent=True)
@@ -138,6 +143,8 @@ def main():
                     assert nc.UPDATE_STATUS['state'] == 'updated'
                     assert nc.node_registry is not old.node_registry
                     assert nc.node_registry.HOT_RELOAD_TEST_MARKER == version
+                    if sys.platform == 'darwin':
+                        assert nc.ime_input.adapter.HOT_RELOAD_TEST_MARKER == version
                     assert not any(cls.is_registered for cls in old.classes)
                 assert not any(bpy.app.timers.is_registered(item) for item in old_callbacks)
                 metadata = addon_utils.addons_fake_modules['Node_Console']
@@ -160,6 +167,8 @@ def main():
             nc = addon_utils.enable('Node_Console', default_set=False, persistent=True)
             assert nc.ADDON_VERSION == next_version
             assert nc.node_registry.HOT_RELOAD_TEST_MARKER == next_version
+            if sys.platform == 'darwin':
+                assert nc.ime_input.adapter.HOT_RELOAD_TEST_MARKER == next_version
             assert_preserved(nc)
             passed.append('manual re-enable after cancelling activation also refreshes child modules')
         finally:

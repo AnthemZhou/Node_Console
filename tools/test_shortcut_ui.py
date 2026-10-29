@@ -262,6 +262,28 @@ def main():
                 assert op._panel_rect[1] >= 0
         passed.append('shortcut rows use normal category and label rendering in all color modes')
 
+        for scale in (1.0, 1.5, 2.0):
+            for snippet in (False, True):
+                for query, preedit, cjk in (
+                    ('noise', '', False), ('', 'zao bo', False),
+                    ('\u566a\u6ce2', '', True), ('Noise \u566a\u6ce2', '', True),
+                    ('\u96c6\u5408', 'xin xi', True), ('', '\u96c6\u5408', True),
+                    ('\U00020000', '', True),
+                ):
+                    op = console()
+                    op._anchor_x, op._anchor_y = 450, 400
+                    op._query, op._ime_preedit, op._snippet_mode = query, preedit, snippet
+                    with contextlib.ExitStack() as stack:
+                        stack.enter_context(patch.object(nc, '_ui_scale', return_value=scale))
+                        mocks = {name: stack.enter_context(patch.object(nc, name)) for name in draw_names}
+                        op._draw_callback(draw_context)
+                    field_y, field_height = op._search_field_rect[1], op._search_field_rect[3]
+                    original_y = field_y + (field_height - nc._scaled(13, scale)) / 2 + 2 * nc._scaled(1, scale)
+                    text_call = next(call for call in mocks['_draw_text'].call_args_list
+                                     if call.args[0] == query + preedit)
+                    assert text_call.args[2] == original_y - (nc._scaled(2, scale) if cjk else 0)
+        passed.append('Chinese input baseline lowered at all scales; Latin preedit unchanged in both modes')
+
         for scale, width in ((0.5, 250), (1.0, 250), (1.0, 400), (2.0, 400)):
             op = console()
             op._anchor_x, op._anchor_y = 450, 400

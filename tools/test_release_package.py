@@ -13,14 +13,11 @@ from tools import build_local_release
 
 class ReleasePackageTests(unittest.TestCase):
     def check_package(self, include_local_reports):
-        sources = (
-            '__init__.py', 'addon_updater.py', 'addon_reloader.py', 'json_store.py', 'node_registry.py', 'node_search_aliases.json',
-            'node_console_builtin_cache.json', 'README.md', 'CHANGELOG.md',
-            'PERFORMANCE.md', 'LICENSE',
-        )
+        sources = build_local_release.RUNTIME_FILES + ('README.md', 'CHANGELOG.md', 'PERFORMANCE.md', 'LICENSE')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in sources:
+            for name in sources + ('ime_input/ime_cocoa.m',):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(build_local_release.ROOT / name, root / name)
             if include_local_reports:
                 for report in build_local_release.ROOT.glob('VALIDATION_*.md'):
