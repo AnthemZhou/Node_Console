@@ -17,6 +17,9 @@ from build_local_release import RUNTIME_FILES
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from addon_updater import version_tuple
+
 FILES = RUNTIME_FILES
 
 
@@ -36,8 +39,8 @@ def package(directory, current, next_version, failure=None):
                 source_version = next(line.split('"')[1] for line in content.splitlines()
                                       if line.startswith('ADDON_VERSION ='))
                 content = content.replace(f'ADDON_VERSION = "{source_version}"', f'ADDON_VERSION = "{next_version}"')
-                content = content.replace(f'"version": {tuple(map(int, source_version.split(".")))}',
-                                          f'"version": {tuple(map(int, next_version.split(".")))}')
+                content = content.replace(f'"version": {version_tuple(source_version)}',
+                                          f'"version": {version_tuple(next_version)}')
                 if failure == 'register':
                     content += '\n_register_impl = register\ndef register():\n    _register_impl()\n    raise RuntimeError("intentional registration failure")\n'
                 elif failure == 'import':

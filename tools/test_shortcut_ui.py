@@ -284,6 +284,26 @@ def main():
                     assert text_call.args[2] == original_y + nc._scaled(1, scale) - (nc._scaled(2, scale) if cjk else 0)
         passed.append('input raised one scaled pixel in both modes while retaining CJK baseline correction')
 
+        for language in ('en_US', 'zh_HANS'):
+            with patch.object(nc, '_ui_text', side_effect=lambda text:
+                    {'Snippet Node': '\u7ec4\u5408\u70b9', 'Search nodes...': '\u641c\u7d22\u8282\u70b9...'}.get(text, text)
+                    if language == 'zh_HANS' else text):
+                for scale in (1.0, 1.5, 2.0):
+                    for query, preedit in (('', ''), ('noise', ''), ('\u566a\u6ce2', ''), ('', 'zao bo')):
+                        op = console()
+                        op._anchor_x, op._anchor_y = 450, 400
+                        op._query, op._ime_preedit, op._snippet_mode = query, preedit, True
+                        with contextlib.ExitStack() as stack:
+                            stack.enter_context(patch.object(nc, '_ui_scale', return_value=scale))
+                            mocks = {name: stack.enter_context(patch.object(nc, name)) for name in draw_names}
+                            op._draw_callback(draw_context)
+                        calls = mocks['_draw_text'].call_args_list
+                        badge = next(call for call in calls if call.args[0] == nc._ui_text('Snippet Node'))
+                        query_call = next(call for call in calls if call.args[0] == (query + preedit or nc._ui_text('Search nodes...')))
+                        assert badge.args[4] == nc.SECONDARY_TEXT_COLOR
+                        assert query_call.args[4] == (nc.TEXT_COLOR if query or preedit else nc.SECONDARY_TEXT_COLOR)
+        passed.append('snippet mode badge matches placeholder gray in both languages and all input states')
+
         for scale, width in ((0.5, 250), (1.0, 250), (1.0, 400), (2.0, 400)):
             op = console()
             op._anchor_x, op._anchor_y = 450, 400

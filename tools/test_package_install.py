@@ -13,7 +13,7 @@ bpy.ops.preferences.addon_install(filepath=str(archive), overwrite=True)
 module = addon_utils.enable('Node_Console', default_set=True)
 expected_version = archive.stem.removeprefix('Node_Console_')
 assert module and module.ADDON_VERSION == expected_version
-assert module.bl_info['version'] == tuple(map(int, expected_version.split('.')))
+assert module.bl_info['version'] == module.addon_updater.version_tuple(expected_version)
 assert str(Path(module.__file__)).startswith(os.environ['BLENDER_USER_SCRIPTS'])
 for tree_type in ('GeometryNodeTree', 'ShaderNodeTree', 'CompositorNodeTree'):
     tree = bpy.data.node_groups.new('Package smoke test', tree_type)

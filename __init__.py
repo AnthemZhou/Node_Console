@@ -28,13 +28,13 @@ for _child_name in ("addon_reloader", "addon_updater", "node_registry", "json_st
 from . import addon_reloader, addon_updater, node_registry, json_store
 
 
-ADDON_VERSION = "1.4.1"
+ADDON_VERSION = "1.4.2-beta.1"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 4, 1),
+    "version": (1, 4, 2),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -283,6 +283,9 @@ UI_TEXT_ZH = {
     "Available Versions": "可用版本",
     "Stable": "稳定版",
     "Current": "当前版本",
+    "Installed": "当前",
+    "Older Stable": "旧正式版",
+    "Currently installed; check for updates to refresh the list": "当前已安装；检查更新以刷新版本列表",
     "Check for updates first": "请先检查更新",
     "Select a version to install": "请选择要安装的版本",
     "No compatible releases found": "没有可用的安装版本",
@@ -5534,7 +5537,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
             tag_fill = _blend_color(tag_base, 0.38, FIELD_BACKGROUND)
             tag_border = _blend_color(tag_base, 0.62, FIELD_BACKGROUND)
             _draw_rounded_panel(tag_x, tag_y, tag_width, tag_height, max(3, radius - 2), tag_fill, tag_border)
-            _draw_text(tag_text, tag_x + tag_pad_x, tag_y + _scaled(4, scale), tag_size, TEXT_COLOR)
+            _draw_text(tag_text, tag_x + tag_pad_x, tag_y + _scaled(4, scale), tag_size, SECONDARY_TEXT_COLOR)
             query_x = tag_x + tag_width + _scaled(8, scale)
         text_x = query_x if display_query else query_x + _scaled(9, scale)
         clear_size = max(_scaled(13, scale), 12)
@@ -5996,17 +5999,32 @@ def _wrap_update_status(text, width, font_size):
 def _draw_update_header(layout, context):
     state = UPDATE_STATUS.get("state", "idle")
     title = f"Node Console v{ADDON_VERSION}"
-    status_text = _update_status_text()
+    # The selector already conveys the normal state; only show actionable status.
+    status_text = "" if state in {"idle", "available", "current", "updated"} else _update_status_text()
     scale = _resolution_scale()
     font_size = _scaled(13, scale)
     region_width = getattr(getattr(context, "region", None), "width", 800)
     available_width = max(120 * scale, region_width - 160 * scale)
-    inline_status = bool(status_text) and state != "error" and (
-        _text_width(title + status_text, font_size) + 160 * scale <= available_width)
+    prefs = _preferences()
+    selected = _selected_update_release() if prefs is not None else None
+    selection_label = _release_label(selected) if selected else _installed_release_label()
+    selector_width = max(145 * scale, _text_width(selection_label, font_size) + 40 * scale)
+    controls_width = (selector_width + 130 * scale) if prefs is not None else 30 * scale
+    if UPDATE_STATUS.get("backup"):
+        controls_width += 24 * scale
+    title_width = _text_width(title, font_size)
+    single_row = title_width + controls_width + 24 * scale <= available_width
+    inline_status = bool(status_text) and single_row and state != "error" and (
+        title_width + controls_width + _text_width(status_text, font_size) + 40 * scale <= available_width)
 
     header = layout.row()
     header.label(text=title)
-    actions = header.row(align=True)
+    if prefs is not None and not single_row:
+        beta = header.row(align=True)
+        beta.alignment = "RIGHT"
+        beta.enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
+        beta.prop(prefs, "accept_beta_updates", text="Beta")
+    actions = (header if single_row else layout).row(align=True)
     actions.alignment = "RIGHT"
     if inline_status:
         status = actions.row(align=True)
@@ -6014,7 +6032,20 @@ def _draw_update_header(layout, context):
         status.enabled = False
         status.label(text=status_text, icon="CHECKMARK" if state in {"current", "updated"} else "NONE")
         actions.separator()
-    actions.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text=_ui_text("Check for Updates"), icon="FILE_REFRESH")
+    controls = actions.row(align=True)
+    controls.alignment = "RIGHT"
+    controls.enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
+    if prefs is not None:
+        if single_row:
+            controls.prop(prefs, "accept_beta_updates", text="Beta")
+        selector = controls.row(align=True)
+        selector.ui_units_x = selector_width / (20 * scale)
+        selector.prop(prefs, "update_release", text="")
+    controls.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text="", icon="FILE_REFRESH")
+    if prefs is not None:
+        install = controls.row(align=True)
+        install.operator_context = "INVOKE_DEFAULT"
+        install.operator(NODECONSOLE_OT_InstallRelease.bl_idname, text="", icon="IMPORT")
     if UPDATE_STATUS.get("backup"):
         actions.operator("wm.path_open", text="", icon="FILE_FOLDER").filepath = UPDATE_STATUS["backup"]
     if status_text and not inline_status:
@@ -6023,17 +6054,6 @@ def _draw_update_header(layout, context):
         status.enabled = state == "error"
         for line in _wrap_update_status(status_text, available_width, font_size):
             status.label(text=line)
-    prefs = _preferences()
-    if prefs is not None:
-        controls = layout.column(align=True)
-        controls.enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
-        controls.prop(prefs, "accept_beta_updates", text=_ui_text("Accept Beta Versions"))
-        # Narrow preference windows stack controls instead of clipping labels.
-        versions = controls.row(align=True) if region_width >= 560 * scale else controls.column(align=True)
-        versions.prop(prefs, "update_release", text="")
-        install = versions.row(align=True)
-        install.operator_context = "INVOKE_DEFAULT"
-        install.operator(NODECONSOLE_OT_InstallRelease.bl_idname, text=_ui_text("Install Selected Version"), icon="IMPORT")
 
 
 def _accept_beta_updates():
@@ -6041,19 +6061,32 @@ def _accept_beta_updates():
 
 
 def _release_label(release):
-    channel = "Beta" if release["prerelease"] else _ui_text("Stable")
-    label = f"{release['version']}  ({channel})"
+    channel = _ui_text("Stable")
+    if release["prerelease"]:
+        channel = "RC" if "-rc." in release["version"] else "Alpha" if "-alpha." in release["version"] else "Beta"
+    elif addon_updater.version_key(release["version"]) < addon_updater.version_key(ADDON_VERSION):
+        channel = _ui_text("Older Stable")
     if release["version"] == ADDON_VERSION:
-        label += " - " + _ui_text("Current")
-    return label
+        channel = _ui_text("Installed") + (f", {channel}" if release["prerelease"] else "")
+    return f"{release['version']} ({channel})"
+
+
+def _installed_release_label():
+    return _release_label({"version": ADDON_VERSION, "prerelease": "-" in ADDON_VERSION})
 
 
 def _update_release_items(_self, _context):
-    items = [(item["tag"], _release_label(item), "", index + 1)
+    items = [(item["tag"], _release_label(item),
+              _ui_text("This will install an older version")
+              if addon_updater.version_key(item["version"]) < addon_updater.version_key(ADDON_VERSION) else "", index + 1)
              for index, item in enumerate(UPDATE_RELEASES)
              if not item["prerelease"] or _accept_beta_updates()]
-    if not items:
-        items = [("NONE", _ui_text("Check for updates first"), "", 0)]
+    if not any(addon_updater.version_key(item["version"]) >= addon_updater.version_key(ADDON_VERSION) for item in UPDATE_RELEASES
+               if not item["prerelease"] or _accept_beta_updates()):
+        # This is the installed version, not an invented downloadable release.
+        items = items[:addon_updater.RELEASE_CHOICE_LIMIT - 1]
+        items.insert(0, ("NONE", _installed_release_label(),
+                        _ui_text("Currently installed; check for updates to refresh the list"), 0))
     # Dynamic enum strings must outlive Blender's RNA references.
     key = tuple(items)
     return UPDATE_ENUM_CACHE.setdefault(key, items)
@@ -6067,10 +6100,13 @@ def _selected_update_release():
 
 def _set_update_releases(releases):
     global UPDATE_RELEASES
-    UPDATE_RELEASES = [item for item in releases if not item["prerelease"] or _accept_beta_updates()]
+    UPDATE_RELEASES = addon_updater.recent_releases(releases, _accept_beta_updates())
     prefs = _preferences()
     if prefs is not None:
-        prefs.update_release = UPDATE_RELEASES[0]["tag"] if UPDATE_RELEASES else "NONE"
+        # Never default to a downgrade, including stale/incomplete GitHub results.
+        current = addon_updater.version_key(ADDON_VERSION)
+        prefs.update_release = next((item["tag"] for item in UPDATE_RELEASES
+                                     if addon_updater.version_key(item["version"]) >= current), "NONE")
 
 
 def _beta_updates_changed(_self, _context):
@@ -6250,7 +6286,9 @@ class NODECONSOLE_OT_InstallRelease(Operator):
 class ENS_AddonPreferences(AddonPreferences):
     bl_idname = ADDON_ID
 
-    accept_beta_updates: BoolProperty(name="Accept Beta Versions", default=False, update=_beta_updates_changed)
+    accept_beta_updates: BoolProperty(name="Accept Beta Versions",
+        description="Include published prereleases when checking for updates; does not install automatically",
+        default=False, update=_beta_updates_changed)
     update_release: EnumProperty(name="Available Versions", items=_update_release_items, options={"SKIP_SAVE"})
 
     display_mode: EnumProperty(

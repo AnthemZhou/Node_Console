@@ -31,8 +31,8 @@ with tempfile.TemporaryDirectory(prefix="nc-release-switch-", dir="/private/tmp"
     assert not prefs.accept_beta_updates
     prefs.accept_beta_updates = True
     current._set_update_releases([
-        dict(version=current_version, tag="v" + current_version, prerelease=False),
-        dict(version=previous_version, tag="v" + previous_version, prerelease=False)])
+        dict(version=current_version, tag="v" + current_version, prerelease="-" in current_version),
+        dict(version=previous_version, tag="v" + previous_version, prerelease="-" in previous_version)])
     prefs.update_release = "v" + previous_version
     assert current._selected_update_release()["version"] == previous_version
     assert "update_release" not in current.addon_reloader._preferences(current)

@@ -64,60 +64,54 @@ def main():
               {'state': 'updated', 'version': '1.3.1'}, {'state': 'reloading'},
               {'state': 'waiting_reload'}, {'state': 'error', 'code': 'reload_rolled_back'},
               {'state': 'error', 'code': 'offline'})
+    states += ({'state': 'available'}, {'state': 'empty'})
+    prefs = SimpleNamespace(accept_beta_updates=True, update_release='v' + nc.ADDON_VERSION)
+    releases = [dict(tag='v' + nc.ADDON_VERSION, version=nc.ADDON_VERSION, prerelease='-' in nc.ADDON_VERSION)]
     for language in ('en_US', 'zh_HANS'):
         bpy.context.preferences.view.language = language
-        for width in (1200, 420):
-            for state in states:
-                layout = Layout()
-                context = SimpleNamespace(region=SimpleNamespace(width=width))
-                with patch.object(nc, 'UPDATE_STATUS', state), patch.object(nc, '_resolution_scale', return_value=1.0):
-                    nc._draw_update_header(layout, context)
-                buttons = [item for item in layout.walk() if item.kind == 'operator']
-                update = [item for item in buttons if item.props['name'] == 'node_console.update_addon']
-                assert len(update) == 1 and update[0].parent.alignment == 'RIGHT'
-                assert update[0].props['icon'] == 'FILE_REFRESH'
-                if width == 1200 and state['state'] != 'error':
-                    assert len(layout.children) == 1, (language, state)
-                if state['state'] == 'current':
-                    status = next(item for item in layout.walk()
-                                  if item.kind == 'label' and item.props['text'] == nc._ui_text('Already up to date'))
-                    assert status.parent.enabled is False
-                for child in layout.children:
-                    if child.kind == 'column':
-                        assert child.alert == (state['state'] == 'error')
-                        for line in child.children:
-                            assert nc._text_width(line.props['text'], 13) <= max(120, width - 160)
-                if state.get('backup'):
-                    backup = next(item for item in buttons if item.props['name'] == 'wm.path_open')
-                    assert backup.filepath == state['backup']
-                cases += 1
-    for language in ('en_US', 'zh_HANS'):
-        bpy.context.preferences.view.language = language
-        for width in (1200, 420):
-            prefs = SimpleNamespace(accept_beta_updates=True, update_release='v1.5.0-beta.1')
-            releases = [dict(tag='v1.5.0-beta.1', version='1.5.0-beta.1', prerelease=True),
-                        dict(tag='v1.4.0', version='1.4.0', prerelease=False)]
-            layout = Layout()
-            context = SimpleNamespace(region=SimpleNamespace(width=width))
-            with patch.object(nc, '_preferences', return_value=prefs), \
-                    patch.object(nc, 'UPDATE_RELEASES', releases), \
-                    patch.object(nc, 'UPDATE_STATUS', {'state': 'available'}):
-                nc._draw_update_header(layout, context)
-                items = nc._update_release_items(prefs, context)
-                assert items is nc._update_release_items(prefs, context)
-                assert 'Beta' in items[0][1] and nc._ui_text('Stable') in items[1][1]
-                assert nc._selected_update_release() == releases[0]
-                prefs.accept_beta_updates = False
-                assert nc._selected_update_release() is None
-                assert len(nc._update_release_items(prefs, context)) == 1
-            props = [item for item in layout.walk() if item.kind == 'prop']
-            assert {item.props['name'] for item in props} == {'accept_beta_updates', 'update_release'}
-            selector = next(item for item in props if item.props['name'] == 'update_release')
-            assert selector.parent.kind == ('row' if width >= 560 else 'column')
-            install = next(item for item in layout.walk() if item.kind == 'operator'
-                           and item.props['name'] == 'node_console.install_release')
-            assert install.parent.operator_context == 'INVOKE_DEFAULT'
-            cases += 1
+        for scale in (1.0, 1.5, 2.0):
+            for width in (1200, 420):
+                for state in states:
+                    layout = Layout()
+                    context = SimpleNamespace(region=SimpleNamespace(width=round(width * scale)))
+                    with patch.object(nc, 'UPDATE_STATUS', state), \
+                            patch.object(nc, '_preferences', return_value=prefs), \
+                            patch.object(nc, 'UPDATE_RELEASES', releases), \
+                            patch.object(nc, '_resolution_scale', return_value=scale):
+                        nc._draw_update_header(layout, context)
+                    buttons = [item for item in layout.walk() if item.kind == 'operator']
+                    update = next(item for item in buttons if item.props['name'] == 'node_console.update_addon')
+                    install = next(item for item in buttons if item.props['name'] == 'node_console.install_release')
+                    assert update.props['icon'] == 'FILE_REFRESH' and update.props['text'] == ''
+                    assert install.props['icon'] == 'IMPORT' and install.props['text'] == ''
+                    assert install.parent.operator_context == 'INVOKE_DEFAULT'
+                    normal = state['state'] in {'idle', 'available', 'current', 'updated'}
+                    if normal:
+                        assert len(layout.children) == (1 if width == 1200 else 2), (language, scale, width, state)
+                        labels = [item.props['text'] for item in layout.walk() if item.kind == 'label']
+                        assert labels == [f'Node Console v{nc.ADDON_VERSION}']
+                    props = [item for item in layout.walk() if item.kind == 'prop']
+                    assert {item.props['name'] for item in props} == {'accept_beta_updates', 'update_release'}
+                    beta = next(item for item in props if item.props['name'] == 'accept_beta_updates')
+                    assert beta.props['text'] == 'Beta'
+                    for child in layout.children:
+                        if child.kind == 'column':
+                            assert child.alert == (state['state'] == 'error')
+                            for line in child.children:
+                                assert nc._text_width(line.props['text'], nc._scaled(13, scale)) <= max(120 * scale, (width - 160) * scale)
+                    if state.get('backup'):
+                        backup = next(item for item in buttons if item.props['name'] == 'wm.path_open')
+                        assert backup.filepath == state['backup']
+                    cases += 1
+        with patch.object(nc, '_preferences', return_value=prefs), patch.object(nc, 'UPDATE_RELEASES', releases):
+            items = nc._update_release_items(prefs, None)
+            assert items is nc._update_release_items(prefs, None)
+            assert nc._ui_text('Installed') in items[0][1]
+            assert nc._selected_update_release() == releases[0]
+            for version, beta, label in [('1.4.0', False, nc._ui_text('Older Stable')),
+                                         ('1.5.0-beta.1', True, 'Beta'), ('1.5.0-rc.1', True, 'RC')]:
+                assert label in nc._release_label(dict(version=version, prerelease=beta))
+        cases += 1
     prefs = SimpleNamespace(layout=Layout(), snippet_nodes_expanded=False)
     context = SimpleNamespace(region=SimpleNamespace(width=1200))
     with patch.object(nc, '_load_asset_index', return_value=[]), \

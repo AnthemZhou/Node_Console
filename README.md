@@ -4,15 +4,17 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.4.1-blue)
+![Version](https://img.shields.io/badge/version-1.4.2--beta.1-orange)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.4.1
+版本：1.4.2-beta.1（预发布版）；最新正式版：1.4.1
 
 ## 中文
+
+本分支为 Beta 测试版。日常使用可继续选择 [1.4.1 正式版](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.1)；要测试本版，请在偏好设置勾选「接受 Beta 测试版本」，检查后选择 `1.4.2-beta.1` 并确认安装。
 
 Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。1.4.0 已加入 macOS 原生中文输入；1.4.1 在同一自绘框中接入 Windows 系统输入法，Windows 部分尚待实机确认。界面保持紧凑，视觉风格接近 Blender 原生搜索。
 
@@ -36,7 +38,7 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 
 ### 安装
 
-1. 选择 `Node_Console_1.4.1.zip` 安装包。
+1. 测试本版请选择 `Node_Console_1.4.2-beta.1.zip`；正式版请选择 `Node_Console_1.4.1.zip`。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -67,6 +69,8 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 
 组合点保存在外部 JSON 库文件中。你可以在偏好设置中调整保存组合点的快捷键、查看组合点库路径，并展开组合点列表进行管理。
 
+结果中的「无」表示保存时未指定类目（`None`），并非错误。保存弹窗的「类目」下拉框可手动选择；有内部连线时按末端节点推断默认类目，没有连线时默认「无」。目前已保存条目只能在偏好设置中查看或删除，尚无直接编辑类目的入口。
+
 ### 偏好设置
 
 - `搜索结果显示`（Search Result Display）：选择 English、中文、English / 中文 或 中文 / English。
@@ -85,9 +89,13 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 
 在 Node Console 偏好设置中点击「检查更新」，读取 [GitHub Releases](https://github.com/AnthemZhou/Node_Console/releases) 中有安装包的版本；这一步不会下载安装包或替换插件。在版本下拉框选择目标，再点击「安装所选版本」，确认后才下载、校验并替换。当前安装版本会标注，不能重复安装同一版本；不会在启动 Blender 时自动联网。
 
+更新栏使用单行布局：当前插件版本、Beta 开关、版本选择、刷新图标及安装图标；鼠标悬停在图标上可查看操作名称。窄窗口自动分行。列表按版本号仅保留当前更新通道最近三个可安装版本；默认选择更新版本，没有更新则停留在当前版本，不自动选中旧版。旧正式版、Beta 和 RC 会分别标记。
+
 - 「接受 Beta 测试版本」默认关闭。勾选后重新检查，才会列出 GitHub 标记为 Pre-release 的版本；没有已发布的 Beta 时不会虚构选项。勾选或取消本身不会安装、降级或切换版本。
 - 选择 Beta 或较旧版本时，确认框会显示风险或回退提示。允许手动从 Beta 回到稳定版，仍先备份再替换。回退到 1.4.0 等旧版本时，更新界面也会恢复为该版本的样式。
 - 1.4.1 本身是正式版，Windows 原生输入后端仍待实机验证，这与以后是否接受 Beta 更新是两个独立事项。
+
+发布 Beta 时，使用完整版本标签（例如 `v1.4.2-beta.1`），上传同版本安装包 `Node_Console_1.4.2-beta.1.zip`，并在 GitHub Release 勾选 `Pre-release` 后发布。包内 `ADDON_VERSION` 需为 `1.4.2-beta.1`，`bl_info` 为 `(1, 4, 2)`；macOS 原生输入资源也需按完整版本重新构建。RC 同理使用 `v1.4.2-rc.1`。仅改标题或上传源码 ZIP 不会被识别为可安装的测试版。用户手动检查更新时会按 Beta 开关筛选，不会后台自动安装。
 
 - 需要在 Blender 的 `偏好设置 > 系统` 中允许在线访问；不会替你修改该权限。
 - 下载在独立进程中执行，不占用搜索界面的主线程。网络失败、损坏的包或不兼容的 Blender 版本会提示错误，不替换插件。
@@ -107,6 +115,8 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 - 节点支持、译名处理与配色修正的版本变化见[变更日志](CHANGELOG.md)。
 
 ## English
+
+This branch contains the Beta build. [1.4.1 remains the latest stable release](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.1). To test this build, enable Accept Beta Versions in Preferences, check releases, select `1.4.2-beta.1` and confirm installation.
 
 Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. Version 1.4.0 introduced native macOS Chinese input. Version 1.4.1 adds release selection with optional Beta updates and a Windows system IME backend pending live Windows validation. The layout stays compact and is inspired by Blender native search.
 
@@ -130,7 +140,7 @@ English and direct pinyin search, such as `instance`, `shili` and `zaobo`, remai
 
 ### Install
 
-1. Choose the `Node_Console_1.4.1.zip` installation package.
+1. Choose `Node_Console_1.4.2-beta.1.zip` to test this build, or `Node_Console_1.4.1.zip` for the stable release.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -161,6 +171,8 @@ Three subtle horizontal lines at the right of each shortcut row indicate draggin
 
 Snippet Nodes are stored in an external JSON library file. Preferences provide controls for the save shortcut, the library path, and the expandable list of saved snippets.
 
+`None` in a result means no category was assigned, not an error. Choose Category in the save dialog; internal links provide an inferred terminal-node category, while unlinked selections default to None. Existing entries can currently be viewed or deleted in Preferences; editing a saved category directly is not yet supported.
+
 ### Preferences
 
 - `Search Result Display`: choose English, 中文, English / 中文, or 中文 / English.
@@ -179,9 +191,13 @@ Snippet Nodes are stored in an external JSON library file. Preferences provide c
 
 Click Check for Updates in Node Console Preferences to list [GitHub releases](https://github.com/AnthemZhou/Node_Console/releases) with installation packages. Checking only reads metadata. Choose a version, click Install Selected Version, then confirm before anything is downloaded or replaced. The current version is marked and cannot be reinstalled. There are no startup network checks.
 
+The compact row contains the current add-on version, Beta checkbox, release selector, refresh and install icons with tooltips. Narrow windows wrap controls. Only the three newest eligible releases by version number are listed. Default to an upgrade or the installed version, never a downgrade; label older stable releases, Beta and RC separately.
+
 - Accept Beta Versions is off by default. Enable it and check again to include published GitHub prereleases. No Beta options are fabricated when none exist; changing the checkbox never installs or downgrades the add-on.
 - Beta installation and downgrade dialogs display appropriate warnings. Returning from Beta to a stable release is supported with backup and confirmation. Downgrading to an older version such as 1.4.0 also restores that version's older update interface.
 - 1.4.1 is a stable release, but its Windows native IME backend still needs live Windows validation. This limitation is separate from opting into future Beta releases.
+
+To publish a Beta, tag it as e.g. `v1.4.2-beta.1`, attach `Node_Console_1.4.2-beta.1.zip`, mark the GitHub release as `Pre-release` and publish it. The package must use `ADDON_VERSION = "1.4.2-beta.1"` and `bl_info["version"] = (1, 4, 2)`; rebuild the macOS input resource for the full version too. Use `v1.4.2-rc.1` for RC builds. A title-only change or source ZIP is insufficient. The user's Beta setting filters manual update checks; it never triggers automatic installation.
 
 - Enable Allow Online Access in Blender Preferences > System. The add-on never changes this permission for you.
 - A separate process handles downloads. Network errors, invalid packages and incompatible Blender versions leave the installation untouched.

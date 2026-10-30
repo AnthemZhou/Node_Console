@@ -28,6 +28,7 @@ MAX_DOWNLOAD = 32 * 1024 * 1024
 MAX_UNPACKED = 128 * 1024 * 1024
 TIMEOUT = 20
 JOB_TIMEOUT = 180
+RELEASE_CHOICE_LIMIT = 3
 PROTECTED_NAMES = {"node_console_settings.json", "node_console_snippets.json"}
 REQUIRED_FILES = {"__init__.py", "node_registry.py", "node_search_aliases.json",
                   "node_console_builtin_cache.json"}
@@ -149,6 +150,12 @@ def release_record(data, allow_beta=False):
             "release_id": data.get("id"), "asset_id": asset.get("id")}
 
 
+def recent_releases(releases, allow_beta=False):
+    eligible = {item["tag"]: item for item in releases if allow_beta or not item["prerelease"]}
+    return sorted(eligible.values(), key=lambda item: version_key(item["version"]),
+                  reverse=True)[:RELEASE_CHOICE_LIMIT]
+
+
 def list_releases(allow_beta=False):
     releases = {}
     # Bounded pagination, sorted by version rather than GitHub publication time.
@@ -164,7 +171,7 @@ def list_releases(allow_beta=False):
             releases[item["tag"]] = item
         if len(records) < 100:
             break
-    return sorted(releases.values(), key=lambda item: version_key(item["version"]), reverse=True)[:30]
+    return recent_releases(releases.values(), allow_beta)
 
 
 def _write_result(directory, result):

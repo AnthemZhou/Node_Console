@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.2-beta.1
+
+### 中文
+
+- 搜索框中的「组合点 / Snippet Node」模式标签文字改为与「搜索节点…」占位文字相同的灰度；保留标签底色、输入文字和结果类目颜色。
+- 精简更新栏为一行，使用带提示的刷新/安装图标；窄窗口自动分行。
+- 版本列表仅保留当前通道最近三个可安装版本。没有更新时默认显示当前版本，即使远端列表暂时缺少当前版本也不会默认降级；旧正式版、Beta、RC 明确区分。
+- 本版为 GitHub Pre-release。需在 1.4.1 中勾选「接受 Beta 测试版本」后检查并确认安装；1.4.1 仍是最新正式版。Windows IME 仍待 Windows Blender 实机验证。
+
+### English
+
+- Match the Snippet Node mode badge text to the search placeholder gray, preserving its background, entered text and result category colors.
+- Compact the updater into a single row with refresh/install tooltips and a narrow-window fallback. Keep only the three newest eligible releases, never default to a downgrade, and distinguish installed/older stable/Beta/RC versions.
+- Publish as a GitHub prerelease, requiring Beta opt-in and confirmation in 1.4.1. Keep 1.4.1 as the latest stable release. Windows IME still needs live Windows Blender validation.
+
 ## 1.4.1
 
 ### 中文

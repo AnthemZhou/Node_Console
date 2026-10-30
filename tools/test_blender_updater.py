@@ -106,6 +106,26 @@ def main():
             assert (target / "__init__.py").read_bytes() == (ROOT / "__init__.py").read_bytes()
             passed.append("check only lists versions; beta hidden by default; no files installed")
 
+            old = release("1.4.0")
+            nc._set_update_releases([old])
+            assert prefs.update_release == "NONE" and nc._selected_update_release() is None
+            assert not bpy.ops.node_console.install_release.poll()
+            items = nc._update_release_items(prefs, None)
+            assert current_version in items[0][1] and items[0][0] == "NONE"
+            assert nc._ui_text("Older Stable") in items[1][1]
+            nc._set_update_releases([old, release("1.3.4"), release("1.3.3")])
+            assert len(nc._update_release_items(prefs, None)) == 3
+            assert prefs.update_release == "NONE"
+            nc._set_update_releases([old, stable])
+            assert prefs.update_release == stable["tag"]
+            assert not bpy.ops.node_console.install_release.poll()
+            assert nc._ui_text("Installed") in nc._release_label(stable)
+            assert "RC" in nc._release_label(release(next_version + "-rc.1", True))
+            nc._set_update_releases([old, stable, newer, release("1.3.4"), release("1.3.3")])
+            assert len(nc.UPDATE_RELEASES) == 3
+            assert prefs.update_release == newer["tag"]
+            passed.append("latest three choices, current/old/RC labels, and stale results never default to downgrade")
+
             fields = {key: value for key, value in nc.NODECONSOLE_OT_InstallRelease.__dict__.items()
                       if not key.startswith("__")}
             Install = type("InstallHarness", (), fields)
@@ -131,6 +151,8 @@ def main():
                 save.assert_called_once()
             assert prefs.update_release == "NONE" and not nc.UPDATE_RELEASES
             nc._set_update_releases([beta, newer, stable])
+            assert nc._selected_update_release() == newer
+            prefs.update_release = beta["tag"]
             assert nc._selected_update_release() == beta
             beta_op = Install()
             beta_op.report = Mock()

@@ -96,8 +96,18 @@ class UpdateTests(unittest.TestCase):
         with patch.object(updater, "_fetch", side_effect=pages) as fetch:
             found = updater.list_releases()
             self.assertEqual(found[0]["version"], "1.4.0")
-            self.assertEqual(len(found), 30)
+            self.assertEqual([item["version"] for item in found], ["1.4.0", "1.1.99", "1.1.98"])
             self.assertIn("page=2", fetch.call_args_list[1].args[0])
+
+    def test_three_choices_after_channel_filter_and_version_sort(self):
+        data = [release("1.4.0"), dict(release("1.4.2-beta.1"), prerelease=True),
+                release("1.4.1"), release("1.3.4"), release("1.3.3"),
+                dict(release("1.4.2-rc.1"), prerelease=True)]
+        with patch.object(updater, "_fetch", return_value=json.dumps(data).encode()):
+            self.assertEqual([item["version"] for item in updater.list_releases()],
+                             ["1.4.1", "1.4.0", "1.3.4"])
+            self.assertEqual([item["version"] for item in updater.list_releases(True)],
+                             ["1.4.2-rc.1", "1.4.2-beta.1", "1.4.1"])
 
     def test_check_worker_never_downloads_or_changes_installed_files(self):
         jobdir = self.root / "check"
