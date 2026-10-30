@@ -119,6 +119,91 @@ def main():
         passed.append('invalid snippet schema value does not crash search')
     passed.append('snippet favorites, rename and deletion remain live')
 
+    with tempfile.TemporaryDirectory(prefix='nc-prepared-index-') as directory:
+        nc._settings_path = lambda: Path(directory) / 'settings.json'
+        nc._preferences = lambda: None
+        nc._clear_search_caches()
+        sentinel = {'favorites': ['keep'], 'shortcuts': ['keep'], 'usage': {'keep': 42}}
+        nc._write_settings(sentinel)
+        for tree_id in ('GeometryNodeTree', 'ShaderNodeTree', 'CompositorNodeTree'):
+            tree = bpy.data.node_groups.new('Prepared index test', tree_id)
+            context = SimpleNamespace(space_data=SimpleNamespace(edit_tree=tree, tree_type=tree_id))
+            try:
+                nc._rebuild_search_entries(context)
+                expected = [asdict(entry) for entry in nc.NODE_SEARCH_ENTRIES]
+                assert len({entry['identifier'] for entry in expected}) == len(expected)
+                queries = {'join', 'math', 'line', 'add', 'noise', 'shili', '\u5b9e\u4f8b'}
+                for entry in nc.NODE_SEARCH_ENTRIES:
+                    queries.update((entry.english, entry.chinese, entry.leaf_pinyin_initials))
+                ranking = {q: [e.identifier for e in nc._search_entries(q, set())] for q in queries}
+                nc._clear_search_caches()
+                with patch.object(nc, '_iter_menu_entries', side_effect=AssertionError('menu reparsed')),\
+                        patch.object(nc.node_registry, 'catalog', side_effect=AssertionError('catalog reloaded')):
+                    nc._rebuild_search_entries(context)
+                    assert [asdict(entry) for entry in nc.NODE_SEARCH_ENTRIES] == expected
+                    for query in queries:
+                        assert [e.identifier for e in nc._search_entries(query, set())] == ranking[query]
+                    with patch.object(nc, '_entry_from_cache', side_effect=AssertionError('entries reconstructed')):
+                        nc._rebuild_search_entries(context)
+                with patch.object(nc, '_display_mode', return_value='CHINESE'):
+                    nc._rebuild_search_entries(context)
+                    assert all(e.label == nc._entry_label(e.english, e.chinese) for e in nc.NODE_SEARCH_ENTRIES)
+                passed.append(tree_id + ': cold/disk/memory names, colors, pinyin and ranking match')
+            finally:
+                bpy.data.node_groups.remove(tree)
+        assert all(nc._load_settings()[key] == value for key, value in sentinel.items())
+        passed.append('index rebuild preserves favorites, shortcuts and usage')
+
+        tree = bpy.data.node_groups.new('Cache invalidation', 'GeometryNodeTree')
+        context = SimpleNamespace(space_data=SimpleNamespace(edit_tree=tree, tree_type=tree.bl_idname))
+        class NCCacheRegisteredNode(bpy.types.Node):
+            bl_idname = 'NCCacheRegisteredNode'
+            bl_label = 'Cache Registration Probe'
+
+            @classmethod
+            def poll(cls, node_tree):
+                return node_tree.bl_idname == 'GeometryNodeTree'
+
+        try:
+            nc._rebuild_search_entries(context)
+            before = nc._search_index_cache_key(context)
+            bpy.utils.register_class(NCCacheRegisteredNode)
+            try:
+                assert nc._search_index_cache_key(context) != before
+                with patch.object(nc, '_iter_menu_entries', wraps=nc._iter_menu_entries) as menus:
+                    nc._rebuild_search_entries(context)
+                    assert menus.called
+            finally:
+                bpy.utils.unregister_class(NCCacheRegisteredNode)
+            nc._rebuild_search_entries(context)
+            assert nc._search_index_cache_key(context) == before
+            assert not any(e.node_type == 'NCCacheRegisteredNode' for e in nc.NODE_SEARCH_ENTRIES)
+            passed.append('registering and disabling another node add-on invalidates the index')
+
+            asset = Path(directory) / 'available.blend'
+            asset.touch()
+            nc._save_asset_index([dict(path=str(asset), name='Cache Asset', tree_type=tree.bl_idname)])
+            nc._rebuild_search_entries(context)
+            assert any(e.asset_name == 'Cache Asset' for e in nc.NODE_SEARCH_ENTRIES)
+            asset.unlink()
+            nc._rebuild_search_entries(context)
+            assert not any(e.asset_name == 'Cache Asset' for e in nc.NODE_SEARCH_ENTRIES)
+            passed.append('missing external asset files are filtered even with a prepared index')
+            nc._write_settings(sentinel)
+            nc._rebuild_search_entries(context)
+            assert nc._load_search_index_cache(context)
+            passed.append('externally removed index is rebuilt and persisted again')
+            data = nc._load_settings()
+            key = nc._search_index_cache_key(context)
+            data['search_index_cache'][key] = [entry for entry in data['search_index_cache'][key]
+                                               if entry['node_type'] != 'ShaderNodeMath']
+            nc._write_settings(data)
+            nc._rebuild_search_entries(context)
+            assert any(e.node_type == 'ShaderNodeMath' for e in nc.NODE_SEARCH_ENTRIES)
+            passed.append('incomplete persisted index cannot hide available node types')
+        finally:
+            bpy.data.node_groups.remove(tree)
+
     report = {'version': bpy.app.version_string, 'passed': passed}
     if '--' in sys.argv:
         Path(sys.argv[sys.argv.index('--') + 1]).write_text(

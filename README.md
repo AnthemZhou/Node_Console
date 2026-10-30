@@ -4,17 +4,17 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.4.3-blue)
+![Version](https://img.shields.io/badge/version-1.4.4-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.4.3（正式版）
+版本：1.4.4（正式版）
 
 ## 中文
 
-当前为 [1.4.3 正式版](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.3)，无需勾选 Beta 即可检查并安装。
+当前为 [1.4.4 正式版](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.4)，无需勾选 Beta 即可检查并安装。
 
 Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。macOS 和 Windows 可在同一自绘框中使用系统输入法输入中文；Windows 中文上屏与检索已获用户实机确认。界面保持紧凑，视觉风格接近 Blender 原生搜索。
 
@@ -38,7 +38,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 ### 安装
 
-1. 下载正式版安装包 `Node_Console_1.4.3.zip`。
+1. 下载正式版安装包 `Node_Console_1.4.4.zip`。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -93,7 +93,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 - 「接受 Beta 测试版本」默认关闭。勾选后重新检查，才会列出 GitHub 标记为 Pre-release 的版本；没有已发布的 Beta 时不会虚构选项。勾选或取消本身不会安装、降级或切换版本。
 - 选择 Beta 或较旧版本时，确认框会显示风险或回退提示。允许手动从 Beta 回到稳定版，仍先备份再替换。回退到 1.4.0 等旧版本时，更新界面也会恢复为该版本的样式。
-- 1.4.3 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
+- 1.4.4 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
 
 发布 Beta 时，使用完整版本标签（例如 `v1.4.2-beta.1`），上传同版本安装包 `Node_Console_1.4.2-beta.1.zip`，并在 GitHub Release 勾选 `Pre-release` 后发布。包内 `ADDON_VERSION` 需为 `1.4.2-beta.1`，`bl_info` 为 `(1, 4, 2)`；macOS 原生输入资源也需按完整版本重新构建。RC 同理使用 `v1.4.2-rc.1`。仅改标题或上传源码 ZIP 不会被识别为可安装的测试版。用户手动检查更新时会按 Beta 开关筛选，不会后台自动安装。
 
@@ -108,6 +108,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 - Node Console 以普通 Blender 插件 zip 格式发布。
 - 插件不会修改 Blender 的语言文件、节点标签或接口标签。
+- 1.4.4 将 macOS 搜索框中的纯英文和未上屏拼音下移两个缩放单位，中文位置不变；复用已完成的节点索引，减少打开搜索框时的准备开销。更新后会重建一次缓存，之后的首次与重复打开可复用缓存；收藏、使用权重和设置保持不变。测试方法与耗时见[性能验证](PERFORMANCE.md)。
 - 1.2.2 优化搜索匹配与索引准备。Blender 5.2.2 实测搜索核心中位耗时降低约 54%–59%，两版 Blender 共 10,935 次查询对照保持原有结果与排序；详见[性能验证](PERFORMANCE.md)。
 - 1.2.1 修正着色器、脚本、部分几何与输出节点及 Split Toning 资产的颜色标签；Shader 类组合点也使用专用着色器绿色。节点仍按当前版本的真实注册类型与创建能力生成索引，不会在旧版中展示不存在的新节点。
 - 中文名优先读取当前 Blender 的官方简中词典及翻译上下文，不切换你的界面语言；人工搜索别名单独记录。英文、中文、全拼和完整首字母均可检索，例如 `Mesh Bevel`、`网格倒角`、`wanggedaojiao`、`wgdj`。
@@ -116,7 +117,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 ## English
 
-The current release is [1.4.3 stable](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.3). Beta opt-in is not required to check for or install it.
+The current release is [1.4.4 stable](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.4). Beta opt-in is not required to check for or install it.
 
 Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. macOS and Windows support system Chinese input in the existing custom field; a user has confirmed committed Chinese and node search on Windows. The layout stays compact and is inspired by Blender native search.
 
@@ -140,7 +141,7 @@ English and direct pinyin search, such as `instance`, `shili` and `zaobo`, remai
 
 ### Install
 
-1. Download the stable installation package `Node_Console_1.4.3.zip`.
+1. Download the stable installation package `Node_Console_1.4.4.zip`.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -195,7 +196,7 @@ The updater contains the current version, Beta checkbox, widened release selecto
 
 - Accept Beta Versions is off by default. Enable it and check again to include published GitHub prereleases. No Beta options are fabricated when none exist; changing the checkbox never installs or downgrades the add-on.
 - Beta installation and downgrade dialogs display appropriate warnings. Returning from Beta to a stable release is supported with backup and confirmation. Downgrading to an older version such as 1.4.0 also restores that version's older update interface.
-- 1.4.3 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
+- 1.4.4 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
 
 To publish a Beta, tag it as e.g. `v1.4.2-beta.1`, attach `Node_Console_1.4.2-beta.1.zip`, mark the GitHub release as `Pre-release` and publish it. The package must use `ADDON_VERSION = "1.4.2-beta.1"` and `bl_info["version"] = (1, 4, 2)`; rebuild the macOS input resource for the full version too. Use `v1.4.2-rc.1` for RC builds. A title-only change or source ZIP is insufficient. The user's Beta setting filters manual update checks; it never triggers automatic installation.
 
@@ -210,6 +211,7 @@ To publish a Beta, tag it as e.g. `v1.4.2-beta.1`, attach `Node_Console_1.4.2-be
 
 - Node Console is released as a regular Blender add-on zip.
 - The add-on does not modify Blender language files, node labels, or socket labels.
+- Version 1.4.4 lowers macOS Latin input and Latin preedit by two scaled units without moving Chinese text. Completed indexes are reused to reduce search-opening preparation. The cache rebuilds once after updating; subsequent first and repeated opens can reuse it. Favorites, usage weights and settings remain intact. See [performance results](PERFORMANCE.md) for measurements and scope.
 - Version 1.2.2 optimizes matching and index preparation. Median core search time is approximately 54%–59% lower on Blender 5.2.2; 10,935 queries across two Blender versions retain identical results and ordering. See [performance results](PERFORMANCE.md).
 - Version 1.2.1 corrects shader, script, selected geometry/output and Split Toning asset colors. Shader snippets now use dedicated shader green. Runtime registration and native creation checks still determine which nodes are offered in each editor.
 - Chinese labels use the running Blender's official Simplified Chinese catalog and translation contexts without changing the UI language. Editorial search aliases are stored separately. Search supports English, Chinese, full pinyin and complete initials, such as `Mesh Bevel`, `网格倒角`, `wanggedaojiao` and `wgdj`.

@@ -28,13 +28,13 @@ for _child_name in ("addon_reloader", "addon_updater", "node_registry", "json_st
 from . import addon_reloader, addon_updater, node_registry, json_store
 
 
-ADDON_VERSION = "1.4.3"
+ADDON_VERSION = "1.4.4"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 4, 3),
+    "version": (1, 4, 4),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -56,8 +56,9 @@ IME_UNINSTALL = None
 PREFERENCES_LOADING = False
 MENU_ENTRY_CACHE: dict[str, list[tuple[str, str, str, str, tuple[tuple[str, str], ...]]]] = {}
 SEARCH_INDEX_MEMORY_KEYS: set[str] = set()
+SEARCH_INDEX_ENTRY_CACHE: dict[tuple, tuple] = {}
 TRANSLATION_LABEL_CACHE: dict[tuple[str, str | None], str] = {}
-NODE_CLASS_CACHE: list[type] | None = None
+NODE_CLASS_CACHE: tuple[tuple, list[type]] | None = None
 BACKGROUND_ASSET_INDEX = None
 UPDATE_JOB = None
 UPDATE_STATUS = {"state": "idle"}
@@ -414,6 +415,8 @@ def _clear_search_caches():
     MENU_ENTRY_CACHE.clear()
     TRANSLATION_LABEL_CACHE.clear()
     SNIPPET_SEARCH_CACHE.clear()
+    SEARCH_INDEX_ENTRY_CACHE.clear()
+    SEARCH_INDEX_MEMORY_KEYS.clear()
     NODE_CLASS_CACHE = None
     node_registry.clear()
     _normalize.cache_clear()
@@ -2175,6 +2178,8 @@ def _entry_to_cache(entry: NodeSearchEntry) -> dict:
         "category": entry.category,
         "english": entry.english,
         "chinese": entry.chinese,
+        "label": entry.label,
+        "search_text": entry.search_text,
         "description": entry.description,
         "kind": entry.kind,
         "node_type": entry.node_type,
@@ -2213,17 +2218,30 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
             asset_path=str(item.get("asset_path", "")),
             asset_name=str(item.get("asset_name", "")),
             asset_color_tag=str(item.get("asset_color_tag", "")),
-            search_text=_make_search_text(english, chinese, label, node_type),
+            search_text=(item["search_text"] if item.get("label") == label
+                         and isinstance(item.get("search_text"), str)
+                         else _make_search_text(english, chinese, label, node_type)),
             settings=settings,
             aliases=tuple(item.get("aliases", ())),
+            leaf_pinyin_compact=str(item.get("leaf_pinyin_compact", "")),
+            leaf_pinyin_boundaries=tuple(item.get("leaf_pinyin_boundaries", ())),
+            leaf_pinyin_initials=str(item.get("leaf_pinyin_initials", "")),
+            root_pinyin_compact=str(item.get("root_pinyin_compact", "")),
+            root_pinyin_boundaries=tuple(item.get("root_pinyin_boundaries", ())),
+            root_pinyin_initials=str(item.get("root_pinyin_initials", "")),
         )
     except Exception:
         return None
 
 
-def _load_search_index_cache(context) -> list[NodeSearchEntry] | None:
-    cache_key = _search_index_cache_key(context)
+def _load_search_index_cache(context, cache_key=None) -> list[NodeSearchEntry] | None:
+    cache_key = cache_key or _search_index_cache_key(context)
+    revision = SETTINGS_STORE.refresh(_settings_path())
+    memory_key = (cache_key, _display_mode(), revision)
+    if memory_key in SEARCH_INDEX_ENTRY_CACHE:
+        return list(SEARCH_INDEX_ENTRY_CACHE[memory_key])
     raw_entries = _settings_value(("search_index_cache", cache_key))
+    SEARCH_INDEX_MEMORY_KEYS.discard(cache_key)
     if not isinstance(raw_entries, list):
         return None
 
@@ -2233,7 +2251,12 @@ def _load_search_index_cache(context) -> list[NodeSearchEntry] | None:
             entry = _entry_from_cache(item)
             if entry:
                 entries.append(entry)
+    if len(entries) != len(raw_entries):
+        return None
     if entries:
+        if len(SEARCH_INDEX_ENTRY_CACHE) >= 12:
+            SEARCH_INDEX_ENTRY_CACHE.pop(next(iter(SEARCH_INDEX_ENTRY_CACHE)))
+        SEARCH_INDEX_ENTRY_CACHE[memory_key] = tuple(entries)
         SEARCH_INDEX_MEMORY_KEYS.add(cache_key)
     return entries or None
 
@@ -2265,8 +2288,8 @@ def _load_bundled_search_index(context) -> list[NodeSearchEntry] | None:
     return entries or None
 
 
-def _save_search_index_cache(context, entries: list[NodeSearchEntry]):
-    cache_key = _search_index_cache_key(context)
+def _save_search_index_cache(context, entries: list[NodeSearchEntry], cache_key=None):
+    cache_key = cache_key or _search_index_cache_key(context)
     if cache_key in SEARCH_INDEX_MEMORY_KEYS:
         return
 
@@ -3338,13 +3361,14 @@ def _is_redundant_mix_color_entry(entry: NodeSearchEntry) -> bool:
 def _iter_node_classes():
     global NODE_CLASS_CACHE
 
-    if NODE_CLASS_CACHE is not None:
-        yield from NODE_CLASS_CACHE
+    signature = node_registry.registration_signature()
+    if NODE_CLASS_CACHE is not None and NODE_CLASS_CACHE[0] == signature:
+        yield from NODE_CLASS_CACHE[1]
         return
 
     classes = list(node_registry.node_classes())
 
-    NODE_CLASS_CACHE = classes
+    NODE_CLASS_CACHE = (signature, classes)
     yield from classes
 
 
@@ -3842,10 +3866,11 @@ def _rebuild_search_entries(context):
     NODE_ENTRY_BY_ID.clear()
     tree = getattr(context.space_data, "edit_tree", None)
     capabilities = node_registry.inventory(tree) if tree else {}
+    cache_key = _search_index_cache_key(context)
 
     seen_keys = set()
 
-    def add_entry(entry: NodeSearchEntry):
+    def add_entry(entry: NodeSearchEntry, prepared=False):
         if not _entry_available_in_current_blender(context, entry, capabilities):
             return
         if _is_redundant_mix_color_entry(entry):
@@ -3856,7 +3881,7 @@ def _rebuild_search_entries(context):
             if previous and (previous.asset_path, previous.asset_name) != (entry.asset_path, entry.asset_name):
                 identity = json.dumps([entry.asset_path, entry.asset_name], ensure_ascii=False)
                 entry = replace(entry, identifier=entry.identifier + "_" + hashlib.sha256(identity.encode()).hexdigest()[:16])
-        if entry.kind == "NODE":
+        if entry.kind == "NODE" and not prepared:
             # Older seed/cache entries predate these color categories. Read
             # their real tag without replacing historical variant/zone colors.
             native_tag = capabilities[entry.node_type]['color_tag']
@@ -4095,7 +4120,22 @@ def _rebuild_search_entries(context):
             if cached_entries is None:
                 cacheable_entries.append(entry)
 
-    cached_entries = _load_search_index_cache(context) or _load_bundled_search_index(context)
+    cached_entries = _load_search_index_cache(context, cache_key)
+    if cached_entries is not None and not capabilities.keys() <= {
+        entry.node_type for entry in cached_entries if entry.kind == "NODE"
+    }:
+        # A partial/corrupt snapshot must not hide otherwise available nodes.
+        cached_entries = None
+        SEARCH_INDEX_MEMORY_KEYS.discard(cache_key)
+    if cached_entries is not None:
+        # This is the complete index for this build, registered node types and
+        # asset snapshot. Live project groups are deliberately not persisted.
+        for entry in cached_entries:
+            add_entry(entry, prepared=True)
+        add_local_groups()
+        return
+
+    cached_entries = _load_bundled_search_index(context)
     if cached_entries is not None:
         for entry in cached_entries:
             add_entry(entry)
@@ -4110,7 +4150,7 @@ def _rebuild_search_entries(context):
 
     add_zone_entries()
     add_asset_library_entries(cacheable_entries)
-    _save_search_index_cache(context, list(NODE_SEARCH_ENTRIES))
+    _save_search_index_cache(context, list(NODE_SEARCH_ENTRIES), cache_key)
     add_local_groups()
 
 
@@ -5551,11 +5591,13 @@ class ENS_AddNodeByEnglishSearch(Operator):
         query_size = _scaled(13, scale)
         search_text_y = search_y + (search_height - _scaled(13, scale)) / 2 + _scaled(1, scale)
         input_text_y = search_text_y + 2 * _scaled(1, scale)
-        # CJK glyphs need a lower baseline than the existing Latin input text.
+        # Preserve CJK calibration independently of platform-specific Latin alignment.
         if re.search(r"[\u3400-\u9fff\uf900-\ufaff\U00020000-\U000323af]", display_query):
             input_text_y -= _scaled(2, scale)
             if sys.platform == "win32":
                 input_text_y += 2 * _scaled(1, scale)
+        elif sys.platform == "darwin" and display_query.isascii():
+            input_text_y -= 2 * _scaled(1, scale)
         placeholder_text_y = search_text_y
         _draw_text("⌕", x + padding + _scaled(10, scale), search_text_y - _scaled(1, scale), _scaled(20, scale), MUTED_TEXT_COLOR)
         query_x = x + padding + _scaled(32, scale)
@@ -6999,6 +7041,7 @@ def unregister():
     BACKGROUND_ASSET_INDEX = None
     KEYMAP_REFRESH_PENDING = False
     ACTIVE_SNIPPET_DIALOG = None
+    _clear_search_caches()
     if ACTIVE_CONSOLE_OPERATOR is not None:
         ACTIVE_CONSOLE_OPERATOR._finish(bpy.context, {"CANCELLED"})
     unregister_keymap()

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import bpy
 
-INDEX_SCHEMA = 2
+INDEX_SCHEMA = 3
 _catalog = None
 _inventories = {}
 _aliases = None
@@ -23,7 +23,11 @@ def runtime_signature(tree):
                      for p in experimental.bl_rna.properties if p.type == 'BOOLEAN')
     flags = tuple((name, getattr(tree, name, False))
                   for name in ('is_tool', 'is_modifier', 'is_strip_modifier'))
-    return (tuple(bpy.app.version), bpy.app.build_hash.decode(), tree.bl_idname, flags, switches)
+    # Include RNA registrations so enabling another node add-on invalidates
+    # the prepared index. Enumerating names is much cheaper than resolving types.
+    registered = registration_signature()
+    return (tuple(bpy.app.version), bpy.app.build_hash.decode(), tree.bl_idname,
+            flags, switches, registered)
 
 
 def node_classes():
@@ -33,6 +37,26 @@ def node_classes():
         if isinstance(cls, type) and issubclass(cls, bpy.types.Node):
             if cls.bl_rna.identifier == name and bpy.types.Node.bl_rna_get_subclass(name):
                 yield cls
+
+
+def _python_node_classes():
+    # Python registrations need not appear in dir(bpy.types).
+    pending = list(bpy.types.Node.__subclasses__())
+    seen = set()
+    while pending:
+        cls = pending.pop()
+        if cls in seen:
+            continue
+        seen.add(cls)
+        pending.extend(cls.__subclasses__())
+        identifier = getattr(cls, 'bl_idname', '')
+        if identifier and bpy.types.Node.bl_rna_get_subclass_py(identifier) is cls:
+            yield cls
+
+
+def registration_signature():
+    return (tuple(dir(bpy.types)),
+            tuple(sorted(cls.bl_rna.identifier for cls in _python_node_classes())))
 
 
 def inventory(tree):

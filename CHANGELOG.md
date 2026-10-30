@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.4
+
+### 中文
+
+- macOS 搜索框中的纯英文及未上屏拼音下移两个缩放单位；中文、中英混排、占位文字及 Windows 位置保持不变。
+- 复用已完成的节点索引及拼音数据，减少重启后的首次搜索准备耗时和后续重复开窗开销；继续检查节点可用性、资产文件及当前项目的节点组变化，不重置收藏、快捷节点或使用权重。
+- 索引缓存升级后会重建一次；后续已缓存的打开流程不再重复解析菜单和翻译，也不重复加入 Zone 条目。实测范围为 macOS 上的 Blender 5.2.2 LTS 和 5.1.2。
+
+### English
+
+- Lower macOS Latin input and Latin IME preedit by two scaled units, preserving CJK/mixed input, placeholders and Windows positioning.
+- Reuse completed node indexes and pinyin data to reduce first-open preparation and repeated-open overhead, retaining capability checks, live asset/group validation and existing user data.
+- Rebuild the index once after the cache upgrade; subsequent cached opens skip menu/translation reconstruction and do not duplicate zone entries. Tested on macOS with Blender 5.2.2 LTS and 5.1.2.
+
 ## 1.4.3
 
 ### 中文

@@ -288,6 +288,7 @@ def main():
                     ('\u566a\u6ce2', '', True), ('Noise \u566a\u6ce2', '', True),
                     ('\u96c6\u5408', 'xin xi', True), ('', '\u96c6\u5408', True),
                     ('\U00020000', '', True),
+                    ('\u3002', '', False),
                 ):
                     op = console()
                     op._anchor_x, op._anchor_y = 450, 400
@@ -305,9 +306,11 @@ def main():
                         correction = -nc._scaled(2, scale) if cjk else 0
                         if cjk and platform == 'win32':
                             correction += 2 * nc._scaled(1, scale)
+                        elif not cjk and platform == 'darwin' and (query + preedit).isascii():
+                            correction -= 2 * nc._scaled(1, scale)
                         expected_y = original_y + nc._scaled(1, scale) + correction if query or preedit else original_y - nc._scaled(1, scale)
                         assert text_call.args[2] == expected_y
-        passed.append('Windows CJK input raised one scaled pixel; Latin/macOS/Linux baselines unchanged in both modes')
+        passed.append('macOS Latin and preedit lowered two units; CJK, other platforms and placeholders unchanged')
 
         for language in ('en_US', 'zh_HANS'):
             with patch.object(nc, '_ui_text', side_effect=lambda text:

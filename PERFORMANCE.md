@@ -1,5 +1,40 @@
 # Node Console Performance
 
+## 1.4.4 First-Open Index Preparation
+
+Date: 2026-10-30. Baseline: published 1.4.3 ZIP (SHA256
+`8418ab734cdf93ecc9e90c6e436c2adfab5f9de4902661f2083deae9ec59d389`).
+Tests run in isolated macOS arm64 Blender processes with synthetic settings,
+not personal preferences.
+
+| Editor | 5.2.2 first open with disk cache, before / after | 5.1.2 before / after | 5.2.2 subsequent opens, before / after |
+| --- | ---: | ---: | ---: |
+| Geometry | 222.94 / 26.72 ms | 190.68 / 22.89 ms | 21.40 / 4.10 ms |
+| Shader | 141.18 / 18.84 ms | 134.26 / 16.67 ms | 12.13 / 3.89 ms |
+| Compositor | 139.78 / 19.34 ms | 117.06 / 16.27 ms | 12.40 / 4.07 ms |
+
+First-open medians cover three fresh module instances with a persisted index;
+subsequent medians cover five calls. These time index preparation only, not native
+IME activation, GPU drawing, input-to-display latency or a cold filesystem.
+First installation/cache invalidation still needs a full build: about 297 ms
+for Geometry, 158 ms for Shader and 146 ms for Compositor on 5.2.2 in this run.
+This one-off path is not claimed as a speedup. Index schema 3 rebuilds the old
+cache once, without resetting favorites, shortcuts, usage weights or settings.
+
+The completed index now preserves translated search text and pinyin profiles.
+Matching disk snapshots skip menu parsing and translation reconstruction; bounded
+memory snapshots also reuse entry objects. Keys include the Blender build,
+editor, experimental switches, tree flags, RNA registrations and asset snapshot.
+Display mode and settings revisions invalidate in-memory entries. Project node
+groups remain live; missing asset files are still filtered, and node capability
+probes are retained. Reopening no longer appends duplicate zone entries.
+
+Reproduce with `tools/benchmark_open.py -- report.json [baseline_package_dir]`
+in a factory-startup Blender process with pre-created isolated config, scripts,
+datafiles and temporary directories. Tests cover disk/memory/cold parity,
+Chinese/pinyin/initials, display modes, live group edits, third-party node
+registration, deleted assets, incomplete caches, native node creation and colors.
+
 ## 1.4.3 Shortcut Saves
 
 Date: 2026-10-30. Baseline: published 1.4.2 ZIP. The real Add Shortcut modal
