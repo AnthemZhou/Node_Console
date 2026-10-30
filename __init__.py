@@ -6028,15 +6028,17 @@ def _draw_update_header(layout, context):
     scale = getattr(system, "ui_scale", _resolution_scale())
     font_size = _scaled(13, scale)
     region_width = getattr(getattr(context, "region", None), "width", 800)
-    available_width = max(120 * scale, region_width - 160 * scale)
+    available_width = max(120 * scale, region_width - 48 * scale)
     prefs = _preferences()
-    # Reserve fixed space for every state, including the optional backup button.
-    selector_width = 1.3 * max(145 * scale, available_width / 2 - 194 * scale)
-    controls_width = (selector_width + 214 * scale) if prefs is not None else 114 * scale
+    # Anchor Beta to the second column; only the selector absorbs extra width.
+    beta_width = 50 * scale
+    buttons_width = 94 * scale
+    minimum_controls_width = beta_width + 145 * scale + buttons_width
     title_width = _text_width(title, font_size)
-    single_row = title_width + 120 * scale + controls_width + 24 * scale <= available_width
+    single_row = max(title_width + 120 * scale, minimum_controls_width) + 12 * scale <= available_width / 2
+    controls_width = available_width / 2 if single_row else available_width
 
-    header = layout.split(factor=1 - controls_width / available_width, align=False) if single_row else layout.row()
+    header = layout.split(factor=0.5, align=False) if single_row else layout.row()
     identity = header.row(align=True)
     name = identity.row(align=True)
     name.ui_units_x = (title_width + 12 * scale) / (20 * scale)
@@ -6046,15 +6048,22 @@ def _draw_update_header(layout, context):
     status.enabled = state == "error"
     status.label(text=status_text)
     actions = (header if single_row else layout).row(align=True)
-    controls = actions.row(align=True)
-    controls.enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
+    controls_enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
     if prefs is not None:
-        beta = controls.row(align=True)
-        beta.ui_units_x = 4.0
+        fields = actions.split(factor=min(0.4, beta_width / controls_width), align=True)
+        beta = fields.row(align=True)
+        beta.alignment = "LEFT"
+        beta.enabled = controls_enabled
         beta.prop(prefs, "accept_beta_updates", text="Beta")
-        selector = controls.row(align=True)
-        selector.ui_units_x = selector_width / (20 * scale)
+        remaining = fields.split(factor=max(0.25, 1 - buttons_width / max(scale, controls_width - beta_width)), align=True)
+        selector = remaining.row(align=True)
+        selector.enabled = controls_enabled
         selector.prop(prefs, "update_release", text="")
+        buttons = remaining.row(align=True)
+    else:
+        buttons = actions
+    controls = buttons.row(align=True)
+    controls.enabled = controls_enabled
     refresh = controls.row(align=True)
     refresh.ui_units_x = 4.5
     refresh.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text=_ui_text("Update"), icon="FILE_REFRESH")
@@ -6062,7 +6071,7 @@ def _draw_update_header(layout, context):
         install = controls.row(align=True)
         install.operator_context = "INVOKE_DEFAULT"
         install.operator(NODECONSOLE_OT_InstallRelease.bl_idname, text="", icon="IMPORT")
-    backup = actions.row(align=True)
+    backup = buttons.row(align=True)
     backup.ui_units_x = 1.2
     backup.enabled = bool(UPDATE_STATUS.get("backup"))
     backup.operator("wm.path_open", text="", icon="FILE_FOLDER").filepath = UPDATE_STATUS.get("backup", "")

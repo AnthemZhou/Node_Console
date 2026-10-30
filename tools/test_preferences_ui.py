@@ -101,13 +101,15 @@ def main():
                     assert {item.props['name'] for item in props} == {'accept_beta_updates', 'update_release'}
                     beta = next(item for item in props if item.props['name'] == 'accept_beta_updates')
                     assert beta.props['text'] == 'Beta'
-                    assert beta.parent.ui_units_x == 4
+                    assert beta.parent.alignment == 'LEFT'
                     if layout.children[0].kind == 'split':
-                        assert 0 < layout.children[0].props['factor'] < 0.5
+                        assert layout.children[0].props['factor'] == 0.5
                         assert beta.parent.children[0] is beta
                     selector = next(item for item in props if item.props['name'] == 'update_release')
-                    previous_width = max(145 * scale, max(120 * scale, (width - 160) * scale) / 2 - 194 * scale)
-                    assert abs(selector.parent.ui_units_x * 20 * scale - previous_width * 1.3) < 0.001
+                    controls_width = (width - 48) * scale / (2 if width == 1200 else 1)
+                    assert abs(beta.parent.parent.props['factor'] * controls_width - 50 * scale) < 0.001
+                    selector_width = selector.parent.parent.props['factor'] * (controls_width - 50 * scale)
+                    assert abs(selector_width - (controls_width - 144 * scale)) < 0.001
                     backup = next(item for item in buttons if item.props['name'] == 'wm.path_open')
                     assert backup.filepath == state.get('backup', '')
                     assert backup.parent.enabled == bool(state.get('backup'))
