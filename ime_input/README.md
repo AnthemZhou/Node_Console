@@ -31,10 +31,13 @@ backend failures, never typed queries, marked text or keystrokes.
 Real macOS Pinyin composition, candidate confirmation, Esc cancellation,
 reopening and Enter/mouse node placement were manually confirmed on Apple
 Silicon with Blender 5.2.2 LTS. Unit tests are separate and do not prove actual
-input-method behavior. Intel Mac, Windows/Linux native composition, third-party
-IMEs, long-preedit editing and multi-monitor candidate placement are not certified.
+input-method behavior. A user confirmed committed Chinese and node search on
+Windows; OS, Blender and IME versions were not recorded. Intel Mac, Linux native
+composition, third-party IMEs, long-preedit editing and multi-monitor candidate
+placement are not certified. Complete Windows focus/placement coverage and the
+1.4.2 one-scaled-pixel CJK baseline adjustment still need live visual validation.
 
-## Windows backend (1.4.1, pending live validation)
+## Windows backend (introduced in 1.4.1)
 
 `windows.py` uses Python's bundled ctypes with system `user32`, `imm32` and
 `comctl32`, loaded from System32. There is no extra DLL download or compiler.
@@ -66,7 +69,7 @@ py tools/run_windows_ime_lab.py --blender "C:\Program Files\Blender Foundation\B
 
 This creates a disposable Geometry Nodes scene and private configuration; closing
 that Blender process removes the temporary config. No input text is logged.
-Verify these manually before release:
+Use this checklist for broader live validation:
 
 - Shift+A, Microsoft Pinyin `jihe`, choose `集合`, then Enter to create/place.
 - During `zaobo` composition Esc cancels only preedit; the next Esc closes search.

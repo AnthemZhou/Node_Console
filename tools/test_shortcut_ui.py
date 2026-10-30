@@ -143,6 +143,25 @@ def main():
             assert not op._results and search.call_count == 1
         passed.append('keyboard selection, queries and snippets retain separate behavior')
 
+        for snippet in (False, True):
+            op = console()
+            op._snippet_mode = snippet
+            op._results = [nc.NodeSearchEntry('snippet:test' if snippet else 'a', 'Geometry', 'Test', 'Test', '', '',
+                                             'SNIPPET' if snippet else 'NODE')]
+            op._panel_rect = (20, 120, 400, 80)
+            menu_context = SimpleNamespace(region=SimpleNamespace(width=900, height=600))
+            op._open_context_menu(event('RIGHTMOUSE', x=300, y=140), 0, menu_context)
+            x, y, width, height = op._context_menu_rect
+            assert op._context_menu_items()[-1][0] == ('REMOVE_SNIPPET' if snippet else 'SHORTCUT')
+            assert x == 300 and y + height == 140
+            assert y < op._panel_rect[1] and op._context_menu_hover is None
+            for mx, my in ((895, 595), (895, 5), (5, 5)):
+                op._open_context_menu(event('RIGHTMOUSE', x=mx, y=my), 0, menu_context)
+                x, y, width, height = op._context_menu_rect
+                assert 0 <= x <= 900 - width and 0 <= y <= 600 - height
+                assert op._context_menu_hover is None
+        passed.append('node/snippet context menus anchor at pointer and clamp only to editor edges')
+
         op = console()
         op._context_menu_kind = 'SHORTCUT'
         op._context_menu_shortcut = 'b'
@@ -265,7 +284,7 @@ def main():
         for scale in (1.0, 1.5, 2.0):
             for snippet in (False, True):
                 for query, preedit, cjk in (
-                    ('noise', '', False), ('', 'zao bo', False),
+                    ('', '', False), ('noise', '', False), ('', 'zao bo', False),
                     ('\u566a\u6ce2', '', True), ('Noise \u566a\u6ce2', '', True),
                     ('\u96c6\u5408', 'xin xi', True), ('', '\u96c6\u5408', True),
                     ('\U00020000', '', True),
@@ -273,16 +292,22 @@ def main():
                     op = console()
                     op._anchor_x, op._anchor_y = 450, 400
                     op._query, op._ime_preedit, op._snippet_mode = query, preedit, snippet
-                    with contextlib.ExitStack() as stack:
-                        stack.enter_context(patch.object(nc, '_ui_scale', return_value=scale))
-                        mocks = {name: stack.enter_context(patch.object(nc, name)) for name in draw_names}
-                        op._draw_callback(draw_context)
-                    field_y, field_height = op._search_field_rect[1], op._search_field_rect[3]
-                    original_y = field_y + (field_height - nc._scaled(13, scale)) / 2 + 2 * nc._scaled(1, scale)
-                    text_call = next(call for call in mocks['_draw_text'].call_args_list
-                                     if call.args[0] == query + preedit)
-                    assert text_call.args[2] == original_y + nc._scaled(1, scale) - (nc._scaled(2, scale) if cjk else 0)
-        passed.append('input raised one scaled pixel in both modes while retaining CJK baseline correction')
+                    for platform in ('darwin', 'win32', 'linux'):
+                        with contextlib.ExitStack() as stack:
+                            stack.enter_context(patch.object(nc, 'sys', SimpleNamespace(platform=platform)))
+                            stack.enter_context(patch.object(nc, '_ui_scale', return_value=scale))
+                            mocks = {name: stack.enter_context(patch.object(nc, name)) for name in draw_names}
+                            op._draw_callback(draw_context)
+                        field_y, field_height = op._search_field_rect[1], op._search_field_rect[3]
+                        original_y = field_y + (field_height - nc._scaled(13, scale)) / 2 + 2 * nc._scaled(1, scale)
+                        text_call = next(call for call in mocks['_draw_text'].call_args_list
+                                         if call.args[0] == (query + preedit or nc._ui_text('Search nodes...')))
+                        correction = -nc._scaled(2, scale) if cjk else 0
+                        if cjk and platform == 'win32':
+                            correction += nc._scaled(1, scale)
+                        expected_y = original_y + nc._scaled(1, scale) + correction if query or preedit else original_y - nc._scaled(1, scale)
+                        assert text_call.args[2] == expected_y
+        passed.append('Windows CJK input raised one scaled pixel; Latin/macOS/Linux baselines unchanged in both modes')
 
         for language in ('en_US', 'zh_HANS'):
             with patch.object(nc, '_ui_text', side_effect=lambda text:

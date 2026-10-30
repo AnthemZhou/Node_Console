@@ -114,7 +114,7 @@ def main():
             assert current_version in items[0][1] and items[0][0] == "NONE"
             assert nc._ui_text("Older Stable") in items[1][1]
             nc._set_update_releases([old, release("1.3.4"), release("1.3.3")])
-            assert len(nc._update_release_items(prefs, None)) == 3
+            assert len(nc._update_release_items(prefs, None)) == 4
             assert prefs.update_release == "NONE"
             nc._set_update_releases([old, stable])
             assert prefs.update_release == stable["tag"]

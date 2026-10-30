@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.4.2
+
+### 中文
+
+- Windows 搜索框内中文及中英混排文字上移一个缩放像素，包含中文组词预览；英文、占位文字及 macOS 原有位置保持不变。
+- 用户已在 Windows 实机确认中文输入上屏和节点检索；其他输入法、显示缩放、多显示器及完整焦点/放置流程仍需进一步验证。本版作为正式版发布，无需勾选 Beta 即可检查更新。
+- 收录 Beta 版的灰度组合点模式标签、最近三个版本选择和防止默认降级的更新逻辑。
+- 修正组合点保存窗口的类目过滤：按当前编辑器列出适用类目，滤镜、遮罩、扭曲仅出现在合成节点中；补全颜色、矢量、纹理、工具等适用项。不改写已有组合点的分类。
+- 节点与组合点的右键菜单从鼠标位置展开，仅在触及编辑器边缘时调整位置，不再受搜索面板高度限制。
+- 更新栏与下方双列布局对齐，扩大带文字的更新按钮；窄窗口自动分行。
+- 版本下拉菜单新增「其他版本」，打开 GitHub Releases 页面，同时保留当前选择，不自动下载或安装。
+
+### English
+
+- Raise Windows CJK/mixed input and CJK preedit by one scaled pixel; leave Latin input, placeholders and macOS positioning unchanged.
+- A user confirmed Chinese input and node search on a real Windows system. Broader IME, DPI, multi-monitor, focus and placement coverage remains unverified. Publish as stable, available without Beta opt-in.
+- Include the Beta's gray Snippet Node badge, latest-three version selector and protection against defaulting to a downgrade.
+- Filter snippet categories by the originating node editor, keeping Filter/Mask/Distort compositor-only and restoring applicable shared categories without rewriting saved snippets.
+- Anchor node/snippet context menus at the pointer, constrained only by editor edges rather than search-panel height.
+- Align the updater with the two-column preferences layout and enlarge its labeled update button, retaining a narrow-window fallback.
+- Add Other Versions to the version selector, opening GitHub Releases without changing the selected installation target or starting a download.
+
 ## 1.4.2-beta.1
 
 ### 中文

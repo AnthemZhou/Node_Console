@@ -28,7 +28,7 @@ for _child_name in ("addon_reloader", "addon_updater", "node_registry", "json_st
 from . import addon_reloader, addon_updater, node_registry, json_store
 
 
-ADDON_VERSION = "1.4.2-beta.1"
+ADDON_VERSION = "1.4.2"
 
 
 bl_info = {
@@ -63,6 +63,9 @@ UPDATE_JOB = None
 UPDATE_STATUS = {"state": "idle"}
 UPDATE_RELEASES = []
 UPDATE_ENUM_CACHE = {}
+UPDATE_LAST_SELECTION = "NONE"
+OTHER_RELEASES = "OTHER_VERSIONS"
+RELEASES_PAGE_URL = "https://github.com/AnthemZhou/Node_Console/releases"
 GPU_UNIFORM_SHADER = None
 TEXT_WIDTH_CACHE: dict[tuple[str, int], float] = {}
 SETTINGS_STORE = json_store.JsonStore()
@@ -175,6 +178,7 @@ SNIPPET_CATEGORY_ITEMS_BY_TREE = {
         ("INPUT", "Input", "Input-style snippets"),
         ("OUTPUT", "Output", "Output-style snippets"),
         ("GEOMETRY", "Geometry", "Geometry snippets"),
+        ("COLOR", "Color", "Color snippets"),
         ("CONVERTER", "Converter", "Converter snippets"),
         ("VECTOR", "Vector", "Vector snippets"),
         ("TEXTURE", "Texture", "Texture snippets"),
@@ -190,6 +194,7 @@ SNIPPET_CATEGORY_ITEMS_BY_TREE = {
         ("CONVERTER", "Converter", "Converter snippets"),
         ("VECTOR", "Vector", "Vector snippets"),
         ("TEXTURE", "Texture", "Texture snippets"),
+        ("UTILITY", "Utility", "Utility snippets"),
         ("LAYOUT", "Layout", "Layout snippets"),
         ("NONE", "None", "Uncategorized snippets"),
     ),
@@ -198,6 +203,8 @@ SNIPPET_CATEGORY_ITEMS_BY_TREE = {
         ("OUTPUT", "Output", "Output-style snippets"),
         ("COLOR", "Color", "Color snippets"),
         ("CONVERTER", "Converter", "Converter snippets"),
+        ("VECTOR", "Vector", "Vector snippets"),
+        ("TEXTURE", "Texture", "Texture snippets"),
         ("FILTER", "Filter", "Filter snippets"),
         ("MASK", "Mask", "Mask snippets"),
         ("DISTORT", "Distort", "Distort snippets"),
@@ -206,6 +213,14 @@ SNIPPET_CATEGORY_ITEMS_BY_TREE = {
         ("NONE", "None", "Uncategorized snippets"),
     ),
 }
+
+# Keep enum strings alive and numeric values stable across filtered editor lists.
+SNIPPET_CATEGORY_ENUM_ITEMS = tuple((*item, index) for index, item in enumerate(SNIPPET_CATEGORY_ITEMS))
+SNIPPET_CATEGORY_ENUM_BY_TREE = {
+    tree_id: tuple(item for item in SNIPPET_CATEGORY_ENUM_ITEMS if item[0] in {row[0] for row in rows})
+    for tree_id, rows in SNIPPET_CATEGORY_ITEMS_BY_TREE.items()
+}
+SNIPPET_CATEGORY_NONE = (SNIPPET_CATEGORY_ENUM_ITEMS[-1],)
 
 UI_TEXT_ZH = {
     "Search nodes...": "搜索节点...",
@@ -281,6 +296,8 @@ UI_TEXT_ZH = {
     "Accept Beta Versions": "接受 Beta 测试版本",
     "Install Selected Version": "安装所选版本",
     "Available Versions": "可用版本",
+    "Other Versions": "其他版本",
+    "Open all releases on GitHub": "在 GitHub 查看所有版本",
     "Stable": "稳定版",
     "Current": "当前版本",
     "Installed": "当前",
@@ -1655,7 +1672,7 @@ def _current_edit_tree(context):
 
 
 def _snippet_category_items_for_tree(tree_id: str):
-    return SNIPPET_CATEGORY_ITEMS_BY_TREE.get(tree_id, SNIPPET_CATEGORY_ITEMS)
+    return SNIPPET_CATEGORY_ENUM_BY_TREE.get(tree_id, SNIPPET_CATEGORY_NONE)
 
 
 def _coerce_snippet_category_for_tree(category: str, tree_id: str) -> str:
@@ -1664,8 +1681,11 @@ def _coerce_snippet_category_for_tree(category: str, tree_id: str) -> str:
     return category if category in valid else "NONE"
 
 
-def _snippet_category_enum_items(_self, context):
-    return _snippet_category_items_for_tree(_node_tree_id(context))
+def _snippet_category_enum_items(self, context):
+    tree_id = getattr(self, "category_tree_id", "")
+    if not tree_id:
+        tree_id = getattr(_current_edit_tree(context), "bl_idname", "")
+    return _snippet_category_items_for_tree(tree_id)
 
 
 def _jsonable_value(value):
@@ -5049,7 +5069,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._scroll_offset = 0
         self._refresh_results()
 
-    def _open_context_menu(self, event, index):
+    def _open_context_menu(self, event, index, context=None):
         if index is None:
             return
 
@@ -5062,12 +5082,12 @@ class ENS_AddNodeByEnglishSearch(Operator):
         x = event.mouse_region_x
         menu_height = row_height * len(self._context_menu_items())
         y = event.mouse_region_y - menu_height
-        if self._panel_rect[2]:
-            panel_x, panel_y, panel_width, panel_height = self._panel_rect
-            x = min(max(panel_x, x), panel_x + panel_width - width)
-            y = min(max(panel_y, y), panel_y + panel_height - menu_height)
+        region = getattr(context, "region", None)
+        if region is not None:
+            x = max(0, min(x, region.width - width))
+            y = max(0, min(y, region.height - menu_height))
         self._context_menu_rect = (x, y, width, menu_height)
-        self._context_menu_hover = self._context_menu_action_from_mouse(event)
+        self._context_menu_hover = None
 
     def _open_shortcut_context_menu(self, event, identifier: str):
         self._context_menu_index = None
@@ -5411,7 +5431,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
                     self._selected_index = index
                     self._hovered_result_index = index
                     self._keyboard_selection_active = False
-                self._open_context_menu(event, index)
+                self._open_context_menu(event, index, context)
             elif event.type == "MOUSEMOVE":
                 if self._context_menu_kind is not None:
                     self._update_context_menu_hover(event)
@@ -5522,6 +5542,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
         # CJK glyphs need a lower baseline than the existing Latin input text.
         if re.search(r"[\u3400-\u9fff\uf900-\ufaff\U00020000-\U000323af]", display_query):
             input_text_y -= _scaled(2, scale)
+            if sys.platform == "win32":
+                input_text_y += _scaled(1, scale)
         placeholder_text_y = search_text_y
         _draw_text("⌕", x + padding + _scaled(10, scale), search_text_y - _scaled(1, scale), _scaled(20, scale), MUTED_TEXT_COLOR)
         query_x = x + padding + _scaled(32, scale)
@@ -5768,9 +5790,10 @@ class NODECONSOLE_OT_SaveSnippet(Operator):
     category: EnumProperty(
         name="Snippet Node Category",
         description="Category color and grouping for this snippet",
-        items=SNIPPET_CATEGORY_ITEMS,
-        default="NONE",
+        items=_snippet_category_enum_items,
+        default=SNIPPET_CATEGORY_NONE[0][3],
     )
+    category_tree_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     @classmethod
     def poll(cls, context):
@@ -5790,7 +5813,8 @@ class NODECONSOLE_OT_SaveSnippet(Operator):
         if len(frames) == 1 and not _top_units_need_outer_frame(top_units):
             label = getattr(frames[0], "label", "") or getattr(frames[0], "name", "")
             self.snippet_name = label if label != "Frame" else ""
-        tree_id = _node_tree_id(context)
+        tree_id = tree.bl_idname
+        self.category_tree_id = tree_id
         self.category = _coerce_snippet_category_for_tree(_snippet_default_category(tree, included, tree_id), tree_id)
         ACTIVE_SNIPPET_DIALOG = self
         try:
@@ -6009,15 +6033,13 @@ def _draw_update_header(layout, context):
     selected = _selected_update_release() if prefs is not None else None
     selection_label = _release_label(selected) if selected else _installed_release_label()
     selector_width = max(145 * scale, _text_width(selection_label, font_size) + 40 * scale)
-    controls_width = (selector_width + 130 * scale) if prefs is not None else 30 * scale
+    controls_width = (selector_width + 170 * scale) if prefs is not None else 80 * scale
     if UPDATE_STATUS.get("backup"):
         controls_width += 24 * scale
     title_width = _text_width(title, font_size)
-    single_row = title_width + controls_width + 24 * scale <= available_width
-    inline_status = bool(status_text) and single_row and state != "error" and (
-        title_width + controls_width + _text_width(status_text, font_size) + 40 * scale <= available_width)
+    single_row = max(title_width, controls_width) + 12 * scale <= available_width / 2
 
-    header = layout.row()
+    header = layout.split(factor=0.5, align=False) if single_row else layout.row()
     header.label(text=title)
     if prefs is not None and not single_row:
         beta = header.row(align=True)
@@ -6025,30 +6047,23 @@ def _draw_update_header(layout, context):
         beta.enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
         beta.prop(prefs, "accept_beta_updates", text="Beta")
     actions = (header if single_row else layout).row(align=True)
-    actions.alignment = "RIGHT"
-    if inline_status:
-        status = actions.row(align=True)
-        status.alignment = "RIGHT"
-        status.enabled = False
-        status.label(text=status_text, icon="CHECKMARK" if state in {"current", "updated"} else "NONE")
-        actions.separator()
     controls = actions.row(align=True)
-    controls.alignment = "RIGHT"
     controls.enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
     if prefs is not None:
         if single_row:
             controls.prop(prefs, "accept_beta_updates", text="Beta")
         selector = controls.row(align=True)
-        selector.ui_units_x = selector_width / (20 * scale)
         selector.prop(prefs, "update_release", text="")
-    controls.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text="", icon="FILE_REFRESH")
+    refresh = controls.row(align=True)
+    refresh.ui_units_x = 4.5
+    refresh.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text=_ui_text("Update"), icon="FILE_REFRESH")
     if prefs is not None:
         install = controls.row(align=True)
         install.operator_context = "INVOKE_DEFAULT"
         install.operator(NODECONSOLE_OT_InstallRelease.bl_idname, text="", icon="IMPORT")
     if UPDATE_STATUS.get("backup"):
         actions.operator("wm.path_open", text="", icon="FILE_FOLDER").filepath = UPDATE_STATUS["backup"]
-    if status_text and not inline_status:
+    if status_text:
         status = layout.column(align=True)
         status.alert = state == "error"
         status.enabled = state == "error"
@@ -6067,7 +6082,7 @@ def _release_label(release):
     elif addon_updater.version_key(release["version"]) < addon_updater.version_key(ADDON_VERSION):
         channel = _ui_text("Older Stable")
     if release["version"] == ADDON_VERSION:
-        channel = _ui_text("Installed") + (f", {channel}" if release["prerelease"] else "")
+        channel = _ui_text("Installed")
     return f"{release['version']} ({channel})"
 
 
@@ -6087,9 +6102,22 @@ def _update_release_items(_self, _context):
         items = items[:addon_updater.RELEASE_CHOICE_LIMIT - 1]
         items.insert(0, ("NONE", _installed_release_label(),
                         _ui_text("Currently installed; check for updates to refresh the list"), 0))
+    items.append((OTHER_RELEASES, _ui_text("Other Versions"), _ui_text("Open all releases on GitHub"), 1000))
     # Dynamic enum strings must outlive Blender's RNA references.
     key = tuple(items)
     return UPDATE_ENUM_CACHE.setdefault(key, items)
+
+
+def _update_release_changed(self, context):
+    global UPDATE_LAST_SELECTION
+    if self.update_release != OTHER_RELEASES:
+        UPDATE_LAST_SELECTION = self.update_release
+        return
+    choices = [item[0] for item in _update_release_items(self, context) if item[0] != OTHER_RELEASES]
+    # This menu command is not an install target; retain the user's selection.
+    self.update_release = UPDATE_LAST_SELECTION if UPDATE_LAST_SELECTION in choices else choices[0]
+    if not PREFERENCES_LOADING:
+        bpy.ops.wm.url_open(url=RELEASES_PAGE_URL)
 
 
 def _selected_update_release():
@@ -6289,7 +6317,8 @@ class ENS_AddonPreferences(AddonPreferences):
     accept_beta_updates: BoolProperty(name="Accept Beta Versions",
         description="Include published prereleases when checking for updates; does not install automatically",
         default=False, update=_beta_updates_changed)
-    update_release: EnumProperty(name="Available Versions", items=_update_release_items, options={"SKIP_SAVE"})
+    update_release: EnumProperty(name="Available Versions", items=_update_release_items,
+                                 update=_update_release_changed, options={"SKIP_SAVE"})
 
     display_mode: EnumProperty(
         name="Search Result Display",
@@ -6449,9 +6478,9 @@ class ENS_AddonPreferences(AddonPreferences):
     def draw(self, _context):
         layout = self.layout
 
-        _draw_update_header(layout, _context)
-
         settings_box = layout.box()
+        _draw_update_header(settings_box, _context)
+        settings_box.separator()
         private_links = settings_box.split(factor=0.5, align=False)
         private_left = private_links.column(align=True)
         private_right = private_links.column(align=True)

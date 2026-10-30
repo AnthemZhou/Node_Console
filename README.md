@@ -4,24 +4,24 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.4.2--beta.1-orange)
+![Version](https://img.shields.io/badge/version-1.4.2-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.4.2-beta.1（预发布版）；最新正式版：1.4.1
+版本：1.4.2（正式版）
 
 ## 中文
 
-本分支为 Beta 测试版。日常使用可继续选择 [1.4.1 正式版](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.1)；要测试本版，请在偏好设置勾选「接受 Beta 测试版本」，检查后选择 `1.4.2-beta.1` 并确认安装。
+当前为 [1.4.2 正式版](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.2)，无需勾选 Beta 即可检查并安装。
 
-Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。1.4.0 已加入 macOS 原生中文输入；1.4.1 在同一自绘框中接入 Windows 系统输入法，Windows 部分尚待实机确认。界面保持紧凑，视觉风格接近 Blender 原生搜索。
+Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。macOS 和 Windows 可在同一自绘框中使用系统输入法输入中文；Windows 中文上屏与检索已获用户实机确认。界面保持紧凑，视觉风格接近 Blender 原生搜索。
 
 ### 功能
 
 - 支持英文和拼音搜索，并提供中英双语结果显示，不依赖当前 Blender 界面语言。
-- macOS 支持在现有搜索框内直接输入中文，使用系统输入法组词、选择候选词和确认上屏。
+- macOS 和 Windows 支持在现有搜索框内使用系统中文输入法；平台验证范围见下文。
 - 支持收藏节点和快捷节点。favorite 和 shortcut 可以自定义搜索权重，也方便快速创建常用节点。
 - 在搜索结果左侧显示节点类型颜色标签，方便根据节点类型快速检索。
 - 支持手动刷新节点库，可以检索并分类 Asset Library 和外部导入的节点组。
@@ -30,15 +30,15 @@ Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器�
 
 ### 中文输入与拼音搜索
 
-macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「集合」「噪波」等节点名。组词中的拼音带下划线，候选词由系统输入法提供；确认中文上屏后更新搜索结果。组词时的回车只确认候选词，不会误创建节点；Esc 先取消组词，搜索框仍然保留。中文上屏后，再按回车即可创建并放置节点。
+macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「集合」「噪波」等节点名。组词中的拼音带下划线，候选词由系统输入法提供；确认中文上屏后更新搜索结果。组词时的回车只确认候选词，不会误创建节点；Esc 先取消组词，搜索框仍然保留。中文上屏后，再按回车即可创建并放置节点。
 
 英文和拼音检索仍然保留，例如 `instance`、`shili`、`zaobo`，不必先转换成中文。也支持粘贴中文节点名后检索（macOS：`Command + V`，Windows/Linux：`Ctrl + V`）。
 
-**平台范围：** macOS 原生中文输入实测于 Apple Silicon Mac、Blender 5.2.2 LTS 和系统拼音输入法。安装包同时包含 arm64/x86_64 原生模块，但 Intel Mac、第三方输入法及多显示器候选框位置尚未实机验证。1.4.1 的 Windows 实现直接调用系统 IMM/Win32 接口，不需要安装 Python 模块；代码和模拟事件测试已覆盖，但尚未在 Windows Blender 中验证微软拼音、候选框、焦点与节点放置，暂不视为验证完成。Linux 仍使用原有英文、拼音和中文粘贴方式。组合点命名继续使用 Blender 原生输入框。原生后端初始化失败时保留原有搜索输入方式。Windows 实测方法见 [输入模块说明](ime_input/README.md)。
+**平台范围：** macOS 原生中文输入实测于 Apple Silicon Mac、Blender 5.2.2 LTS 和系统拼音输入法。安装包同时包含 arm64/x86_64 原生模块，但 Intel Mac、第三方输入法及多显示器候选框位置尚未实机验证。Windows 实现直接调用系统 IMM/Win32 接口，不需要安装 Python 模块；用户已确认真实 Windows 环境下中文上屏及节点检索。具体系统、Blender 和输入法版本未记录，其他输入法、显示缩放、多显示器及完整焦点/放置流程仍待进一步实测；本地模拟测试不等同于 Windows 实机覆盖。1.4.2 将 Windows 中文上移一个缩放像素，此次位置微调仍需用户视觉复核。Linux 仍使用原有英文、拼音和中文粘贴方式。组合点命名继续使用 Blender 原生输入框。原生后端初始化失败时保留原有搜索输入方式。Windows 实测方法见 [输入模块说明](ime_input/README.md)。
 
 ### 安装
 
-1. 测试本版请选择 `Node_Console_1.4.2-beta.1.zip`；正式版请选择 `Node_Console_1.4.1.zip`。
+1. 下载正式版安装包 `Node_Console_1.4.2.zip`。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -47,7 +47,7 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 
 1. 打开任意节点编辑器。
 2. 按 `Shift + A`。
-3. 输入英文或拼音，例如 `instance`、`shili`、`noise`、`zaobo`；macOS 也可用中文输入法输入节点名。
+3. 输入英文或拼音，例如 `instance`、`shili`、`noise`、`zaobo`；macOS 和 Windows 也可用中文输入法输入节点名。
 4. 按 Enter，或点击搜索结果来创建节点。
 5. 移动鼠标决定节点位置。
 6. 点击鼠标左键，或按 Enter 落位。
@@ -69,7 +69,7 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 
 组合点保存在外部 JSON 库文件中。你可以在偏好设置中调整保存组合点的快捷键、查看组合点库路径，并展开组合点列表进行管理。
 
-结果中的「无」表示保存时未指定类目（`None`），并非错误。保存弹窗的「类目」下拉框可手动选择；有内部连线时按末端节点推断默认类目，没有连线时默认「无」。目前已保存条目只能在偏好设置中查看或删除，尚无直接编辑类目的入口。
+结果中的「无」表示保存时未指定类目（`None`），并非错误。保存弹窗的「类目」下拉框按当前编辑器列出适用类目，可手动选择；有内部连线时按末端节点推断默认类目，没有连线时默认「无」。滤镜、遮罩和扭曲仅出现在合成编辑器的类目列表中。目前已保存条目只能在偏好设置中查看或删除，尚无直接编辑类目的入口；升级不会改写已有分类。
 
 ### 偏好设置
 
@@ -87,13 +87,13 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 
 ### 在线更新
 
-在 Node Console 偏好设置中点击「检查更新」，读取 [GitHub Releases](https://github.com/AnthemZhou/Node_Console/releases) 中有安装包的版本；这一步不会下载安装包或替换插件。在版本下拉框选择目标，再点击「安装所选版本」，确认后才下载、校验并替换。当前安装版本会标注，不能重复安装同一版本；不会在启动 Blender 时自动联网。
+在 Node Console 偏好设置中点击「更新」，读取 [GitHub Releases](https://github.com/AnthemZhou/Node_Console/releases) 中有安装包的版本；这一步不会下载安装包或替换插件。在版本下拉框选择目标，再点击下载图标（安装所选版本），确认后才下载、校验并替换。当前安装版本会标注，不能重复安装同一版本；不会在启动 Blender 时自动联网。
 
-更新栏使用单行布局：当前插件版本、Beta 开关、版本选择、刷新图标及安装图标；鼠标悬停在图标上可查看操作名称。窄窗口自动分行。列表按版本号仅保留当前更新通道最近三个可安装版本；默认选择更新版本，没有更新则停留在当前版本，不自动选中旧版。旧正式版、Beta 和 RC 会分别标记。
+更新栏对齐下方双列布局，包含当前插件版本、Beta 开关、版本选择、加宽的更新按钮及安装图标；鼠标悬停在图标上可查看操作名称。窄窗口自动分行。列表按版本号保留当前通道最近三个版本选项，另有「其他版本」入口可打开 GitHub Releases 手动选择下载，不会改变当前选择或开始安装。默认选择更新版本，没有更新则停留在当前版本，不自动选中旧版。旧正式版、Beta 和 RC 会分别标记。
 
 - 「接受 Beta 测试版本」默认关闭。勾选后重新检查，才会列出 GitHub 标记为 Pre-release 的版本；没有已发布的 Beta 时不会虚构选项。勾选或取消本身不会安装、降级或切换版本。
 - 选择 Beta 或较旧版本时，确认框会显示风险或回退提示。允许手动从 Beta 回到稳定版，仍先备份再替换。回退到 1.4.0 等旧版本时，更新界面也会恢复为该版本的样式。
-- 1.4.1 本身是正式版，Windows 原生输入后端仍待实机验证，这与以后是否接受 Beta 更新是两个独立事项。
+- 1.4.2 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
 
 发布 Beta 时，使用完整版本标签（例如 `v1.4.2-beta.1`），上传同版本安装包 `Node_Console_1.4.2-beta.1.zip`，并在 GitHub Release 勾选 `Pre-release` 后发布。包内 `ADDON_VERSION` 需为 `1.4.2-beta.1`，`bl_info` 为 `(1, 4, 2)`；macOS 原生输入资源也需按完整版本重新构建。RC 同理使用 `v1.4.2-rc.1`。仅改标题或上传源码 ZIP 不会被识别为可安装的测试版。用户手动检查更新时会按 Beta 开关筛选，不会后台自动安装。
 
@@ -116,14 +116,14 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 
 ## English
 
-This branch contains the Beta build. [1.4.1 remains the latest stable release](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.1). To test this build, enable Accept Beta Versions in Preferences, check releases, select `1.4.2-beta.1` and confirm installation.
+The current release is [1.4.2 stable](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.2). Beta opt-in is not required to check for or install it.
 
-Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. Version 1.4.0 introduced native macOS Chinese input. Version 1.4.1 adds release selection with optional Beta updates and a Windows system IME backend pending live Windows validation. The layout stays compact and is inspired by Blender native search.
+Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. macOS and Windows support system Chinese input in the existing custom field; a user has confirmed committed Chinese and node search on Windows. The layout stays compact and is inspired by Blender native search.
 
 ### Features
 
 - Supports English and pinyin search with bilingual result display, independent of the current Blender interface language.
-- Supports native Chinese composition, system candidates and committed text in the existing search field on macOS.
+- Supports system Chinese input in the existing search field on macOS and Windows; see platform verification scope below.
 - Supports favorite nodes and shortcut nodes. Favorites and shortcuts can customize search weighting and make common nodes faster to create.
 - Shows colored node type tags on the left side of search results, making nodes easier to scan by type.
 - Supports manual node library refresh, including searchable and categorized Asset Library or externally imported node groups.
@@ -132,15 +132,15 @@ Node Console is a custom node search add-on for Blender. It replaces the default
 
 ### Chinese Input and Pinyin Search
 
-On macOS, press `Shift + A` and use your system Chinese input method to type node names such as `集合` or `噪波`. Composition text is underlined; the system provides candidates. Committed Chinese updates search results. Enter during composition confirms a candidate without creating a node; Escape cancels composition while keeping search open. After committing Chinese, press Enter again to create and place the node.
+On macOS and Windows, press `Shift + A` and use your system Chinese input method to type node names such as `集合` or `噪波`. Composition text is underlined; the system provides candidates. Committed Chinese updates search results. Enter during composition confirms a candidate without creating a node; Escape cancels composition while keeping search open. After committing Chinese, press Enter again to create and place the node.
 
 English and direct pinyin search, such as `instance`, `shili` and `zaobo`, remain available. Chinese can still be pasted (`Command + V` on macOS, `Ctrl + V` on Windows/Linux).
 
-**Platform scope:** Native macOS Chinese input was tested on Apple Silicon, Blender 5.2.2 LTS and macOS Pinyin. The package includes arm64/x86_64 code, but Intel Macs, third-party IMEs and multi-monitor candidate positioning have not been tested live. The 1.4.1 Windows backend uses system IMM/Win32 APIs without external Python dependencies. Its simulated message tests do not prove real Microsoft Pinyin composition, candidates, focus or node placement; live Windows Blender validation remains required. Linux retains its original input path. Snippet naming still uses Blender's native text field. Failed backend initialization retains standard search input. See the [input module notes](ime_input/README.md) for Windows testing.
+**Platform scope:** Native macOS Chinese input was tested on Apple Silicon, Blender 5.2.2 LTS and macOS Pinyin. The package includes arm64/x86_64 code, but Intel Macs, third-party IMEs and multi-monitor candidate positioning have not been tested live. The Windows backend uses system IMM/Win32 APIs without external Python dependencies. A user confirmed committed Chinese and node search on real Windows hardware; OS, Blender and IME versions were not recorded. Other IMEs, DPI settings, multiple monitors and complete focus/placement workflows still need live testing. Local simulations are not equivalent to Windows hardware coverage. The one-scaled-pixel Windows adjustment in 1.4.2 still needs visual confirmation on Windows. Linux retains its original input path. Snippet naming still uses Blender's native text field. Failed backend initialization retains standard search input. See the [input module notes](ime_input/README.md) for Windows testing.
 
 ### Install
 
-1. Choose `Node_Console_1.4.2-beta.1.zip` to test this build, or `Node_Console_1.4.1.zip` for the stable release.
+1. Download the stable installation package `Node_Console_1.4.2.zip`.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -149,7 +149,7 @@ English and direct pinyin search, such as `instance`, `shili` and `zaobo`, remai
 
 1. Open any node editor.
 2. Press `Shift + A`.
-3. Type an English name or pinyin, such as `instance`, `shili`, `noise`, or `zaobo`; macOS users can also use a Chinese IME.
+3. Type an English name or pinyin, such as `instance`, `shili`, `noise`, or `zaobo`; macOS and Windows users can also use a Chinese IME.
 4. Press Enter, or click a result to create the node.
 5. Move the mouse to choose the node position.
 6. Click the left mouse button, or press Enter to place the node.
@@ -171,7 +171,7 @@ Three subtle horizontal lines at the right of each shortcut row indicate draggin
 
 Snippet Nodes are stored in an external JSON library file. Preferences provide controls for the save shortcut, the library path, and the expandable list of saved snippets.
 
-`None` in a result means no category was assigned, not an error. Choose Category in the save dialog; internal links provide an inferred terminal-node category, while unlinked selections default to None. Existing entries can currently be viewed or deleted in Preferences; editing a saved category directly is not yet supported.
+`None` in a result means no category was assigned, not an error. Choose an editor-appropriate Category in the save dialog; internal links provide an inferred terminal-node category, while unlinked selections default to None. Filter, Mask and Distort are compositor-only choices. Existing entries can currently be viewed or deleted in Preferences; editing a saved category directly is not yet supported, and updates do not rewrite saved categories.
 
 ### Preferences
 
@@ -189,13 +189,13 @@ Snippet Nodes are stored in an external JSON library file. Preferences provide c
 
 ### Online Updates
 
-Click Check for Updates in Node Console Preferences to list [GitHub releases](https://github.com/AnthemZhou/Node_Console/releases) with installation packages. Checking only reads metadata. Choose a version, click Install Selected Version, then confirm before anything is downloaded or replaced. The current version is marked and cannot be reinstalled. There are no startup network checks.
+Click Update in Node Console Preferences to list [GitHub releases](https://github.com/AnthemZhou/Node_Console/releases) with installation packages. Checking only reads metadata. Choose a version, click the download icon (Install Selected Version), then confirm before anything is downloaded or replaced. The current version is marked and cannot be reinstalled. There are no startup network checks.
 
-The compact row contains the current add-on version, Beta checkbox, release selector, refresh and install icons with tooltips. Narrow windows wrap controls. Only the three newest eligible releases by version number are listed. Default to an upgrade or the installed version, never a downgrade; label older stable releases, Beta and RC separately.
+The updater aligns with the two-column preferences layout and contains the current version, Beta checkbox, release selector, wider Update button and install icon with tooltips. Narrow windows wrap controls. It keeps the three newest version choices for the current channel, plus Other Versions, which opens GitHub Releases without changing the installation target or starting a download. Default to an upgrade or the installed version, never a downgrade; label older stable releases, Beta and RC separately.
 
 - Accept Beta Versions is off by default. Enable it and check again to include published GitHub prereleases. No Beta options are fabricated when none exist; changing the checkbox never installs or downgrades the add-on.
 - Beta installation and downgrade dialogs display appropriate warnings. Returning from Beta to a stable release is supported with backup and confirmation. Downgrading to an older version such as 1.4.0 also restores that version's older update interface.
-- 1.4.1 is a stable release, but its Windows native IME backend still needs live Windows validation. This limitation is separate from opting into future Beta releases.
+- 1.4.2 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
 
 To publish a Beta, tag it as e.g. `v1.4.2-beta.1`, attach `Node_Console_1.4.2-beta.1.zip`, mark the GitHub release as `Pre-release` and publish it. The package must use `ADDON_VERSION = "1.4.2-beta.1"` and `bl_info["version"] = (1, 4, 2)`; rebuild the macOS input resource for the full version too. Use `v1.4.2-rc.1` for RC builds. A title-only change or source ZIP is insufficient. The user's Beta setting filters manual update checks; it never triggers automatic installation.
 

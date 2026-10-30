@@ -82,7 +82,8 @@ def main():
                     buttons = [item for item in layout.walk() if item.kind == 'operator']
                     update = next(item for item in buttons if item.props['name'] == 'node_console.update_addon')
                     install = next(item for item in buttons if item.props['name'] == 'node_console.install_release')
-                    assert update.props['icon'] == 'FILE_REFRESH' and update.props['text'] == ''
+                    assert update.props['icon'] == 'FILE_REFRESH' and update.props['text'] == nc._ui_text('Update')
+                    assert update.parent.ui_units_x >= 4
                     assert install.props['icon'] == 'IMPORT' and install.props['text'] == ''
                     assert install.parent.operator_context == 'INVOKE_DEFAULT'
                     normal = state['state'] in {'idle', 'available', 'current', 'updated'}
@@ -94,6 +95,9 @@ def main():
                     assert {item.props['name'] for item in props} == {'accept_beta_updates', 'update_release'}
                     beta = next(item for item in props if item.props['name'] == 'accept_beta_updates')
                     assert beta.props['text'] == 'Beta'
+                    if layout.children[0].kind == 'split':
+                        assert layout.children[0].props['factor'] == 0.5
+                        assert beta.parent.children[0] is beta
                     for child in layout.children:
                         if child.kind == 'column':
                             assert child.alert == (state['state'] == 'error')
@@ -108,6 +112,8 @@ def main():
             assert items is nc._update_release_items(prefs, None)
             assert nc._ui_text('Installed') in items[0][1]
             assert nc._selected_update_release() == releases[0]
+            assert items[-1][0] == nc.OTHER_RELEASES
+            assert items[-1][1] == nc._ui_text('Other Versions')
             for version, beta, label in [('1.4.0', False, nc._ui_text('Older Stable')),
                                          ('1.5.0-beta.1', True, 'Beta'), ('1.5.0-rc.1', True, 'RC')]:
                 assert label in nc._release_label(dict(version=version, prerelease=beta))
@@ -123,6 +129,10 @@ def main():
             patch.object(nc, '_snippet_search_snapshot', return_value={'snippets': []}) as snippets:
         nc.ENS_AddonPreferences.draw(prefs, context)
         snippets.assert_not_called()
+        settings_box = prefs.layout.children[0]
+        assert settings_box.kind == 'box'
+        splits = [item for item in settings_box.children if item.kind == 'split']
+        assert splits[0].props['factor'] == splits[1].props['factor'] == 0.5
         prefs.snippet_nodes_expanded = True
         nc.ENS_AddonPreferences.draw(prefs, context)
         snippets.assert_called_once()
