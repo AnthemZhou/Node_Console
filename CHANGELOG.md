@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.3
+
+### 中文
+
+- 更新检查、下载和错误状态直接显示在版本号后方，不再增加状态行；固定更新区控件占位，避免状态变化推动下方布局。
+- 版本选择框的目标宽度扩大为原布局预算的 1.3 倍，窄窗口仍使用固定的双行布局。
+- 优化「添加快捷节点」：将快捷列表、编辑器归属和显示名称合并为一次原子保存，仅复制变动字段，不再反复深拷贝整个节点索引；重复添加无变化时不写盘。保存失败时明确报错，不清空搜索文字。
+- Windows 搜索框内中文及中文组词预览在 1.4.2 基础上再上移一个缩放像素；英文、占位文字和 macOS 不变。
+
+### English
+
+- Keep update/check/download/error status inline after the version, with stable control reservations so status changes do not push preferences downward.
+- Expand the release selector's target width to 1.3 times its previous layout budget; retain a stable two-row fallback in narrow windows.
+- Save shortcut identifiers, editor scope and labels in one atomic transaction, copying only changed fields instead of entire node indexes. Identical additions skip disk writes; failures report an error and retain the query.
+- Raise Windows CJK input and CJK preedit by one additional scaled pixel compared with 1.4.2; leave Latin input, placeholders and macOS unchanged.
+
 ## 1.4.2
 
 ### 中文

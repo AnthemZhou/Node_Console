@@ -28,13 +28,13 @@ for _child_name in ("addon_reloader", "addon_updater", "node_registry", "json_st
 from . import addon_reloader, addon_updater, node_registry, json_store
 
 
-ADDON_VERSION = "1.4.2"
+ADDON_VERSION = "1.4.3"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 4, 2),
+    "version": (1, 4, 3),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -251,6 +251,7 @@ UI_TEXT_ZH = {
     "No favorite nodes": "没有收藏节点",
     "Shortcuts": "快捷节点",
     "No node shortcuts": "没有快捷节点",
+    "Could not save shortcut; settings were not changed": "无法保存快捷节点，设置未更改",
     "Geometry Nodes": "几何节点",
     "Shader Nodes": "材质节点",
     "Compositor Nodes": "合成节点",
@@ -2300,15 +2301,27 @@ def _save_shortcuts(shortcuts: list[str]):
     _save_string_list("shortcuts", shortcuts)
 
 
-def _add_shortcut(identifier: str, tree_id: str = ""):
+def _add_shortcut(identifier: str, tree_id: str = "", label: str | None = None):
     shortcuts = _load_shortcuts()
     if identifier not in shortcuts:
         shortcuts.append(identifier)
-        _save_shortcuts(shortcuts)
+    changes = {"shortcuts": shortcuts}
     if tree_id:
         tree_meta = _load_identifier_tree_meta("shortcut_tree_meta")
-        tree_meta.setdefault(identifier, set()).add(tree_id)
-        _save_identifier_tree_meta("shortcut_tree_meta", tree_meta)
+        if tree_id in _valid_node_tree_ids():
+            tree_meta.setdefault(identifier, set()).add(tree_id)
+        changes["shortcut_tree_meta"] = {key: sorted(value) for key, value in tree_meta.items()}
+    if label is not None:
+        labels = _load_favorite_meta()
+        labels[identifier] = label
+        changes["favorite_meta"] = labels
+    try:
+        # Save the list, editor scope and label together; leave large indexes shared.
+        SETTINGS_STORE.update(_settings_path(), changes)
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Node Console: could not save shortcut: {exc}")
+        return False
+    return True
 
 
 def _remove_shortcut(identifier: str, tree_id: str = ""):
@@ -5354,15 +5367,14 @@ class ENS_AddNodeByEnglishSearch(Operator):
                         self._remove_snippet_result(self._context_menu_index)
                         self._close_context_menu()
                     elif action == "SHORTCUT" and entry:
-                        _add_shortcut(entry.identifier, self._tree_id)
-                        self._favorite_meta[entry.identifier] = entry.label
-                        favorite_meta = _load_favorite_meta()
-                        favorite_meta[entry.identifier] = entry.label
-                        _save_favorites(_load_favorites(), favorite_meta, _load_identifier_tree_meta("favorite_tree_meta"))
-                        self._favorite_meta = favorite_meta
-                        self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
+                        saved = _add_shortcut(entry.identifier, self._tree_id, entry.label)
                         self._close_context_menu()
-                        self._clear_query()
+                        if saved:
+                            self._favorite_meta = _load_favorite_meta()
+                            self._shortcuts = _load_shortcuts_for_tree(self._tree_id)
+                            self._clear_query()
+                        else:
+                            self.report({"ERROR"}, _ui_text("Could not save shortcut; settings were not changed"))
                     elif action == "RESET_WIDTH":
                         prefs = _preferences()
                         if prefs:
@@ -5543,7 +5555,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         if re.search(r"[\u3400-\u9fff\uf900-\ufaff\U00020000-\U000323af]", display_query):
             input_text_y -= _scaled(2, scale)
             if sys.platform == "win32":
-                input_text_y += _scaled(1, scale)
+                input_text_y += 2 * _scaled(1, scale)
         placeholder_text_y = search_text_y
         _draw_text("⌕", x + padding + _scaled(10, scale), search_text_y - _scaled(1, scale), _scaled(20, scale), MUTED_TEXT_COLOR)
         query_x = x + padding + _scaled(32, scale)
@@ -6006,53 +6018,42 @@ def _update_status_text():
     return label
 
 
-def _wrap_update_status(text, width, font_size):
-    while text and _text_width(text, font_size) > width:
-        end = 1
-        while end < len(text) and _text_width(text[:end + 1], font_size) <= width:
-            end += 1
-        space = text.rfind(" ", 0, end + 1)
-        if space > end // 2:
-            end = space
-        yield text[:end]
-        text = text[end:].lstrip()
-    if text:
-        yield text
-
-
 def _draw_update_header(layout, context):
     state = UPDATE_STATUS.get("state", "idle")
     title = f"Node Console v{ADDON_VERSION}"
     # The selector already conveys the normal state; only show actionable status.
     status_text = "" if state in {"idle", "available", "current", "updated"} else _update_status_text()
-    scale = _resolution_scale()
+    # Native widgets include display DPI, unlike the custom console's scale.
+    system = getattr(getattr(context, "preferences", None), "system", None)
+    scale = getattr(system, "ui_scale", _resolution_scale())
     font_size = _scaled(13, scale)
     region_width = getattr(getattr(context, "region", None), "width", 800)
     available_width = max(120 * scale, region_width - 160 * scale)
     prefs = _preferences()
-    selected = _selected_update_release() if prefs is not None else None
-    selection_label = _release_label(selected) if selected else _installed_release_label()
-    selector_width = max(145 * scale, _text_width(selection_label, font_size) + 40 * scale)
-    controls_width = (selector_width + 170 * scale) if prefs is not None else 80 * scale
-    if UPDATE_STATUS.get("backup"):
-        controls_width += 24 * scale
+    # Reserve fixed space for every state, including the optional backup button.
+    selector_width = 1.3 * max(145 * scale, available_width / 2 - 194 * scale)
+    controls_width = (selector_width + 214 * scale) if prefs is not None else 114 * scale
     title_width = _text_width(title, font_size)
-    single_row = max(title_width, controls_width) + 12 * scale <= available_width / 2
+    single_row = title_width + 120 * scale + controls_width + 24 * scale <= available_width
 
-    header = layout.split(factor=0.5, align=False) if single_row else layout.row()
-    header.label(text=title)
-    if prefs is not None and not single_row:
-        beta = header.row(align=True)
-        beta.alignment = "RIGHT"
-        beta.enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
-        beta.prop(prefs, "accept_beta_updates", text="Beta")
+    header = layout.split(factor=1 - controls_width / available_width, align=False) if single_row else layout.row()
+    identity = header.row(align=True)
+    name = identity.row(align=True)
+    name.ui_units_x = (title_width + 12 * scale) / (20 * scale)
+    name.label(text=title)
+    status = identity.row(align=True)
+    status.alert = state == "error"
+    status.enabled = state == "error"
+    status.label(text=status_text)
     actions = (header if single_row else layout).row(align=True)
     controls = actions.row(align=True)
     controls.enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
     if prefs is not None:
-        if single_row:
-            controls.prop(prefs, "accept_beta_updates", text="Beta")
+        beta = controls.row(align=True)
+        beta.ui_units_x = 4.0
+        beta.prop(prefs, "accept_beta_updates", text="Beta")
         selector = controls.row(align=True)
+        selector.ui_units_x = selector_width / (20 * scale)
         selector.prop(prefs, "update_release", text="")
     refresh = controls.row(align=True)
     refresh.ui_units_x = 4.5
@@ -6061,14 +6062,10 @@ def _draw_update_header(layout, context):
         install = controls.row(align=True)
         install.operator_context = "INVOKE_DEFAULT"
         install.operator(NODECONSOLE_OT_InstallRelease.bl_idname, text="", icon="IMPORT")
-    if UPDATE_STATUS.get("backup"):
-        actions.operator("wm.path_open", text="", icon="FILE_FOLDER").filepath = UPDATE_STATUS["backup"]
-    if status_text:
-        status = layout.column(align=True)
-        status.alert = state == "error"
-        status.enabled = state == "error"
-        for line in _wrap_update_status(status_text, available_width, font_size):
-            status.label(text=line)
+    backup = actions.row(align=True)
+    backup.ui_units_x = 1.2
+    backup.enabled = bool(UPDATE_STATUS.get("backup"))
+    backup.operator("wm.path_open", text="", icon="FILE_FOLDER").filepath = UPDATE_STATUS.get("backup", "")
 
 
 def _accept_beta_updates():

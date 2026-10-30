@@ -71,6 +71,20 @@ class JsonStore:
     def write(self, path, data):
         path = Path(path).resolve()
         self.refresh(path)
+        self._write_snapshot(path, data)
+
+    def update(self, path, changes):
+        """Atomically replace selected keys without copying unrelated cached data."""
+        path = Path(path).resolve()
+        self.refresh(path)
+        if self._error is None and all(key in self._data and self._data[key] == value
+                                       for key, value in changes.items()):
+            return
+        data = self._data.copy()
+        data.update(deepcopy(changes))
+        self._write_snapshot(path, data)
+
+    def _write_snapshot(self, path, data):
         if self._error is not None:
             raise OSError(f"Cannot safely replace unreadable JSON: {path}") from self._error
         original_stamp = self._stamp

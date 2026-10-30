@@ -73,12 +73,14 @@ def main():
             for width in (1200, 420):
                 for state in states:
                     layout = Layout()
-                    context = SimpleNamespace(region=SimpleNamespace(width=round(width * scale)))
+                    context = SimpleNamespace(region=SimpleNamespace(width=round(width * scale)),
+                                              preferences=SimpleNamespace(system=SimpleNamespace(ui_scale=scale)))
                     with patch.object(nc, 'UPDATE_STATUS', state), \
                             patch.object(nc, '_preferences', return_value=prefs), \
                             patch.object(nc, 'UPDATE_RELEASES', releases), \
-                            patch.object(nc, '_resolution_scale', return_value=scale):
+                            patch.object(nc, '_resolution_scale', return_value=1.0):
                         nc._draw_update_header(layout, context)
+                        expected_status = nc._update_status_text()
                     buttons = [item for item in layout.walk() if item.kind == 'operator']
                     update = next(item for item in buttons if item.props['name'] == 'node_console.update_addon')
                     install = next(item for item in buttons if item.props['name'] == 'node_console.install_release')
@@ -87,25 +89,28 @@ def main():
                     assert install.props['icon'] == 'IMPORT' and install.props['text'] == ''
                     assert install.parent.operator_context == 'INVOKE_DEFAULT'
                     normal = state['state'] in {'idle', 'available', 'current', 'updated'}
-                    if normal:
-                        assert len(layout.children) == (1 if width == 1200 else 2), (language, scale, width, state)
-                        labels = [item.props['text'] for item in layout.walk() if item.kind == 'label']
-                        assert labels == [f'Node Console v{nc.ADDON_VERSION}']
+                    assert len(layout.children) == (1 if width == 1200 else 2), (language, scale, width, state)
+                    labels = [item for item in layout.walk() if item.kind == 'label']
+                    assert labels[0].props['text'] == f'Node Console v{nc.ADDON_VERSION}'
+                    assert len(labels) == 2
+                    assert labels[0].parent.parent is labels[1].parent.parent
+                    assert labels[1].props['text'] == ('' if normal else expected_status)
+                    assert labels[1].parent.alert == (state['state'] == 'error')
+                    assert not any(item.kind == 'column' for item in layout.walk())
                     props = [item for item in layout.walk() if item.kind == 'prop']
                     assert {item.props['name'] for item in props} == {'accept_beta_updates', 'update_release'}
                     beta = next(item for item in props if item.props['name'] == 'accept_beta_updates')
                     assert beta.props['text'] == 'Beta'
+                    assert beta.parent.ui_units_x == 4
                     if layout.children[0].kind == 'split':
-                        assert layout.children[0].props['factor'] == 0.5
+                        assert 0 < layout.children[0].props['factor'] < 0.5
                         assert beta.parent.children[0] is beta
-                    for child in layout.children:
-                        if child.kind == 'column':
-                            assert child.alert == (state['state'] == 'error')
-                            for line in child.children:
-                                assert nc._text_width(line.props['text'], nc._scaled(13, scale)) <= max(120 * scale, (width - 160) * scale)
-                    if state.get('backup'):
-                        backup = next(item for item in buttons if item.props['name'] == 'wm.path_open')
-                        assert backup.filepath == state['backup']
+                    selector = next(item for item in props if item.props['name'] == 'update_release')
+                    previous_width = max(145 * scale, max(120 * scale, (width - 160) * scale) / 2 - 194 * scale)
+                    assert abs(selector.parent.ui_units_x * 20 * scale - previous_width * 1.3) < 0.001
+                    backup = next(item for item in buttons if item.props['name'] == 'wm.path_open')
+                    assert backup.filepath == state.get('backup', '')
+                    assert backup.parent.enabled == bool(state.get('backup'))
                     cases += 1
         with patch.object(nc, '_preferences', return_value=prefs), patch.object(nc, 'UPDATE_RELEASES', releases):
             items = nc._update_release_items(prefs, None)
@@ -132,7 +137,8 @@ def main():
         settings_box = prefs.layout.children[0]
         assert settings_box.kind == 'box'
         splits = [item for item in settings_box.children if item.kind == 'split']
-        assert splits[0].props['factor'] == splits[1].props['factor'] == 0.5
+        assert 0 < splits[0].props['factor'] < 1
+        assert splits[1].props['factor'] == 0.5
         prefs.snippet_nodes_expanded = True
         nc.ENS_AddonPreferences.draw(prefs, context)
         snippets.assert_called_once()

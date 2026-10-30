@@ -304,7 +304,7 @@ def main():
                                          if call.args[0] == (query + preedit or nc._ui_text('Search nodes...')))
                         correction = -nc._scaled(2, scale) if cjk else 0
                         if cjk and platform == 'win32':
-                            correction += nc._scaled(1, scale)
+                            correction += 2 * nc._scaled(1, scale)
                         expected_y = original_y + nc._scaled(1, scale) + correction if query or preedit else original_y - nc._scaled(1, scale)
                         assert text_call.args[2] == expected_y
         passed.append('Windows CJK input raised one scaled pixel; Latin/macOS/Linux baselines unchanged in both modes')

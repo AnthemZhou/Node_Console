@@ -131,6 +131,61 @@ class JsonStoreTests(unittest.TestCase):
         self.assertEqual(self.store.read(self.path), {'external': True})
         self.assertEqual(list(self.path.parent.iterdir()), [self.path])
 
+    def test_update_copies_only_changes_and_preserves_unknown_fields(self):
+        from copy import deepcopy
+        changes = {'favorites': ['new'], 'shortcut_tree_meta': {'new': ['GeometryNodeTree']}}
+        self.store.refresh(self.path)
+        with patch('json_store.deepcopy', wraps=deepcopy) as copy:
+            self.store.update(self.path, changes)
+        copy.assert_called_once_with(changes)
+        expected = dict(self.initial, **deepcopy(changes))
+        changes['favorites'].append('not saved')
+        self.assertEqual(self.store.read(self.path), expected)
+
+    def test_identical_update_does_not_write_or_change_revision(self):
+        revision = self.store.refresh(self.path)
+        stamp = self.path.stat()
+        with patch('json_store.os.replace') as replace:
+            self.store.update(self.path, {'favorites': ['one']})
+            self.store.update(self.path, {})
+        replace.assert_not_called()
+        self.assertEqual(self.store.revision, revision)
+        self.assertEqual(self.path.stat(), stamp)
+
+    def test_update_reads_external_changes_before_merging(self):
+        self.store.refresh(self.path)
+        self.path.write_text(json.dumps(dict(self.initial, external=42)), encoding='utf-8')
+        self.store.update(self.path, {'favorites': ['new']})
+        self.assertEqual(self.store.read(self.path), dict(self.initial, external=42, favorites=['new']))
+
+    def test_invalid_json_is_not_overwritten_by_update(self):
+        self.path.write_text('{broken', encoding='utf-8')
+        for changes in ({}, {'favorites': []}):
+            with self.assertRaises(OSError):
+                self.store.update(self.path, changes)
+        self.assertEqual(self.path.read_text(), '{broken')
+
+    def test_failed_update_does_not_publish_partial_changes(self):
+        for failure in ('fsync', 'replace'):
+            with patch('json_store.os.' + failure, side_effect=OSError('failed')):
+                with self.assertRaises(OSError):
+                    self.store.update(self.path, {'favorites': ['new'], 'added': True})
+            self.assertEqual(self.store.read(self.path), self.initial)
+            self.assertEqual(list(self.path.parent.iterdir()), [self.path])
+
+    def test_external_edit_during_update_is_not_overwritten(self):
+        original_fsync = os.fsync
+
+        def concurrent_write(fd):
+            original_fsync(fd)
+            self.path.write_text('{"external": true}', encoding='utf-8')
+
+        with patch('json_store.os.fsync', side_effect=concurrent_write):
+            with self.assertRaises(OSError):
+                self.store.update(self.path, {'favorites': ['new']})
+        self.assertEqual(self.store.read(self.path), {'external': True})
+        self.assertEqual(list(self.path.parent.iterdir()), [self.path])
+
 
 if __name__ == '__main__':
     unittest.main()

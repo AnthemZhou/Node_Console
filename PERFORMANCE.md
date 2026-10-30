@@ -1,5 +1,30 @@
 # Node Console Performance
 
+## 1.4.3 Shortcut Saves
+
+Date: 2026-10-30. Baseline: published 1.4.2 ZIP. The real Add Shortcut modal
+handler runs against identical synthetic 2,677,362-byte settings files containing
+multiple node-index caches. Medians below cover 15 warmed, unprofiled calls,
+resetting the settings before each addition. No personal data is used in this
+benchmark. The complete persisted settings match the baseline.
+
+| Operation | Blender 5.2.2 before / after | Blender 5.1.2 before / after |
+| --- | ---: | ---: |
+| Add Shortcut, including save and list refresh | 191.92 / 33.62 ms | 196.18 / 34.47 ms |
+
+The previous handler deep-copied all settings and saved the file three times.
+It now copies only the changed fields, preserves unrelated cached values and
+commits the shortcut list, editor scope and label once. Identical repeat additions
+do not write. Atomic replacement, unreadable-file protection and external-change
+checks remain in place. Failed saves do not clear the query or show an unsaved
+shortcut. No deferred writes, new data files or keymap changes are introduced.
+
+These are macOS arm64 handler timings, not GPU/input-to-display latency or Windows
+measurements. Filesystem speed, index size and installed add-ons affect results.
+Run `tools/benchmark_shortcut_save.py -- /tmp/nc-shortcut-performance.json` with a
+factory-startup Blender process and pre-created, isolated configuration directories.
+The script compares against `Node_Console_1.4.2.zip` in the repository.
+
 ## 1.3.2 User-Data Hot Paths
 
 Date: 2026-10-18. Baseline: published 1.3.1 ZIP. These measurements use separate temporary user-data files in the same factory-startup Blender process. No personal preferences or snippet libraries are read or modified.

@@ -35,7 +35,7 @@ input-method behavior. A user confirmed committed Chinese and node search on
 Windows; OS, Blender and IME versions were not recorded. Intel Mac, Linux native
 composition, third-party IMEs, long-preedit editing and multi-monitor candidate
 placement are not certified. Complete Windows focus/placement coverage and the
-1.4.2 one-scaled-pixel CJK baseline adjustment still need live visual validation.
+1.4.3 additional one-scaled-pixel CJK baseline adjustment still need live visual validation.
 
 ## Windows backend (introduced in 1.4.1)
 
