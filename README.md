@@ -4,17 +4,17 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.4.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.1-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.4.0
+版本：1.4.1
 
 ## 中文
 
-Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。1.4.0 在 macOS 自绘搜索框中加入原生中文输入法支持，无需粘贴或另开输入窗口。界面保持紧凑，视觉风格接近 Blender 原生搜索。
+Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。1.4.0 已加入 macOS 原生中文输入；1.4.1 在同一自绘框中接入 Windows 系统输入法，Windows 部分尚待实机确认。界面保持紧凑，视觉风格接近 Blender 原生搜索。
 
 ### 功能
 
@@ -24,6 +24,7 @@ Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器�
 - 在搜索结果左侧显示节点类型颜色标签，方便根据节点类型快速检索。
 - 支持手动刷新节点库，可以检索并分类 Asset Library 和外部导入的节点组。
 - 支持将一组节点及其连接保存为可复用的「组合点」，并通过英文或拼音快速检索。
+- 偏好设置支持检查版本、选择版本并确认安装；可选加入 Beta 测试，默认只显示稳定版。
 
 ### 中文输入与拼音搜索
 
@@ -31,11 +32,11 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 
 英文和拼音检索仍然保留，例如 `instance`、`shili`、`zaobo`，不必先转换成中文。也支持粘贴中文节点名后检索（macOS：`Command + V`，Windows/Linux：`Ctrl + V`）。
 
-**平台范围：** 原生中文输入实测于 Apple Silicon Mac、Blender 5.2.2 LTS 和系统拼音输入法。安装包同时包含 arm64/x86_64 原生模块，但 Intel Mac、第三方输入法及多显示器候选框位置尚未实机验证。Windows/Linux 仍使用原有英文、拼音和中文粘贴方式，暂不支持此自绘框内的原生中文组词。组合点命名继续使用 Blender 原生输入框。macOS 原生模块加载失败时，插件保留原有搜索输入方式，不阻止打开搜索框。
+**平台范围：** macOS 原生中文输入实测于 Apple Silicon Mac、Blender 5.2.2 LTS 和系统拼音输入法。安装包同时包含 arm64/x86_64 原生模块，但 Intel Mac、第三方输入法及多显示器候选框位置尚未实机验证。1.4.1 的 Windows 实现直接调用系统 IMM/Win32 接口，不需要安装 Python 模块；代码和模拟事件测试已覆盖，但尚未在 Windows Blender 中验证微软拼音、候选框、焦点与节点放置，暂不视为验证完成。Linux 仍使用原有英文、拼音和中文粘贴方式。组合点命名继续使用 Blender 原生输入框。原生后端初始化失败时保留原有搜索输入方式。Windows 实测方法见 [输入模块说明](ime_input/README.md)。
 
 ### 安装
 
-1. 选择 `Node_Console_1.4.0.zip` 安装包。
+1. 选择 `Node_Console_1.4.1.zip` 安装包。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -82,14 +83,18 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 
 ### 在线更新
 
-在 Node Console 偏好设置中点击「更新」，检查 [GitHub 最新正式版](https://github.com/AnthemZhou/Node_Console/releases/latest)。有新版本时自动下载对应的插件 ZIP，校验后替换安装文件；没有新版本则保持不变。不会在启动 Blender 时自动联网，也不会安装预发布版或降级。
+在 Node Console 偏好设置中点击「检查更新」，读取 [GitHub Releases](https://github.com/AnthemZhou/Node_Console/releases) 中有安装包的版本；这一步不会下载安装包或替换插件。在版本下拉框选择目标，再点击「安装所选版本」，确认后才下载、校验并替换。当前安装版本会标注，不能重复安装同一版本；不会在启动 Blender 时自动联网。
+
+- 「接受 Beta 测试版本」默认关闭。勾选后重新检查，才会列出 GitHub 标记为 Pre-release 的版本；没有已发布的 Beta 时不会虚构选项。勾选或取消本身不会安装、降级或切换版本。
+- 选择 Beta 或较旧版本时，确认框会显示风险或回退提示。允许手动从 Beta 回到稳定版，仍先备份再替换。回退到 1.4.0 等旧版本时，更新界面也会恢复为该版本的样式。
+- 1.4.1 本身是正式版，Windows 原生输入后端仍待实机验证，这与以后是否接受 Beta 更新是两个独立事项。
 
 - 需要在 Blender 的 `偏好设置 > 系统` 中允许在线访问；不会替你修改该权限。
 - 下载在独立进程中执行，不占用搜索界面的主线程。网络失败、损坏的包或不兼容的 Blender 版本会提示错误，不替换插件。
 - 替换前保留本地备份；收藏、快捷节点、排序、使用记录和组合点库不清空。成功后的文件夹按钮可打开旧文件备份，备份保留在插件目录旁的 `.node-console-update-*/previous` 中。
 - 下载完成后自动热更新，无需重启 Blender。搜索、节点放置或组合点命名尚未结束时会等待，完成后只重载 Node Console，不重置或重新注册 Blender 和其他插件的快捷键。新版启用失败会尝试恢复原版本；若无法自动恢复，界面会提示重启并检查备份。
 - Git 源码工程不接受自动替换。首次使用此按钮需要先安装包含此功能的版本。
-- 从 1.3.0 的更新按钮升级到 1.3.1 时，首次仍需重启 Blender；1.3.1 生效后的后续在线更新支持热加载。
+- 已安装 1.4.0 的用户可通过原来的「更新」按钮升级到 1.4.1；升级后才出现版本选择和 Beta 开关。从 1.3.0 的旧更新器升级仍需首次重启，1.3.1 起支持后续热加载。
 
 ### 说明
 
@@ -103,7 +108,7 @@ macOS 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「�
 
 ## English
 
-Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. Version 1.4.0 adds native Chinese IME input inside the existing custom search field on macOS, without pasting or opening a separate field. The layout stays compact and is inspired by Blender native search.
+Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. Version 1.4.0 introduced native macOS Chinese input. Version 1.4.1 adds release selection with optional Beta updates and a Windows system IME backend pending live Windows validation. The layout stays compact and is inspired by Blender native search.
 
 ### Features
 
@@ -113,6 +118,7 @@ Node Console is a custom node search add-on for Blender. It replaces the default
 - Shows colored node type tags on the left side of search results, making nodes easier to scan by type.
 - Supports manual node library refresh, including searchable and categorized Asset Library or externally imported node groups.
 - Saves connected node sets as reusable Snippet Nodes that can be found by English or pinyin.
+- Check releases, select a version and confirm installation in Preferences; Beta versions are opt-in and disabled by default.
 
 ### Chinese Input and Pinyin Search
 
@@ -120,11 +126,11 @@ On macOS, press `Shift + A` and use your system Chinese input method to type nod
 
 English and direct pinyin search, such as `instance`, `shili` and `zaobo`, remain available. Chinese can still be pasted (`Command + V` on macOS, `Ctrl + V` on Windows/Linux).
 
-**Platform scope:** Native Chinese input was tested on Apple Silicon, Blender 5.2.2 LTS and macOS Pinyin. The package includes arm64/x86_64 code, but Intel Macs, third-party IMEs and multi-monitor candidate positioning have not been tested live. Windows/Linux retain English, pinyin and Chinese paste, without native Chinese composition in this custom field. Snippet naming still uses Blender's native text field. If the macOS receiver cannot load, search falls back to the existing input path.
+**Platform scope:** Native macOS Chinese input was tested on Apple Silicon, Blender 5.2.2 LTS and macOS Pinyin. The package includes arm64/x86_64 code, but Intel Macs, third-party IMEs and multi-monitor candidate positioning have not been tested live. The 1.4.1 Windows backend uses system IMM/Win32 APIs without external Python dependencies. Its simulated message tests do not prove real Microsoft Pinyin composition, candidates, focus or node placement; live Windows Blender validation remains required. Linux retains its original input path. Snippet naming still uses Blender's native text field. Failed backend initialization retains standard search input. See the [input module notes](ime_input/README.md) for Windows testing.
 
 ### Install
 
-1. Choose the `Node_Console_1.4.0.zip` installation package.
+1. Choose the `Node_Console_1.4.1.zip` installation package.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -171,14 +177,18 @@ Snippet Nodes are stored in an external JSON library file. Preferences provide c
 
 ### Online Updates
 
-Click Update in Node Console Preferences to check the [latest stable GitHub release](https://github.com/AnthemZhou/Node_Console/releases/latest). A newer version's installation ZIP is downloaded, validated and installed automatically. No startup checks, prerelease installation or downgrades occur.
+Click Check for Updates in Node Console Preferences to list [GitHub releases](https://github.com/AnthemZhou/Node_Console/releases) with installation packages. Checking only reads metadata. Choose a version, click Install Selected Version, then confirm before anything is downloaded or replaced. The current version is marked and cannot be reinstalled. There are no startup network checks.
+
+- Accept Beta Versions is off by default. Enable it and check again to include published GitHub prereleases. No Beta options are fabricated when none exist; changing the checkbox never installs or downgrades the add-on.
+- Beta installation and downgrade dialogs display appropriate warnings. Returning from Beta to a stable release is supported with backup and confirmation. Downgrading to an older version such as 1.4.0 also restores that version's older update interface.
+- 1.4.1 is a stable release, but its Windows native IME backend still needs live Windows validation. This limitation is separate from opting into future Beta releases.
 
 - Enable Allow Online Access in Blender Preferences > System. The add-on never changes this permission for you.
 - A separate process handles downloads. Network errors, invalid packages and incompatible Blender versions leave the installation untouched.
 - A local backup is kept before replacement. Favorites, shortcuts, ordering, usage, settings and snippet libraries are preserved. The folder button after a successful update opens the backup at `.node-console-update-*/previous` beside the installation.
 - Updates activate without restarting Blender. Activation waits for node search, placement or snippet naming to finish, then reloads only Node Console. Blender and other add-ons' keymaps are not reset or re-registered. Failed activation attempts to restore the previous version; if recovery fails, a message asks you to restart and check the backup.
 - Git source checkouts cannot be replaced through this button. Install a version containing the updater before using this feature for the first time.
-- Updating from 1.3.0 to 1.3.1 through the old updater still requires one restart. Subsequent updates support hot activation once 1.3.1 is running.
+- Existing 1.4.0 users can upgrade via the original Update button; version selection appears after installing 1.4.1. Updating from 1.3.0 still requires one restart; 1.3.1 and later support subsequent hot activation.
 
 ### Notes
 

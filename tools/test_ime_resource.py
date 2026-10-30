@@ -40,11 +40,20 @@ class ResourceTests(unittest.TestCase):
 
     def test_other_platforms_do_not_patch_console_or_load_resource(self):
         module = SimpleNamespace(ENS_AddNodeByEnglishSearch=Mock())
-        for platform in ("win32", "linux"):
+        for platform in ("linux", "freebsd"):
             with patch.object(ime_input.sys, "platform", platform), patch.object(library, "materialize") as load:
                 self.assertIsNone(ime_input.install_if_available(module))
                 load.assert_not_called()
                 module.ENS_AddNodeByEnglishSearch.assert_not_called()
+
+    def test_windows_uses_system_backend_without_decoding_cocoa(self):
+        from ime_input import adapter, windows
+        module = SimpleNamespace()
+        with patch.object(ime_input.sys, "platform", "win32"), patch.object(adapter, "install") as install, \
+                patch.object(library, "materialize") as load:
+            ime_input.install_if_available(module)
+            self.assertIs(install.call_args.kwargs["session_factory"], windows.WindowsSession)
+            load.assert_not_called()
 
 
 if __name__ == "__main__":

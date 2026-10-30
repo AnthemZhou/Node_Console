@@ -28,13 +28,13 @@ for _child_name in ("addon_reloader", "addon_updater", "node_registry", "json_st
 from . import addon_reloader, addon_updater, node_registry, json_store
 
 
-ADDON_VERSION = "1.4.0"
+ADDON_VERSION = "1.4.1"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 4, 0),
+    "version": (1, 4, 1),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -61,6 +61,8 @@ NODE_CLASS_CACHE: list[type] | None = None
 BACKGROUND_ASSET_INDEX = None
 UPDATE_JOB = None
 UPDATE_STATUS = {"state": "idle"}
+UPDATE_RELEASES = []
+UPDATE_ENUM_CACHE = {}
 GPU_UNIFORM_SHADER = None
 TEXT_WIDTH_CACHE: dict[tuple[str, int], float] = {}
 SETTINGS_STORE = json_store.JsonStore()
@@ -275,6 +277,22 @@ UI_TEXT_ZH = {
     "Layout": "布局",
     "None": "无",
     "Update": "更新",
+    "Check for Updates": "检查更新",
+    "Accept Beta Versions": "接受 Beta 测试版本",
+    "Install Selected Version": "安装所选版本",
+    "Available Versions": "可用版本",
+    "Stable": "稳定版",
+    "Current": "当前版本",
+    "Check for updates first": "请先检查更新",
+    "Select a version to install": "请选择要安装的版本",
+    "No compatible releases found": "没有可用的安装版本",
+    "Beta versions may be unstable": "Beta 测试版可能不稳定",
+    "This will install an older version": "即将回退至旧版本",
+    "Older versions may restore the old update interface": "回退后可能恢复旧版更新界面",
+    "A local backup will be kept": "安装前将保留本地备份",
+    "Release changed; check for updates again": "版本信息已变化，请重新检查更新",
+    "Selection changed; confirm the version again": "版本选择已变化，请重新确认",
+    "Install": "安装",
     "Checking GitHub...": "正在检查 GitHub…",
     "Downloading update...": "正在下载更新…",
     "Finish the current node operation to update": "完成当前节点操作后自动更新",
@@ -1292,6 +1310,7 @@ def _save_preference_settings():
             "console_width": prefs.console_width,
             "snippet_library_path": prefs.snippet_library_path,
             "snippet_nodes_expanded": prefs.snippet_nodes_expanded,
+            "accept_beta_updates": getattr(prefs, "accept_beta_updates", False),
             "settings_version": 2,
         }
     )
@@ -1313,7 +1332,7 @@ def _load_preferences_from_settings():
         data["category_color_mode"] = "BLOCK" if data.get("show_category_color_tags") else "OFF"
     PREFERENCES_LOADING = True
     try:
-        for name in ("display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "snippet_shortcut_key", "snippet_shortcut_shift", "snippet_shortcut_ctrl", "snippet_shortcut_alt", "snippet_shortcut_oskey", "scan_asset_libraries", "category_color_mode", "console_width", "snippet_library_path", "snippet_nodes_expanded"):
+        for name in ("display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "snippet_shortcut_key", "snippet_shortcut_shift", "snippet_shortcut_ctrl", "snippet_shortcut_alt", "snippet_shortcut_oskey", "scan_asset_libraries", "category_color_mode", "console_width", "snippet_library_path", "snippet_nodes_expanded", "accept_beta_updates"):
             if name in data:
                 try:
                     setattr(prefs, name, data[name])
@@ -5496,7 +5515,7 @@ class ENS_AddNodeByEnglishSearch(Operator):
         query_color = TEXT_COLOR if display_query else SECONDARY_TEXT_COLOR
         query_size = _scaled(13, scale)
         search_text_y = search_y + (search_height - _scaled(13, scale)) / 2 + _scaled(1, scale)
-        input_text_y = search_text_y + _scaled(1, scale)
+        input_text_y = search_text_y + 2 * _scaled(1, scale)
         # CJK glyphs need a lower baseline than the existing Latin input text.
         if re.search(r"[\u3400-\u9fff\uf900-\ufaff\U00020000-\U000323af]", display_query):
             input_text_y -= _scaled(2, scale)
@@ -5929,6 +5948,8 @@ def _update_status_text():
         "waiting_reload": "Finish the current node operation to update",
         "reloading": "Activating update...",
         "current": "Already up to date",
+        "available": "Select a version to install",
+        "empty": "No compatible releases found",
         "installed": "Restart Blender to activate",
         "updated": "Updated and active",
     }
@@ -5948,6 +5969,8 @@ def _update_status_text():
         "changed_install": "Installed files changed; restart Blender before updating",
         "reload_rolled_back": "Update activation failed; previous version restored",
         "reload_failed": "Could not restore the add-on; restart Blender and check the backup",
+        "changed_release": "Release changed; check for updates again",
+        "selection_changed": "Selection changed; confirm the version again",
     }
     text = errors.get(UPDATE_STATUS.get("code"), "Update failed; previous files retained") if state == "error" else messages.get(state, "")
     label = _ui_text(text)
@@ -5991,7 +6014,7 @@ def _draw_update_header(layout, context):
         status.enabled = False
         status.label(text=status_text, icon="CHECKMARK" if state in {"current", "updated"} else "NONE")
         actions.separator()
-    actions.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text=_ui_text("Update"), icon="FILE_REFRESH")
+    actions.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text=_ui_text("Check for Updates"), icon="FILE_REFRESH")
     if UPDATE_STATUS.get("backup"):
         actions.operator("wm.path_open", text="", icon="FILE_FOLDER").filepath = UPDATE_STATUS["backup"]
     if status_text and not inline_status:
@@ -6000,6 +6023,65 @@ def _draw_update_header(layout, context):
         status.enabled = state == "error"
         for line in _wrap_update_status(status_text, available_width, font_size):
             status.label(text=line)
+    prefs = _preferences()
+    if prefs is not None:
+        controls = layout.column(align=True)
+        controls.enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
+        controls.prop(prefs, "accept_beta_updates", text=_ui_text("Accept Beta Versions"))
+        # Narrow preference windows stack controls instead of clipping labels.
+        versions = controls.row(align=True) if region_width >= 560 * scale else controls.column(align=True)
+        versions.prop(prefs, "update_release", text="")
+        install = versions.row(align=True)
+        install.operator_context = "INVOKE_DEFAULT"
+        install.operator(NODECONSOLE_OT_InstallRelease.bl_idname, text=_ui_text("Install Selected Version"), icon="IMPORT")
+
+
+def _accept_beta_updates():
+    return bool(getattr(_preferences(), "accept_beta_updates", False))
+
+
+def _release_label(release):
+    channel = "Beta" if release["prerelease"] else _ui_text("Stable")
+    label = f"{release['version']}  ({channel})"
+    if release["version"] == ADDON_VERSION:
+        label += " - " + _ui_text("Current")
+    return label
+
+
+def _update_release_items(_self, _context):
+    items = [(item["tag"], _release_label(item), "", index + 1)
+             for index, item in enumerate(UPDATE_RELEASES)
+             if not item["prerelease"] or _accept_beta_updates()]
+    if not items:
+        items = [("NONE", _ui_text("Check for updates first"), "", 0)]
+    # Dynamic enum strings must outlive Blender's RNA references.
+    key = tuple(items)
+    return UPDATE_ENUM_CACHE.setdefault(key, items)
+
+
+def _selected_update_release():
+    tag = getattr(_preferences(), "update_release", "NONE")
+    return next((item for item in UPDATE_RELEASES if item["tag"] == tag
+                 and (not item["prerelease"] or _accept_beta_updates())), None)
+
+
+def _set_update_releases(releases):
+    global UPDATE_RELEASES
+    UPDATE_RELEASES = [item for item in releases if not item["prerelease"] or _accept_beta_updates()]
+    prefs = _preferences()
+    if prefs is not None:
+        prefs.update_release = UPDATE_RELEASES[0]["tag"] if UPDATE_RELEASES else "NONE"
+
+
+def _beta_updates_changed(_self, _context):
+    if PREFERENCES_LOADING:
+        return
+    _stop_addon_update()
+    _set_update_releases([])
+    UPDATE_STATUS.clear()
+    UPDATE_STATUS["state"] = "idle"
+    _save_preference_settings()
+    _redraw_update_preferences()
 
 
 def _redraw_update_preferences():
@@ -6018,7 +6100,14 @@ def _poll_addon_update():
         if not getattr(bpy.app, "online_access", False):
             raise addon_updater.UpdateError("offline")
         result = job.poll()
+        if result["state"] == "releases":
+            _set_update_releases(result["releases"])
+            result = {"state": "available" if UPDATE_RELEASES else "empty"}
         if result["state"] == "ready":
+            selected = job.release
+            if (not selected or result.get("tag") != selected["tag"] or result["version"] != selected["version"]
+                    or job.current_version != ADDON_VERSION or (selected["prerelease"] and not _accept_beta_updates())):
+                raise addon_updater.UpdateError("selection_changed")
             if addon_reloader.is_busy(sys.modules[__name__]):
                 UPDATE_STATUS = {"state": "waiting"}
                 _redraw_update_preferences()
@@ -6026,7 +6115,8 @@ def _poll_addon_update():
             backup = addon_updater.install_release(
                 job.directory / "release.zip", Path(__file__).parent,
                 result["version"], bpy.app.version,
-                protected_paths=(_settings_path(), _snippets_path()), current_version=ADDON_VERSION)
+                protected_paths=(_settings_path(), _snippets_path()), current_version=ADDON_VERSION,
+                allow_downgrade=addon_updater.version_key(selected["version"]) < addon_updater.version_key(ADDON_VERSION))
             result = {"state": "reloading", "version": result["version"], "backup": str(backup)}
             try:
                 addon_reloader.schedule(ADDON_ID, backup, result["version"])
@@ -6064,8 +6154,8 @@ def _stop_addon_update():
 
 class NODECONSOLE_OT_UpdateAddon(Operator):
     bl_idname = "node_console.update_addon"
-    bl_label = "Update Node Console"
-    bl_description = "Install and activate the latest GitHub release with a local recovery backup"
+    bl_label = "Check for Updates"
+    bl_description = "Read available GitHub releases without installing anything"
     bl_options = {"INTERNAL"}
 
     @classmethod
@@ -6077,8 +6167,75 @@ class NODECONSOLE_OT_UpdateAddon(Operator):
         try:
             if not getattr(bpy.app, "online_access", False):
                 raise addon_updater.UpdateError("offline")
+            _set_update_releases([])
+            UPDATE_JOB = addon_updater.UpdateJob(ADDON_VERSION, allow_beta=_accept_beta_updates())
+            UPDATE_STATUS = {"state": "checking"}
+            bpy.app.timers.register(_poll_addon_update, first_interval=0.25, persistent=True)
+        except Exception as exc:
+            _stop_addon_update()
+            UPDATE_STATUS = {"state": "error", "code": getattr(exc, "code", "install_error")}
+            self.report({"WARNING"}, _update_status_text())
+            return {"CANCELLED"}
+        _redraw_update_preferences()
+        return {"FINISHED"}
+
+
+class NODECONSOLE_OT_InstallRelease(Operator):
+    bl_idname = "node_console.install_release"
+    bl_label = "Install Selected Version"
+    bl_description = "Confirm the selected release before downloading and replacing the add-on"
+    bl_options = {"INTERNAL"}
+
+    @classmethod
+    def poll(cls, _context):
+        selected = _selected_update_release()
+        return (NODECONSOLE_OT_UpdateAddon.poll(_context) and selected is not None
+                and selected["version"] != ADDON_VERSION)
+
+    def invoke(self, context, _event):
+        selected = _selected_update_release()
+        if selected is None or selected["version"] == ADDON_VERSION:
+            return {"CANCELLED"}
+        try:
             addon_updater.validate_target(Path(__file__).parent)
-            UPDATE_JOB = addon_updater.UpdateJob(ADDON_VERSION)
+        except addon_updater.UpdateError as exc:
+            self.report({"WARNING"}, _ui_text("Cannot update a source checkout; install the release ZIP first")
+                        if exc.code == "development_install" else _ui_text("Installation path is not safe to replace"))
+            return {"CANCELLED"}
+        self._confirmed_release = dict(selected)
+        self._confirmed_current = ADDON_VERSION
+        return context.window_manager.invoke_props_dialog(self, width=380,
+                    title=_ui_text("Install Selected Version"), confirm_text=_ui_text("Install"))
+
+    def draw(self, _context):
+        selected = self._confirmed_release
+        column = self.layout.column(align=True)
+        column.label(text=f"{ADDON_VERSION}  >  {_release_label(selected)}")
+        if selected["prerelease"]:
+            row = column.row()
+            row.alert = True
+            row.label(text=_ui_text("Beta versions may be unstable"), icon="ERROR")
+        if addon_updater.version_key(selected["version"]) < addon_updater.version_key(ADDON_VERSION):
+            row = column.row()
+            row.alert = True
+            row.label(text=_ui_text("This will install an older version"), icon="ERROR")
+            column.label(text=_ui_text("Older versions may restore the old update interface"))
+        column.label(text=_ui_text("A local backup will be kept"))
+
+    def execute(self, _context):
+        global UPDATE_JOB, UPDATE_STATUS
+        selected = getattr(self, "_confirmed_release", None)
+        if (selected is None or selected != _selected_update_release()
+                or getattr(self, "_confirmed_current", None) != ADDON_VERSION
+                or not self.poll(_context)):
+            self.report({"WARNING"}, _ui_text("Selection changed; confirm the version again"))
+            return {"CANCELLED"}
+        try:
+            if not getattr(bpy.app, "online_access", False):
+                raise addon_updater.UpdateError("offline")
+            addon_updater.validate_target(Path(__file__).parent)
+            UPDATE_JOB = addon_updater.UpdateJob(ADDON_VERSION, action="install",
+                                                 allow_beta=_accept_beta_updates(), release=selected)
             UPDATE_STATUS = {"state": "checking"}
             bpy.app.timers.register(_poll_addon_update, first_interval=0.25, persistent=True)
         except Exception as exc:
@@ -6092,6 +6249,9 @@ class NODECONSOLE_OT_UpdateAddon(Operator):
 
 class ENS_AddonPreferences(AddonPreferences):
     bl_idname = ADDON_ID
+
+    accept_beta_updates: BoolProperty(name="Accept Beta Versions", default=False, update=_beta_updates_changed)
+    update_release: EnumProperty(name="Available Versions", items=_update_release_items, options={"SKIP_SAVE"})
 
     display_mode: EnumProperty(
         name="Search Result Display",
@@ -6481,6 +6641,7 @@ classes = (
     NODECONSOLE_OT_RemoveShortcut,
     NODECONSOLE_OT_MoveShortcut,
     NODECONSOLE_OT_UpdateAddon,
+    NODECONSOLE_OT_InstallRelease,
     ENS_AddonPreferences,
 )
 
@@ -6741,6 +6902,7 @@ def register():
         for cls in classes:
             bpy.utils.register_class(cls)
         _load_preferences_from_settings()
+        _set_update_releases([])
         register_keymap()
     except Exception:
         unregister()

@@ -70,6 +70,105 @@ class UpdateTests(unittest.TestCase):
             data[key] = True
             self.assert_error("invalid_release", lambda: updater.select_release(data, "1.2.2"))
 
+    def test_prerelease_version_order_and_labels(self):
+        ordered = ["1.4.0", "1.4.1-alpha.1", "1.4.1-beta.1", "1.4.1-beta.2",
+                   "1.4.1-beta.10", "1.4.1-rc.1", "1.4.1", "1.4.2"]
+        self.assertEqual(sorted(reversed(ordered), key=updater.version_key), ordered)
+        self.assertEqual(updater.version_tuple("v1.4.1-beta.1"), (1, 4, 1))
+        for invalid in ("1.4.1-beta.0", "1.4.1-beta.01", "1.4.1-nightly.1", "1.4.1/other"):
+            with self.assertRaises(updater.UpdateError):
+                updater.version_key(invalid)
+
+    def test_check_lists_stable_and_opt_in_beta_without_downloading(self):
+        beta = dict(release("1.4.2-beta.1"), prerelease=True)
+        bad_beta = release("1.4.3-beta.1")
+        data = [release("1.4.0"), beta, release("1.4.1"), bad_beta,
+                dict(release("9.0.0"), draft=True), {"tag_name": "invalid"}]
+        with patch.object(updater, "_fetch", return_value=json.dumps(data).encode()) as fetch:
+            self.assertEqual([item["version"] for item in updater.list_releases()], ["1.4.1", "1.4.0"])
+            self.assertEqual([item["version"] for item in updater.list_releases(True)],
+                             ["1.4.2-beta.1", "1.4.1", "1.4.0"])
+            self.assertTrue(all("destination" not in call.kwargs for call in fetch.call_args_list))
+
+    def test_release_pagination_and_bounded_list(self):
+        pages = [json.dumps([release(f"1.1.{i}") for i in range(100)]).encode(),
+                 json.dumps([release("1.4.0")]).encode()]
+        with patch.object(updater, "_fetch", side_effect=pages) as fetch:
+            found = updater.list_releases()
+            self.assertEqual(found[0]["version"], "1.4.0")
+            self.assertEqual(len(found), 30)
+            self.assertIn("page=2", fetch.call_args_list[1].args[0])
+
+    def test_check_worker_never_downloads_or_changes_installed_files(self):
+        jobdir = self.root / "check"
+        jobdir.mkdir()
+        (jobdir / "request.json").write_text(json.dumps({"action": "check", "allow_beta": False}))
+        with patch.object(updater, "_fetch", return_value=json.dumps([release()]).encode()) as fetch:
+            updater.run_job(jobdir)
+        result = json.loads((jobdir / "result.json").read_text())
+        self.assertEqual(result["state"], "releases")
+        self.assertFalse((jobdir / "release.zip").exists())
+        self.assertEqual((self.target / "__init__.py").read_text(), source("1.2.2"))
+        self.assertEqual(fetch.call_count, 1)
+
+    def selected_download(self, changed=False, beta=False, opt_in=True, corrupt=False):
+        self.package()
+        blob = self.archive.read_bytes()
+        data = release(size=len(blob), digest="sha256:" + hashlib.sha256(blob).hexdigest())
+        data["prerelease"] = beta
+        selected = updater.release_record(data, allow_beta=True)
+        jobdir = self.root / "selected"
+        jobdir.mkdir(exist_ok=True)
+        (jobdir / "request.json").write_text(json.dumps({"action": "install", "release": selected, "allow_beta": opt_in}))
+        if changed:
+            data["assets"][0]["digest"] = "sha256:" + "0" * 64
+
+        def fetch(url, destination=None, **kwargs):
+            if destination:
+                destination.write_bytes(b"x" * len(blob) if corrupt else blob)
+            else:
+                self.assertEqual(url, updater.RELEASES_URL + "/tags/v1.2.3")
+                return json.dumps(data).encode()
+
+        with patch.object(updater, "_fetch", side_effect=fetch) as fetched:
+            updater.run_job(jobdir)
+        return json.loads((jobdir / "result.json").read_text()), fetched
+
+    def test_selected_tag_is_pinned_and_revalidated(self):
+        result, fetched = self.selected_download()
+        self.assertEqual(result, {"state": "ready", "version": "1.2.3", "tag": "v1.2.3"})
+        self.assertEqual(fetched.call_count, 2)
+        result, fetched = self.selected_download(changed=True)
+        self.assertEqual(result["code"], "changed_release")
+        self.assertEqual(fetched.call_count, 1)
+        self.assertEqual(self.selected_download(corrupt=True)[0]["code"], "invalid_package")
+
+    def test_beta_cannot_download_without_explicit_opt_in(self):
+        self.assertEqual(self.selected_download(beta=True, opt_in=False)[0]["code"], "invalid_release")
+        self.assertEqual(self.selected_download(beta=True, opt_in=True)[0]["state"], "ready")
+
+    def test_downgrade_requires_explicit_flag_and_unchanged_current_version(self):
+        self.package(version="1.2.1")
+        for kwargs in ({}, {"allow_downgrade": True},
+                       {"allow_downgrade": True, "current_version": "1.2.0"}):
+            self.assert_error("changed_install", lambda: updater.install_release(
+                self.archive, self.target, "1.2.1", (5, 2, 2), **kwargs))
+        personal = self.target / "node_console_settings.json"
+        personal.write_text('{"favorites":["keep"]}')
+        backup = updater.install_release(self.archive, self.target, "1.2.1", (5, 2, 2),
+                                         current_version="1.2.2", allow_downgrade=True)
+        self.assertIn("1.2.1", (self.target / "__init__.py").read_text())
+        self.assertEqual(personal.read_text(), '{"favorites":["keep"]}')
+        self.assertIn("1.2.2", (backup / "__init__.py").read_text())
+
+    def test_beta_package_version_must_match_exactly(self):
+        self.package(version="1.2.3")
+        self.assert_error("invalid_package", lambda: updater.install_release(
+            self.archive, self.target, "1.2.3-beta.1", (5, 2, 2)))
+        self.package(version="1.2.3-beta.1")
+        updater.install_release(self.archive, self.target, "1.2.3-beta.1", (5, 2, 2))
+        self.assertIn("1.2.3-beta.1", (self.target / "__init__.py").read_text())
+
     def test_only_exact_repository_install_asset(self):
         for key, value in (("name", "Source-code.zip"), ("size", 0), ("size", updater.MAX_DOWNLOAD + 1),
                            ("browser_download_url", "https://github.com/someone/else/file.zip"),

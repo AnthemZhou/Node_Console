@@ -53,7 +53,8 @@ def _preferences(module):
         return {}
     return {prop.identifier: getattr(prefs, prop.identifier)
             for prop in prefs.bl_rna.properties
-            if not prop.is_readonly and prop.type in {'BOOLEAN', 'INT', 'FLOAT', 'STRING', 'ENUM'}}
+            if not prop.is_readonly and prop.identifier != 'update_release'
+            and prop.type in {'BOOLEAN', 'INT', 'FLOAT', 'STRING', 'ENUM'}}
 
 
 def _restore_preferences(module, values):
@@ -62,6 +63,8 @@ def _restore_preferences(module, values):
         return
     module.PREFERENCES_LOADING = True
     try:
+        if hasattr(prefs, 'update_release'):
+            prefs.update_release = 'NONE'
         for name, value in values.items():
             if hasattr(prefs, name):
                 setattr(prefs, name, value)

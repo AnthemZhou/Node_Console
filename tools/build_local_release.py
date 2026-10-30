@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_FILES = ('__init__.py', 'addon_updater.py', 'addon_reloader.py', 'json_store.py',
                  'node_registry.py', 'node_search_aliases.json', 'node_console_builtin_cache.json',
                  'ime_input/__init__.py', 'ime_input/adapter.py', 'ime_input/session.py',
-                 'ime_input/library.py', 'ime_input/macos.json')
+                 'ime_input/library.py', 'ime_input/macos.json', 'ime_input/windows.py')
 SOURCES = {
     '几何节点': 'https://developer.blender.org/docs/release_notes/5.2/geometry_nodes/',
     '合成器': 'https://developer.blender.org/docs/release_notes/5.2/compositor/',

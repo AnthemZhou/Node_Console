@@ -1,4 +1,5 @@
-"""Upgrade an actual 1.3.4 release ZIP to 1.4.0 with the OLD updater/reloader."""
+"""Upgrade a release ZIP to a new build with the OLD updater/reloader on macOS."""
+import ast
 import ctypes
 import os
 from pathlib import Path
@@ -12,13 +13,24 @@ import bpy
 
 assert os.environ.get("BLENDER_USER_CONFIG", "").startswith("/private/tmp/")
 old_zip, new_zip = map(Path, sys.argv[sys.argv.index("--") + 1:])
+
+
+def version(path):
+    with ZipFile(path) as archive:
+        source = archive.read("Node_Console/__init__.py").decode("utf-8")
+    return next(ast.literal_eval(node.value) for node in ast.parse(source).body
+                if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "ADDON_VERSION"
+                                                       for t in node.targets))
+
+
+old_version, new_version = version(old_zip), version(new_zip)
 with tempfile.TemporaryDirectory(prefix="nc-ime-upgrade-", dir="/private/tmp") as directory:
     root = Path(directory)
     with ZipFile(old_zip) as archive:
         archive.extractall(root)
     sys.path.insert(0, str(root))
     old = addon_utils.enable("Node_Console", default_set=True, persistent=True)
-    assert old.ADDON_VERSION == "1.3.4"
+    assert old.ADDON_VERSION == old_version
     original_settings = old._load_settings()
     original_settings.update(favorites=["kept"], usage={"kept": 42}, shortcuts=["kept"])
     old._write_settings(original_settings)
@@ -32,10 +44,10 @@ with tempfile.TemporaryDirectory(prefix="nc-ime-upgrade-", dir="/private/tmp") a
     node = tree.nodes.new("ShaderNodeMath")
     node.inputs[0].default_value = 3.25
     pointer = node.as_pointer()
-    backup = old.addon_updater.install_release(new_zip, root / "Node_Console", "1.4.0", bpy.app.version,
-                                               protected_paths=protected, current_version="1.3.4")
-    new = old.addon_reloader.activate("Node_Console", backup, "1.4.0")
-    assert new.ADDON_VERSION == "1.4.0" and new.UPDATE_STATUS["state"] == "updated"
+    backup = old.addon_updater.install_release(new_zip, root / "Node_Console", new_version, bpy.app.version,
+                                               protected_paths=protected, current_version=old_version)
+    new = old.addon_reloader.activate("Node_Console", backup, new_version)
+    assert new.ADDON_VERSION == new_version and new.UPDATE_STATUS["state"] == "updated"
     assert callable(new.IME_UNINSTALL)
     assert all(path.read_bytes() == data for path, data in protected.items())
     assert other.id == other_id and not other.active and other.type == "T" and other.ctrl
@@ -45,4 +57,5 @@ with tempfile.TemporaryDirectory(prefix="nc-ime-upgrade-", dir="/private/tmp") a
     assert receiver.nc_ime_focused() == 0
     addon_utils.disable("Node_Console", default_set=True)
     assert new.IME_UNINSTALL is None
-    print("IME_UPGRADE_OK", bpy.app.version_string, "1.3.4 -> 1.4.0; user data and other keymaps preserved")
+    print("IME_UPGRADE_OK", bpy.app.version_string, old_version, "->", new_version,
+          "user data and other keymaps preserved")

@@ -48,12 +48,17 @@ def main():
         snippets.write_text('{"snippets":[{"id":"personal"}]}')
         nc._settings_path = lambda: settings
         nc._snippets_path = lambda: snippets
+        prefs = SimpleNamespace(accept_beta_updates=False, update_release="NONE")
         nc._preferences = lambda: None
         nc.register()
+        nc._preferences = lambda: prefs
         try:
             assert bpy.ops.node_console.update_addon.get_rna_type()
             assert "filepath" in bpy.ops.wm.path_open.get_rna_type().properties
             passed.append("updater operator registered and backup-folder control supported")
+            assert nc.ENS_AddonPreferences.bl_rna.properties["accept_beta_updates"].default is False
+            assert bpy.ops.node_console.install_release.get_rna_type()
+            assert not bpy.ops.node_console.install_release.poll()
             baseline_maps = keymaps()
             saved_settings, saved_snippets = settings.read_bytes(), snippets.read_bytes()
             app = SimpleNamespace(online_access=False, version=bpy.app.version, timers=bpy.app.timers)
@@ -65,7 +70,8 @@ def main():
                 passed.append("offline permission blocks network access")
 
             app.online_access = True
-            job = SimpleNamespace(directory=root, poll=Mock(return_value={"state": "checking"}), close=Mock())
+            job = SimpleNamespace(directory=root, poll=Mock(return_value={"state": "checking"}), close=Mock(),
+                                  current_version=current_version, release=None)
             with patch.object(nc, "bpy", wrapper), patch.object(nc.addon_updater, "UpdateJob", return_value=job):
                 assert bpy.ops.node_console.update_addon() == {"FINISHED"}
                 assert not bpy.ops.node_console.update_addon.poll()
@@ -83,6 +89,72 @@ def main():
                 assert nc.UPDATE_STATUS == result
             passed.append("up-to-date and network-error states leave files unchanged")
 
+            def release(version, beta=False):
+                return {"tag": "v" + version, "version": version, "prerelease": beta}
+
+            stable = release(current_version)
+            newer = release(next_version)
+            beta = release(next_version + "-beta.1", True)
+            nc.UPDATE_JOB = job
+            job.poll.return_value = {"state": "releases", "releases": [beta, newer, stable]}
+            with patch.object(nc, "bpy", wrapper), patch.object(nc.addon_updater, "install_release") as replace:
+                assert nc._poll_addon_update() is None
+                replace.assert_not_called()
+            assert nc.UPDATE_STATUS["state"] == "available"
+            assert [item["tag"] for item in nc.UPDATE_RELEASES] == [newer["tag"], stable["tag"]]
+            assert prefs.update_release == newer["tag"]
+            assert (target / "__init__.py").read_bytes() == (ROOT / "__init__.py").read_bytes()
+            passed.append("check only lists versions; beta hidden by default; no files installed")
+
+            fields = {key: value for key, value in nc.NODECONSOLE_OT_InstallRelease.__dict__.items()
+                      if not key.startswith("__")}
+            Install = type("InstallHarness", (), fields)
+            confirm = SimpleNamespace(window_manager=SimpleNamespace(invoke_props_dialog=Mock(return_value={"RUNNING_MODAL"})))
+            operator = Install()
+            operator.report = Mock()
+            with patch.object(nc.addon_updater, "UpdateJob") as start:
+                assert operator.execute(confirm) == {"CANCELLED"}
+                assert operator.invoke(confirm, None) == {"RUNNING_MODAL"}
+                start.assert_not_called()
+            # Closing the dialog here never runs execute and therefore never starts a job.
+            assert nc.UPDATE_JOB is None
+            prefs.update_release = stable["tag"]
+            with patch.object(nc.addon_updater, "UpdateJob") as start:
+                assert operator.execute(confirm) == {"CANCELLED"}
+                start.assert_not_called()
+            assert not bpy.ops.node_console.install_release.poll()
+            passed.append("confirmation is required; cancel, changed selection and current version cannot install")
+
+            prefs.accept_beta_updates = True
+            with patch.object(nc, "_save_preference_settings") as save:
+                nc._beta_updates_changed(prefs, None)
+                save.assert_called_once()
+            assert prefs.update_release == "NONE" and not nc.UPDATE_RELEASES
+            nc._set_update_releases([beta, newer, stable])
+            assert nc._selected_update_release() == beta
+            beta_op = Install()
+            beta_op.report = Mock()
+            assert beta_op.invoke(confirm, None) == {"RUNNING_MODAL"}
+            with patch.object(nc, "bpy", wrapper), patch.object(nc.addon_updater, "UpdateJob", return_value=job) as start:
+                assert beta_op.execute(confirm) == {"FINISHED"}
+                assert start.call_args.kwargs["allow_beta"] is True
+                assert start.call_args.kwargs["release"] == beta
+            prefs.accept_beta_updates = False
+            with patch.object(nc, "_save_preference_settings"):
+                nc._beta_updates_changed(prefs, None)
+            assert nc.UPDATE_JOB is None and not nc.UPDATE_RELEASES
+            assert not bpy.app.timers.is_registered(nc._poll_addon_update)
+            passed.append("beta opt-in is explicit; toggling clears choices and cancels pending downloads without downgrade")
+
+            nc._set_update_releases([newer, stable])
+            install_op = Install()
+            install_op.report = Mock()
+            assert install_op.invoke(confirm, None) == {"RUNNING_MODAL"}
+            job.release = dict(newer)
+            with patch.object(nc, "bpy", wrapper), patch.object(nc.addon_updater, "UpdateJob", return_value=job) as start:
+                assert install_op.execute(confirm) == {"FINISHED"}
+                assert start.call_args.kwargs == {"action": "install", "allow_beta": False, "release": newer}
+
             with ZipFile(root / "release.zip", "w") as archive:
                 for name in names:
                     content = (target / name).read_bytes()
@@ -90,7 +162,7 @@ def main():
                         content = content.replace(f'ADDON_VERSION = "{current_version}"'.encode(), f'ADDON_VERSION = "{next_version}"'.encode())
                         content = content.replace(f'"version": {nc.bl_info["version"]}'.encode(), f'"version": {next_tuple}'.encode())
                     archive.writestr("Node_Console/" + name, content)
-            job.poll.return_value = {"state": "ready", "version": next_version}
+            job.poll.return_value = {"state": "ready", "version": next_version, "tag": newer["tag"]}
             nc.UPDATE_JOB = job
             with patch.object(nc, "bpy", wrapper), patch.object(nc.addon_reloader, "schedule") as schedule:
                 nc.ACTIVE_CONSOLE_OPERATOR = object()
@@ -116,6 +188,7 @@ def main():
             bpy.context.preferences.view.language = original_language
             passed.append("English and Chinese update status labels")
         finally:
+            nc._preferences = lambda: None
             nc.unregister()
         assert nc.UPDATE_JOB is None and not bpy.app.timers.is_registered(nc._poll_addon_update)
         passed.append("unregister cleans up only its update task")

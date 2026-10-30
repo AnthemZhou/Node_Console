@@ -132,6 +132,7 @@ class AdapterTests(unittest.TestCase):
                     nc.ACTIVE_CONSOLE_OPERATOR._finish(context, {"CANCELLED"})
                 nc.ACTIVE_CONSOLE_OPERATOR = self
                 self._query = ""
+                self._snippet_mode = False
                 self._refresh_query_results = Mock()
                 self._tag_owner_redraw = Mock()
                 self._owns_context = Mock(return_value=True)
@@ -145,6 +146,10 @@ class AdapterTests(unittest.TestCase):
                 self.original_events.append(event.type)
                 if event.type == "BACK_SPACE":
                     self._query = self._query[:-1]
+                if event.type == "ACCENT_GRAVE":
+                    self._snippet_mode = not self._snippet_mode
+                if event.type == "DEL":
+                    self._query = ""
                 if event.type == "ESC":
                     return self._finish(context, {"CANCELLED"})
                 if event.type == "RET":
@@ -291,11 +296,55 @@ class AdapterTests(unittest.TestCase):
         op._draw_callback(self.context)
         op._ime_session.caret.assert_called_once_with(1, 2, 3, 4)
 
+    def test_native_caret_failure_leaves_standard_field_usable(self):
+        op = self.open()
+        session = op._ime_session
+        session.caret.side_effect = RuntimeError("native position failed")
+        op._draw_callback(self.context)
+        self.assertTrue(session.closed)
+        self.assertIsNone(op._ime_session)
+        self.assertFalse(op.finished)
+        self.assertEqual(self.event(op, "ESC"), {"CANCELLED"})
+
     def test_uninstall_restores_methods_and_closes_active_session(self):
         op = self.open()
         session = op._ime_session
         self.uninstall(self.context)
         self.assertIs(self.console.modal, self.original_modal)
+        self.assertTrue(session.closed)
+
+    def test_injected_windows_factory_does_not_load_cocoa(self):
+        from ime_input.windows import WindowsSession
+        session = FakeSession(None)
+        session.drain_actions = lambda query, command: WindowsSession.drain_actions(session, query, command)
+        self.uninstall(self.context)
+        self.uninstall = ime_adapter.install(self.nc, None, self.log, session_factory=lambda: session)
+        op = self.open()
+        self.factory.assert_not_called()
+        session.receive(1, "集合")
+        session.receive(5, ("BACK_SPACE", False))
+        session.receive(1, "合信息")
+        session.receive(5, ("ACCENT_GRAVE", False))
+        self.event(op)
+        self.assertEqual(op._query, "集合信息")
+        self.assertTrue(op._snippet_mode)
+        session.receive(5, ("RET", False))
+        self.event(op)
+        self.assertTrue(op.hidden)
+        self.assertTrue(session.closed)
+        self.assertIsNone(op._ime_timer)
+
+    def test_native_escape_stops_without_forwarding_trigger_timer(self):
+        from ime_input.windows import WindowsSession
+        session = FakeSession(None)
+        session.drain_actions = lambda query, command: WindowsSession.drain_actions(session, query, command)
+        self.uninstall(self.context)
+        self.uninstall = ime_adapter.install(self.nc, None, self.log, session_factory=lambda: session)
+        op = self.open()
+        session.receive(5, ("ESC", False))
+        session.receive(1, "ignored")
+        self.assertEqual(self.event(op), {"CANCELLED"})
+        self.assertEqual(op.original_events, ["ESC"])
         self.assertTrue(session.closed)
 
 

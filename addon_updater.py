@@ -23,6 +23,7 @@ from zipfile import BadZipFile, ZipFile
 
 REPOSITORY = "AnthemZhou/Node_Console"
 LATEST_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
+RELEASES_URL = f"https://api.github.com/repos/{REPOSITORY}/releases"
 MAX_DOWNLOAD = 32 * 1024 * 1024
 MAX_UNPACKED = 128 * 1024 * 1024
 TIMEOUT = 20
@@ -39,11 +40,25 @@ class UpdateError(Exception):
         self.code = code
 
 
-def version_tuple(value):
-    match = re.fullmatch(r"v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", str(value))
+def _version_match(value):
+    match = re.fullmatch(r"v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(alpha|beta|rc)\.([1-9]\d*))?", str(value))
     if not match:
         raise UpdateError("invalid_release")
-    return tuple(int(part) for part in match.groups())
+    return match
+
+
+def version_tuple(value):
+    return tuple(int(part) for part in _version_match(value).groups()[:3])
+
+
+def version_key(value):
+    match = _version_match(value)
+    return (*version_tuple(value), {"alpha": 0, "beta": 1, "rc": 2, None: 3}[match[4]], int(match[5] or 0))
+
+
+def canonical_version(value):
+    match = _version_match(value)
+    return ".".join(match.groups()[:3]) + (f"-{match[4]}.{match[5]}" if match[4] else "")
 
 
 def _safe_url(url):
@@ -98,12 +113,22 @@ def _fetch(url, destination=None, limit=MAX_DOWNLOAD):
 
 
 def select_release(data, current_version):
+    """Legacy stable-only entry point, retained for older update callers."""
     if not isinstance(data, dict) or data.get("draft") is not False or data.get("prerelease") is not False:
         raise UpdateError("invalid_release")
-    version = version_tuple(data.get("tag_name"))
-    if version <= version_tuple(current_version):
+    if version_key(data.get("tag_name")) <= version_key(current_version):
         return None
-    label = ".".join(map(str, version))
+    return release_record(data)
+
+
+def release_record(data, allow_beta=False):
+    if (not isinstance(data, dict) or data.get("draft") is not False
+            or type(data.get("prerelease")) is not bool
+            or (data["prerelease"] and not allow_beta)):
+        raise UpdateError("invalid_release")
+    label = canonical_version(data.get("tag_name"))
+    if "-" in label and not data["prerelease"]:
+        raise UpdateError("invalid_release", "A prerelease tag must be marked as prerelease")
     filename = f"Node_Console_{label}.zip"
     assets = data.get("assets", [])
     if not isinstance(assets, list):
@@ -119,7 +144,27 @@ def select_release(data, current_version):
     digest = asset.get("digest") or ""
     if digest and not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", digest):
         raise UpdateError("invalid_release")
-    return {"version": label, "url": expected_url, "size": asset["size"], "digest": digest.lower()}
+    return {"version": label, "tag": data["tag_name"], "prerelease": data["prerelease"],
+            "url": expected_url, "size": asset["size"], "digest": digest.lower(),
+            "release_id": data.get("id"), "asset_id": asset.get("id")}
+
+
+def list_releases(allow_beta=False):
+    releases = {}
+    # Bounded pagination, sorted by version rather than GitHub publication time.
+    for page in range(1, 4):
+        records = json.loads(_fetch(f"{RELEASES_URL}?per_page=100&page={page}", limit=4 * 1024 * 1024))
+        if not isinstance(records, list):
+            raise UpdateError("invalid_release")
+        for record in records:
+            try:
+                item = release_record(record, allow_beta)
+            except UpdateError:
+                continue  # Old releases may not have a compatible install ZIP.
+            releases[item["tag"]] = item
+        if len(records) < 100:
+            break
+    return sorted(releases.values(), key=lambda item: version_key(item["version"]), reverse=True)[:30]
 
 
 def _write_result(directory, result):
@@ -155,14 +200,56 @@ def download_release(directory, current_version):
         _write_result(directory, {"state": "error", "code": "invalid_release"})
 
 
+def run_job(directory):
+    """Checking never downloads a ZIP. Installation needs a pinned selection."""
+    try:
+        request = json.loads((directory / "request.json").read_text(encoding="utf-8"))
+        allow_beta = request.get("allow_beta") is True
+        if request["action"] == "check":
+            _write_result(directory, {"state": "releases", "releases": list_releases(allow_beta)})
+            return
+        if request["action"] != "install":
+            raise UpdateError("invalid_release")
+        selected = request["release"]
+        canonical_version(selected["tag"])
+        # Re-fetch the exact tag, never /latest, and reject a changed asset after
+        # confirmation. A newer release appearing meanwhile cannot change selection.
+        data = json.loads(_fetch(f"{RELEASES_URL}/tags/{selected['tag']}", limit=2 * 1024 * 1024))
+        fresh = release_record(data, allow_beta)
+        if fresh != selected:
+            raise UpdateError("changed_release")
+        _write_result(directory, {"state": "downloading", "version": selected["version"]})
+        archive = directory / "release.zip"
+        _fetch(selected["url"], destination=archive)
+        if archive.stat().st_size != selected["size"]:
+            raise UpdateError("invalid_package", "Incomplete download")
+        if selected["digest"] and hashlib.sha256(archive.read_bytes()).hexdigest() != selected["digest"].split(":", 1)[1]:
+            raise UpdateError("invalid_package", "Checksum mismatch")
+        _write_result(directory, {"state": "ready", "version": selected["version"], "tag": selected["tag"]})
+    except HTTPError as exc:
+        code = "rate_limit" if exc.code in (403, 429) else "no_release" if exc.code == 404 else "network_error"
+        _write_result(directory, {"state": "error", "code": code})
+    except UpdateError as exc:
+        _write_result(directory, {"state": "error", "code": exc.code})
+    except (URLError, TimeoutError, OSError):
+        _write_result(directory, {"state": "error", "code": "network_error"})
+    except (ValueError, TypeError, KeyError):
+        _write_result(directory, {"state": "error", "code": "invalid_release"})
+
+
 class UpdateJob:
-    def __init__(self, current_version):
+    def __init__(self, current_version, *, action="check", allow_beta=False, release=None):
         self.directory = Path(tempfile.mkdtemp(prefix="node-console-download-"))
         self.started = time.monotonic()
         self.process = None
+        self.action, self.release = action, dict(release) if release else None
+        self.current_version = current_version
         try:
+            (self.directory / "request.json").write_text(json.dumps({
+                "action": action, "current_version": current_version, "allow_beta": bool(allow_beta),
+                "release": self.release}), encoding="utf-8")
             self.process = subprocess.Popen(
-                [sys.executable, "-I", str(Path(__file__).resolve()), "--download", str(self.directory), current_version],
+                [sys.executable, "-I", str(Path(__file__).resolve()), "--job", str(self.directory)],
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             atexit.register(self.close)
@@ -177,7 +264,7 @@ class UpdateJob:
         path = self.directory / "result.json"
         result = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"state": "checking"}
         # Wait for process exit before touching or removing its files.
-        if running and result["state"] in {"ready", "error", "current"}:
+        if running and result["state"] in {"ready", "error", "current", "releases"}:
             return {"state": "checking"}
         if not running and (self.process.returncode != 0 or result["state"] in {"checking", "downloading"}):
             return {"state": "error", "code": "network_error"}
@@ -247,7 +334,7 @@ def _package_files(archive_path, expected_version, blender_version):
     info = values.get("bl_info", {})
     if (not isinstance(info, dict) or info.get("name") != "Node Console"
             or tuple(info.get("version", ())) != version_tuple(expected_version)
-            or version_tuple(values.get("ADDON_VERSION")) != version_tuple(expected_version)):
+            or canonical_version(values.get("ADDON_VERSION")) != canonical_version(expected_version)):
         raise UpdateError("invalid_package", "Package/version mismatch")
     minimum = info.get("blender")
     if not isinstance(minimum, tuple) or len(minimum) != 3 or any(type(value) is not int for value in minimum):
@@ -257,7 +344,8 @@ def _package_files(archive_path, expected_version, blender_version):
     return files
 
 
-def install_release(archive, target, expected_version, blender_version, protected_paths=(), current_version=None):
+def install_release(archive, target, expected_version, blender_version, protected_paths=(), current_version=None,
+                    *, allow_downgrade=False):
     """Stage beside the installation, preserve local data, and keep a recovery copy.
 
     Loaded modules are untouched here; Blender-side activation is a separate step.
@@ -267,7 +355,9 @@ def install_release(archive, target, expected_version, blender_version, protecte
     installed_version = next((ast.literal_eval(node.value) for node in ast.parse((target / "__init__.py").read_bytes()).body
                               if isinstance(node, ast.Assign) and any(isinstance(name, ast.Name) and name.id == "ADDON_VERSION" for name in node.targets)), None)
     if ((current_version is not None and installed_version != current_version)
-            or version_tuple(expected_version) <= version_tuple(installed_version)):
+            or version_key(expected_version) == version_key(installed_version)
+            or (version_key(expected_version) < version_key(installed_version)
+                and not (allow_downgrade and current_version is not None))):
         raise UpdateError("changed_install")
     try:
         files = _package_files(archive, expected_version, blender_version)
@@ -305,3 +395,5 @@ def install_release(archive, target, expected_version, blender_version, protecte
 
 if __name__ == "__main__" and len(sys.argv) == 4 and sys.argv[1] == "--download":
     download_release(Path(sys.argv[2]), sys.argv[3])
+elif __name__ == "__main__" and len(sys.argv) == 3 and sys.argv[1] == "--job":
+    run_job(Path(sys.argv[2]))

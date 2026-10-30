@@ -91,6 +91,33 @@ def main():
                     backup = next(item for item in buttons if item.props['name'] == 'wm.path_open')
                     assert backup.filepath == state['backup']
                 cases += 1
+    for language in ('en_US', 'zh_HANS'):
+        bpy.context.preferences.view.language = language
+        for width in (1200, 420):
+            prefs = SimpleNamespace(accept_beta_updates=True, update_release='v1.5.0-beta.1')
+            releases = [dict(tag='v1.5.0-beta.1', version='1.5.0-beta.1', prerelease=True),
+                        dict(tag='v1.4.0', version='1.4.0', prerelease=False)]
+            layout = Layout()
+            context = SimpleNamespace(region=SimpleNamespace(width=width))
+            with patch.object(nc, '_preferences', return_value=prefs), \
+                    patch.object(nc, 'UPDATE_RELEASES', releases), \
+                    patch.object(nc, 'UPDATE_STATUS', {'state': 'available'}):
+                nc._draw_update_header(layout, context)
+                items = nc._update_release_items(prefs, context)
+                assert items is nc._update_release_items(prefs, context)
+                assert 'Beta' in items[0][1] and nc._ui_text('Stable') in items[1][1]
+                assert nc._selected_update_release() == releases[0]
+                prefs.accept_beta_updates = False
+                assert nc._selected_update_release() is None
+                assert len(nc._update_release_items(prefs, context)) == 1
+            props = [item for item in layout.walk() if item.kind == 'prop']
+            assert {item.props['name'] for item in props} == {'accept_beta_updates', 'update_release'}
+            selector = next(item for item in props if item.props['name'] == 'update_release')
+            assert selector.parent.kind == ('row' if width >= 560 else 'column')
+            install = next(item for item in layout.walk() if item.kind == 'operator'
+                           and item.props['name'] == 'node_console.install_release')
+            assert install.parent.operator_context == 'INVOKE_DEFAULT'
+            cases += 1
     prefs = SimpleNamespace(layout=Layout(), snippet_nodes_expanded=False)
     context = SimpleNamespace(region=SimpleNamespace(width=1200))
     with patch.object(nc, '_load_asset_index', return_value=[]), \

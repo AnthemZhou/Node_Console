@@ -14,7 +14,7 @@ def main():
     version = next(ast.literal_eval(node.value) for node in ast.parse((ROOT / "__init__.py").read_text()).body
                    if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "ADDON_VERSION" for t in node.targets))
     source = ROOT / "ime_input/ime_cocoa.m"
-    suffix = version.replace(".", "_")
+    suffix = version.replace(".", "_").replace("-", "_")
     with tempfile.TemporaryDirectory(prefix="nc-native-build-") as directory:
         output = Path(directory) / ("nc_ime_" + suffix + ".dylib")
         subprocess.run(["xcrun", "clang", "-dynamiclib", "-fobjc-arc", "-framework", "Cocoa",

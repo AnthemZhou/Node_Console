@@ -281,8 +281,8 @@ def main():
                     original_y = field_y + (field_height - nc._scaled(13, scale)) / 2 + 2 * nc._scaled(1, scale)
                     text_call = next(call for call in mocks['_draw_text'].call_args_list
                                      if call.args[0] == query + preedit)
-                    assert text_call.args[2] == original_y - (nc._scaled(2, scale) if cjk else 0)
-        passed.append('Chinese input baseline lowered at all scales; Latin preedit unchanged in both modes')
+                    assert text_call.args[2] == original_y + nc._scaled(1, scale) - (nc._scaled(2, scale) if cjk else 0)
+        passed.append('input raised one scaled pixel in both modes while retaining CJK baseline correction')
 
         for scale, width in ((0.5, 250), (1.0, 250), (1.0, 400), (2.0, 400)):
             op = console()

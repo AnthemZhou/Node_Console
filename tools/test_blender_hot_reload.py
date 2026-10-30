@@ -115,7 +115,9 @@ def main():
                 for callback in old_callbacks:
                     if not bpy.app.timers.is_registered(callback):
                         bpy.app.timers.register(callback, first_interval=60)
-                job = SimpleNamespace(directory=root, poll=Mock(return_value={'state': 'ready', 'version': version}), close=Mock())
+                job = SimpleNamespace(directory=root, poll=Mock(return_value={'state': 'ready', 'version': version, 'tag': 'v' + version}),
+                                      close=Mock(), current_version=nc.ADDON_VERSION,
+                                      release={'tag': 'v' + version, 'version': version, 'prerelease': False})
                 nc.UPDATE_JOB = job
                 wrapper = SimpleNamespace(app=SimpleNamespace(online_access=True, version=bpy.app.version, timers=bpy.app.timers),
                                           context=bpy.context, path=bpy.path, utils=bpy.utils)

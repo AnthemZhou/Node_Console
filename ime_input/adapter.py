@@ -4,7 +4,17 @@ import time
 from .session import CocoaSession
 
 
-def install(nc, library, log):
+class _CommandEvent:
+    def __init__(self, source, kind, ctrl=False):
+        self.source = source
+        self.type, self.value, self.unicode = kind, "PRESS", ""
+        self.ctrl, self.alt, self.oskey, self.shift = ctrl, False, False, False
+
+    def __getattr__(self, name):
+        return getattr(self.source, name)
+
+
+def install(nc, library, log, session_factory=None):
     console = nc.ENS_AddNodeByEnglishSearch
     originals = {name: getattr(console, name) for name in
                  ("invoke", "modal", "_finish", "_hide_console", "_draw_callback")}
@@ -26,7 +36,7 @@ def install(nc, library, log):
                 except ReferenceError:
                     pass
 
-    def drain(self, context):
+    def drain(self, context, event):
         session = getattr(self, "_ime_session", None)
         if session is None:
             return
@@ -34,7 +44,20 @@ def install(nc, library, log):
         while session.diagnostics:
             log("ime_key", detail=session.diagnostics.popleft())
         previous_query = self._query
-        self._query = session.drain(self._query)
+        outcome = None
+
+        def command(query, kind, ctrl):
+            nonlocal outcome
+            if self._query != query:
+                self._query = query
+                self._refresh_query_results()
+            outcome = originals["modal"](self, context, _CommandEvent(event, kind, ctrl))
+            return self._query
+
+        if hasattr(session, "drain_actions"):
+            self._query = session.drain_actions(self._query, command)
+        else:
+            self._query = session.drain(self._query)
         self._ime_preedit = session.preedit
         if previous_query != self._query:
             self._refresh_query_results()
@@ -42,6 +65,7 @@ def install(nc, library, log):
         if previous_query != self._query or previous != self._ime_preedit:
             log("ime_preedit", text=self._ime_preedit)
             self._tag_owner_redraw(context)
+        return outcome
 
     def invoke(self, context, event):
         result = originals["invoke"](self, context, event)
@@ -51,7 +75,8 @@ def install(nc, library, log):
         self._ime_next_tick = time.monotonic() + 0.2
         self._ime_tick_interval = 0.2
         try:
-            self._ime_session = CocoaSession(library() if callable(library) else library)
+            self._ime_session = (session_factory() if session_factory is not None else
+                                 CocoaSession(library() if callable(library) else library))
             self._ime_session.sync(self._query)
             self._ime_timer = context.window_manager.event_timer_add(0.02, window=context.window)
             log("ime_started")
@@ -62,9 +87,12 @@ def install(nc, library, log):
         return result
 
     def modal(self, context, event):
-        drain(self, context)
+        # Focus loss wins over any pending commit/Enter from a departing window.
         if event.type == "WINDOW_DEACTIVATE":
             return self._finish(context, {"CANCELLED"})
+        outcome = drain(self, context, event)
+        if outcome is not None and outcome != {"RUNNING_MODAL"}:
+            return outcome
         session = getattr(self, "_ime_session", None)
         if event.type == "TIMER" and session is not None:
             if nc.ACTIVE_CONSOLE_OPERATOR is not self:
@@ -103,7 +131,11 @@ def install(nc, library, log):
         session = getattr(self, "_ime_session", None)
         caret = getattr(self, "_ime_caret_rect", None)
         if session is not None and caret and self._owns_context(context):
-            session.caret(*caret)
+            try:
+                session.caret(*caret)
+            except Exception:
+                close(self, context)
+                log("ime_error", message="Could not update native input position")
 
     console.invoke = invoke
     console.modal = modal

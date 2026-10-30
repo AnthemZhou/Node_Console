@@ -18,7 +18,7 @@ RESOURCE = Path(__file__).with_name("macos.json")
 def materialize(resource=RESOURCE, cache=None):
     payload = json.loads(resource.read_text(encoding="utf-8"))
     version = payload["version"]
-    if payload.get("format") != 1 or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+    if payload.get("format") != 1 or not re.fullmatch(r"\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.[1-9]\d*)?", version):
         raise ValueError("Unsupported native input resource")
     data = base64.b64decode(payload["data"], validate=True)
     digest = hashlib.sha256(data).hexdigest()

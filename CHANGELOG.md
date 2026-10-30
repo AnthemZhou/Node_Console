@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.4.1
+
+### 中文
+
+- 更新器改为「检查版本 → 选择版本 → 确认安装」，检查不下载或替换文件。当前版本标注且不可重复安装；紧凑布局在窄窗口中纵向排列。
+- 新增「接受 Beta 测试版本」，默认关闭；支持已发布的 GitHub 预发布版与 Beta/RC 版本排序。允许经确认回退至稳定版，保留本地备份、收藏、权重和组合点库；回退旧版时会同时恢复旧版界面。
+- 下载前重新核对所选标签和安装包信息，确认后版本或文件发生变化时停止，不自动改装另一版本。Beta 开关变化不安装或降级，并取消未完成的下载。
+- 搜索框内已输入文字和组词文字上移一个缩放像素，保留中文相对英文的基线校正；不移动占位文字、结果行及图标。
+- 增加 Windows 系统 IME 后端，在当前 Blender 窗口内接收组词和上屏，保留自绘界面；按原始事件顺序处理文字、退格、回车与组合点模式切换，避免组词按键误触发节点操作。
+- 接收器仅在搜索期间存在，关闭、失焦与卸载时释放并恢复原输入上下文；不修改快捷键、输入法语言选择或其他插件配置。
+- Windows 目前通过模拟消息和生命周期测试，尚无 Windows Blender 实机输入法验证，不将其等同于正式兼容性确认。macOS 原有后端继续保留，Linux 不变。
+
+### English
+
+- Split updates into checking, version selection and explicit installation confirmation. Checking does not download packages or replace files. Mark the current version and disable reinstalling it; stack controls in narrow layouts.
+- Add an off-by-default Beta opt-in, published GitHub prereleases and Beta/RC ordering. Permit confirmed downgrades with local backup and preserved user data; older releases restore their own older update interface.
+- Revalidate the selected tag and asset before download. Stop if they changed after confirmation, never silently select another release. Changing Beta opt-in cancels pending downloads without installing or downgrading.
+- Raise entered/preedit text by one scaled pixel, retaining relative CJK baseline correction without shifting placeholders, results or icons.
+- Add a window-scoped Windows IMM receiver for the existing GPU field. Preserve native event ordering for text, editing, confirmation and Snippet Node mode switching; isolate composition keys from node commands.
+- Restore the prior input context on close/focus loss without changing keymaps, keyboard language or other add-on settings. Keep the macOS backend and Linux input path.
+- Windows message/lifecycle tests use a fake OS. Real Windows Blender IME validation is still required even though 1.4.1 is published as a stable release.
+
 ## 1.4.0
 
 ### 中文
