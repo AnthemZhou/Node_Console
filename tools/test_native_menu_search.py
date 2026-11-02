@@ -78,7 +78,7 @@ for tree_id in ('GeometryNodeTree','ShaderNodeTree','CompositorNodeTree'):
                 result = nc._search_entries(query,set())
                 by_name = {entry.english: entry for entry in result}
                 def tie_key(entry):
-                    item = entry._native_items[1][0]
+                    item = entry._native_items(1)[0]
                     return (nc.native_search.score(nc.native_search.words(query)[0], item),
                             item.weight, item.main_length, item.total_length)
                 assert [entry.english for entry in result[:5]] == expected[:5]

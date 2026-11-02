@@ -10,6 +10,7 @@ import math
 import re
 import sys
 import time
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from functools import cached_property, lru_cache
 from pathlib import Path
@@ -29,13 +30,13 @@ from . import addon_reloader, addon_updater, node_registry, json_store
 from . import native_search, node_menu_search
 
 
-ADDON_VERSION = "1.4.6"
+ADDON_VERSION = "1.4.7"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 4, 6),
+    "version": (1, 4, 7),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -318,6 +319,7 @@ UI_TEXT_ZH = {
     "Faster first search": "首次搜索提速",
     "Search ranking and Chinese input speed": "搜索排序与中文响应优化",
     "Native search result alignment": "原生搜索结果对齐",
+    "Faster opening and search input": "首次打开与输入提速",
     "See release notes": "详见更新说明",
     "Currently installed; check for updates to refresh the list": "当前已安装；检查更新以刷新版本列表",
     "Check for updates first": "请先检查更新",
@@ -407,19 +409,39 @@ class NodeSearchEntry:
     native_hidden: bool = False
 
     @cached_property
-    def _native_items(self):
+    def _native_item_cache(self):
+        return {}
+
+    def _native_items(self, language):
+        cached = self._native_item_cache.get(language)
+        if cached is not None:
+            return cached
         paths = self.menu_paths
         if not paths:
             separator = " " + native_search.ARROW + " "
             english = separator.join((self.category, self.english)).replace(" > ", separator)
             chinese = separator.join((self.category, self.chinese)).replace(" > ", separator)
             paths = ((english, chinese, 0.0),)
-        return tuple(tuple(native_search.Item(row[language], row[2], data=self)
-                           for row in paths) for language in (0, 1))
+        items = tuple(native_search.Item(row[language], row[2], data=self) for row in paths)
+        self._native_item_cache[language] = items
+        return items
 
     @cached_property
     def _match_data(self):
         return _prepare_match_data(self)
+
+    @cached_property
+    def _extension_data(self):
+        chinese_parts = [_normalize(part) for part in self.chinese.split(" > ") if part.strip()]
+        aliases = tuple(_normalize(alias) for alias in self.aliases)
+        parts = [[_normalize(part) for part in text.split(" > ") if part.strip()]
+                 for text in (self.english, self.chinese)]
+        leaves = tuple(part[-1].replace(" ", "") for part in parts if part)
+        profiles = ([_pinyin_profile_for_parts([alias]) for alias in self.aliases]
+                    + _alternate_pinyin_profiles(" ".join(chinese_parts[-1:]))
+                    + _alternate_pinyin_profiles(" ".join(chinese_parts[:-1])))
+        return (_normalize(self.english), _normalize(self.chinese), aliases,
+                leaves + tuple(alias.replace(" ", "") for alias in aliases), profiles)
 
     def __post_init__(self):
         if self.leaf_pinyin_compact or self.root_pinyin_compact:
@@ -436,16 +458,22 @@ class NodeSearchEntry:
 
 
 NODE_ENTRY_BY_ID: dict[str, NodeSearchEntry] = {}
+SEARCH_QUERY_ENTRIES = ()
+SEARCH_QUERY_ITEMS = None
+SEARCH_QUERY_CACHE = {}
 
 
 def _clear_search_caches():
-    global NODE_CLASS_CACHE
+    global NODE_CLASS_CACHE, SEARCH_QUERY_ENTRIES, SEARCH_QUERY_ITEMS
     MENU_ENTRY_CACHE.clear()
     TRANSLATION_LABEL_CACHE.clear()
     SNIPPET_SEARCH_CACHE.clear()
     SEARCH_INDEX_ENTRY_CACHE.clear()
     SEARCH_INDEX_MEMORY_KEYS.clear()
     NODE_CLASS_CACHE = None
+    SEARCH_QUERY_ENTRIES = ()
+    SEARCH_QUERY_ITEMS = None
+    SEARCH_QUERY_CACHE.clear()
     node_registry.clear()
     _normalize.cache_clear()
     _search_words.cache_clear()
@@ -2196,10 +2224,10 @@ def _addon_version_string() -> str:
     return "0.0.0"
 
 
-def _search_index_cache_key(context) -> str:
+def _search_index_cache_key(context, runtime=None) -> str:
     blender = ".".join(str(part) for part in bpy.app.version)
     tree = getattr(context.space_data, "edit_tree", None)
-    capabilities = hashlib.sha256(repr(node_registry.runtime_signature(tree)).encode()).hexdigest()[:16] if tree else ""
+    capabilities = hashlib.sha256(repr(runtime if runtime is not None else node_registry.runtime_signature(tree)).encode()).hexdigest()[:16] if tree else ""
     menu_context = hashlib.sha256(repr(node_menu_search.context_signature(context)).encode()).hexdigest()[:16]
     return f"{_addon_version_string()}:{node_registry.INDEX_SCHEMA}:{blender}:{_node_tree_id(context)}:{capabilities}:{menu_context}:{_asset_index_signature()}"
 
@@ -2238,7 +2266,13 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
         node_type = str(item.get("node_type", ""))
         if node_type == "NodeFrame" and english == "Frame":
             chinese = "框"
-        settings = tuple(tuple(pair) for pair in item.get("settings", []))
+        settings = tuple(tuple(pair) for pair in deepcopy(item.get("settings", [])))
+        aliases = tuple(item.get("aliases", ()))
+        leaf_boundaries = tuple(item.get("leaf_pinyin_boundaries", ()))
+        root_boundaries = tuple(item.get("root_pinyin_boundaries", ()))
+        if (not all(isinstance(alias, str) for alias in aliases)
+                or not all(isinstance(value, int) for value in leaf_boundaries + root_boundaries)):
+            return None
         label = _entry_label(english, chinese)
         return NodeSearchEntry(
             identifier=str(item["identifier"]),
@@ -2252,19 +2286,18 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
             asset_path=str(item.get("asset_path", "")),
             asset_name=str(item.get("asset_name", "")),
             asset_color_tag=str(item.get("asset_color_tag", "")),
-            search_text=(item["search_text"] if item.get("label") == label
-                         and isinstance(item.get("search_text"), str)
-                         else _make_search_text(english, chinese, label, node_type)),
+            # Retain legacy metadata, but native matching no longer consumes it.
+            search_text=item.get("search_text", "") if isinstance(item.get("search_text", ""), str) else "",
             settings=settings,
-            aliases=tuple(item.get("aliases", ())),
+            aliases=aliases,
             menu_paths=tuple((str(row[0]), str(row[1]), float(row[2]))
                              for row in item.get("menu_paths", ())),
             native_hidden=bool(item.get("native_hidden", False)),
             leaf_pinyin_compact=str(item.get("leaf_pinyin_compact", "")),
-            leaf_pinyin_boundaries=tuple(item.get("leaf_pinyin_boundaries", ())),
+            leaf_pinyin_boundaries=leaf_boundaries,
             leaf_pinyin_initials=str(item.get("leaf_pinyin_initials", "")),
             root_pinyin_compact=str(item.get("root_pinyin_compact", "")),
-            root_pinyin_boundaries=tuple(item.get("root_pinyin_boundaries", ())),
+            root_pinyin_boundaries=root_boundaries,
             root_pinyin_initials=str(item.get("root_pinyin_initials", "")),
         )
     except Exception:
@@ -2277,19 +2310,16 @@ def _load_search_index_cache(context, cache_key=None) -> list[NodeSearchEntry] |
     memory_key = (cache_key, _display_mode(), revision)
     if memory_key in SEARCH_INDEX_ENTRY_CACHE:
         return list(SEARCH_INDEX_ENTRY_CACHE[memory_key])
-    raw_entries = _settings_value(("search_index_cache", cache_key))
     SEARCH_INDEX_MEMORY_KEYS.discard(cache_key)
-    if not isinstance(raw_entries, list):
-        return None
 
-    entries = []
-    for item in raw_entries:
-        if isinstance(item, dict):
-            entry = _entry_from_cache(item)
-            if entry:
-                entries.append(entry)
-    if len(entries) != len(raw_entries):
-        return None
+    def decode(raw_entries):
+        if not isinstance(raw_entries, list):
+            return None
+        entries = [_entry_from_cache(item) if isinstance(item, dict) else None
+                   for item in raw_entries]
+        return entries if all(entry is not None for entry in entries) else None
+
+    entries = SETTINGS_STORE.derive(_settings_path(), ("search_index_cache", cache_key), decode)
     if entries:
         if len(SEARCH_INDEX_ENTRY_CACHE) >= 12:
             SEARCH_INDEX_ENTRY_CACHE.pop(next(iter(SEARCH_INDEX_ENTRY_CACHE)))
@@ -3638,8 +3668,9 @@ def _rebuild_search_entries(context):
     NODE_SEARCH_ENTRIES.clear()
     NODE_ENTRY_BY_ID.clear()
     tree = getattr(context.space_data, "edit_tree", None)
-    capabilities = node_registry.inventory(tree) if tree else {}
-    cache_key = _search_index_cache_key(context)
+    runtime = node_registry.runtime_signature(tree) if tree else None
+    capabilities = node_registry.inventory(tree, runtime) if tree else {}
+    cache_key = _search_index_cache_key(context, runtime)
 
     seen_keys = set()
     menu_paths = None
@@ -3660,7 +3691,9 @@ def _rebuild_search_entries(context):
         if _is_redundant_mix_color_entry(entry):
             return
         if entry.kind == "ASSET":
-            entry = replace(entry, aliases=tuple(node_registry.aliases().get(entry.english, ())))
+            aliases = tuple(node_registry.aliases().get(entry.english, ()))
+            if aliases != entry.aliases:
+                entry = replace(entry, aliases=aliases)
             previous = NODE_ENTRY_BY_ID.get(entry.identifier)
             if previous and (previous.asset_path, previous.asset_name) != (entry.asset_path, entry.asset_name):
                 identity = json.dumps([entry.asset_path, entry.asset_name], ensure_ascii=False)
@@ -3690,7 +3723,6 @@ def _rebuild_search_entries(context):
                 aliases.append(entry.chinese.split(" > ")[-1])
             entry = replace(entry, chinese=chinese, label=label,
                             aliases=tuple(dict.fromkeys(aliases)),
-                            search_text=_make_search_text(entry.english, chinese, label, entry.node_type),
                             leaf_pinyin_compact="", root_pinyin_compact="")
         if not prepared and entry.kind in {"NODE", "ZONE", "ACTION"}:
             ensure_menus()
@@ -3753,7 +3785,6 @@ def _rebuild_search_entries(context):
                     menu_paths=(("Group \u25b8 " + asset_name,
                                  node_registry.official_chinese_label("Group") + " \u25b8 " + asset_name,
                                  -1.0 if getattr(node_group, "is_linked_packed", False) else 0.0),),
-                    search_text=_make_search_text(asset_name, chinese, label, ""),
                 )
             )
 
@@ -3793,7 +3824,6 @@ def _rebuild_search_entries(context):
                 asset_path=str(blend_path),
                 asset_name=asset_name,
                 asset_color_tag=asset_item.get("color_tag", ""),
-                search_text=_make_search_text(asset_name, chinese, label, ""),
                 menu_paths=paths,
             )
             if cacheable_entries is not None:
@@ -3838,7 +3868,6 @@ def _rebuild_search_entries(context):
                     description=description,
                     kind="ZONE",
                     node_type=operator_id,
-                    search_text=_make_search_text(english, chinese, label, input_type),
                     settings=(
                         ("input_node_type", input_type),
                         ("output_node_type", output_type),
@@ -3891,7 +3920,6 @@ def _rebuild_search_entries(context):
                 description=description,
                 kind="NODE",
                 node_type=node_type,
-                search_text=_make_search_text(english, chinese, label, node_type),
                 settings=tuple(settings),
                 asset_color_tag=capabilities[node_type]['color_tag'],
             )
@@ -3918,7 +3946,6 @@ def _rebuild_search_entries(context):
                 description=english,
                 kind="NODE",
                 node_type=node_type,
-                search_text=_make_search_text(english, chinese, label, node_type),
             )
             add_entry(entry)
             if cached_entries is None:
@@ -3970,8 +3997,7 @@ def _rebuild_search_entries(context):
                 identifier=_safe_identifier("O", operator), category="Utilities > Bundle",
                 english=english, chinese=chinese, label=_entry_label(english, chinese),
                 description=bpy.ops.node.add_typed_bundle.get_rna_type().description,
-                kind="ACTION", node_type=operator, asset_color_tag=capabilities.get("NodeCombineBundle", {}).get("color_tag", "NONE"),
-                search_text=_make_search_text(english, chinese, english, "")))
+                kind="ACTION", node_type=operator, asset_color_tag=capabilities.get("NodeCombineBundle", {}).get("color_tag", "NONE")))
 
     add_zone_entries()
     add_asset_library_entries(cacheable_entries)
@@ -3981,8 +4007,8 @@ def _rebuild_search_entries(context):
 
 def _extension_match(entry: NodeSearchEntry, query: str, match=None) -> int:
     """Keep transliteration/aliases separate from official matching lengths."""
-    data = entry._match_data
-    if query in {data["english"], data["chinese"]}:
+    english, chinese, aliases, compact_leaves, profiles = entry._extension_data
+    if query == english or query == chinese:
         return 6
     compact = query.replace(" ", "")
     if match is not None:
@@ -3994,16 +4020,15 @@ def _extension_match(entry: NodeSearchEntry, query: str, match=None) -> int:
                                        entry.leaf_pinyin_boundaries, entry.leaf_pinyin_initials),
                     _pinyin_match_level(compact, entry.root_pinyin_compact,
                                        entry.root_pinyin_boundaries, entry.root_pinyin_initials))
-        for value, boundaries, initials, _text in data["leaf_profiles"] + data["root_profiles"]:
+        for value, boundaries, initials, _text in profiles:
             level = max(level, _pinyin_match_level(compact, value, boundaries, initials))
-    for alias in entry.aliases:
-        normalized = _normalize(alias)
+    for normalized in aliases:
         if query == normalized:
             return 6
         if normalized.startswith(query) and len(query) >= 2:
             level = max(level, 4)
     # Space-free input is a longstanding convenience, not native word matching.
-    if len(compact) >= 4 and compact in data["compact_leaf_parts"]:
+    if len(compact) >= 4 and compact in compact_leaves:
         level = max(level, 5)
     return level
 
@@ -4013,7 +4038,7 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str], allow_
         return None
     language = 1 if re.search(r"[\u3400-\u9fff]", query) else 0
     query_words, _groups = native_search.words(query)
-    scores = [native_search.score(query_words, item) for item in entry._native_items[language]]
+    scores = [native_search.score(query_words, item) for item in entry._native_items(language)]
     scores = [score for score in scores if score is not None]
     if scores:
         return max(scores)
@@ -4021,28 +4046,48 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str], allow_
     return 900 + level if level >= (2 if allow_weak_pinyin else 3) else None
 
 
+def _search_candidates(language):
+    global SEARCH_QUERY_ENTRIES, SEARCH_QUERY_ITEMS
+    if (len(SEARCH_QUERY_ENTRIES) != len(NODE_SEARCH_ENTRIES)
+            or any(old is not new for old, new in zip(SEARCH_QUERY_ENTRIES, NODE_SEARCH_ENTRIES))):
+        SEARCH_QUERY_ENTRIES = tuple(NODE_SEARCH_ENTRIES)
+        SEARCH_QUERY_ITEMS = None
+        SEARCH_QUERY_CACHE.clear()
+    if SEARCH_QUERY_ITEMS is None:
+        SEARCH_QUERY_ITEMS = {}
+    if language not in SEARCH_QUERY_ITEMS:
+        native, supplemental = [], []
+        for entry in SEARCH_QUERY_ENTRIES:
+            if not entry.native_hidden:
+                target = native if entry.menu_paths or entry.kind == "ASSET" else supplemental
+                target.extend(entry._native_items(language))
+        for items in (native, supplemental):
+            items.sort(key=lambda item: item.text.encode("utf-8"))
+        SEARCH_QUERY_ITEMS[language] = (native, supplemental)
+    return SEARCH_QUERY_ITEMS[language]
+
+
 def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
     if not query.strip():
         return []
     language = 1 if re.search(r"[\u3400-\u9fff]", query) else 0
-    native_items, supplemental_items = [], []
+    native_items, supplemental_items = _search_candidates(language)
+    cached = SEARCH_QUERY_CACHE.get(query)
+    if cached is not None:
+        ordered, strong_ids = cached
+        return sorted(ordered, key=lambda entry: not (
+            entry.identifier in favorites and entry.identifier in strong_ids))
     extensions, weak_extensions = [], []
     normalized = _normalize(query)
     for entry in NODE_SEARCH_ENTRIES:
         if entry.native_hidden:
             continue
-        items = entry._native_items[language]
-        target = native_items if entry.menu_paths or entry.kind == "ASSET" else supplemental_items
-        target.extend(items)
         level = _extension_match(entry, normalized)
         if level >= 3:
             extensions.append((level, entry))
         elif level == 2:
             weak_extensions.append((level, entry))
 
-    # Native menu search adds candidates in full-path alphabetical order.
-    native_items.sort(key=lambda item: item.text.encode("utf-8"))
-    supplemental_items.sort(key=lambda item: item.text.encode("utf-8"))
     ranked = native_search.ranked(native_items, query)
     supplemental = native_search.ranked(supplemental_items, query)
     word_count = len(native_search.words(query)[0])
@@ -4066,6 +4111,10 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
     # Only relevant favorites are boosted; the underlying native order is stable.
     strong_ids = {entry.identifier for entry in strong + extra_strong}
     strong_ids.update(entry.identifier for _level, entry in extensions)
+    # Cache only matching, not the live favorite boost or mutable result list.
+    if len(SEARCH_QUERY_CACHE) >= 32:
+        SEARCH_QUERY_CACHE.pop(next(iter(SEARCH_QUERY_CACHE)))
+    SEARCH_QUERY_CACHE[query] = (tuple(result), frozenset(strong_ids))
     result.sort(key=lambda entry: not (entry.identifier in favorites and entry.identifier in strong_ids))
     return result
 

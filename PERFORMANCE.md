@@ -1,5 +1,85 @@
 # Node Console Performance
 
+## 1.4.7 Open and Input Latency
+
+Baseline: published 1.4.6 ZIP. macOS arm64, isolated Blender 5.2.2 LTS
+(`d13f752e3b9c`); no personal preferences or project data are used.
+No native scoring formula, weights, keymaps, IME polling or focus code changes.
+
+### Index Preparation
+
+Three fresh processes per version, alternating execution order. Cold values are
+medians of the three full index builds. Disk and memory values are medians of
+the three runs' existing three/five-sample medians. This batch excludes asset
+scanning, native IME activation and GPU drawing, and is not cold-filesystem or
+whole-popup latency. Runtime capability probes are still performed.
+
+| Editor | No persisted index, before / after | Persisted index, before / after | Memory index, before / after |
+| --- | ---: | ---: | ---: |
+| Geometry | 322.48 / 203.68 ms | 30.15 / 22.32 ms | 4.06 / 3.49 ms |
+| Shader | 171.89 / 101.28 ms | 20.86 / 16.01 ms | 4.23 / 3.14 ms |
+| Compositor | 159.60 / 103.88 ms | 21.03 / 15.89 ms | 4.22 / 2.91 ms |
+
+The largest cold-path reduction comes from no longer transliterating the old
+full-text search field for every built-in entry and bilingual display label.
+Current native matching retains Chinese, pinyin and initials profiles; snippet
+full-text indexing is unchanged. Existing persisted legacy metadata is readable.
+An internal read-only JSON converter constructs detached entries without a deep
+copy of all raw records; mutable socket settings are copied. Public JSON reads
+and atomic writes retain their isolation guarantees. Runtime signatures are
+computed once per rebuild rather than twice.
+
+### Query Processing
+
+The three-editor benchmark includes built-in assets. It separates first input,
+uncached matching and immediately repeated input, instead of presenting a cache
+hit as the speed of every keystroke. Uncached-query medians cover five rounds of
+25 strings with the new result cache explicitly cleared before each query;
+existing word/fuzzy caches may be warm. First-input values are individual samples
+after index preparation, not statistically stable end-to-end typing estimates.
+
+| Editor | First `设置`, before / after | Uncached query, before / after | Immediate repeat, before / after |
+| --- | ---: | ---: | ---: |
+| Geometry | 19.45 / 16.21 ms | 2.33 / 2.03 ms | 2.32 / 0.023 ms |
+| Shader | 5.98 / 4.91 ms | 1.05 / 0.94 ms | 0.97 / 0.011 ms |
+| Compositor | 7.42 / 4.17 ms | 1.15 / 1.06 ms | 1.09 / 0.012 ms |
+
+Candidates are prepared only for the requested query language and sorted once
+per active entry snapshot. Alias/pinyin preprocessing no longer constructs
+retired category/whole-word matching fields. Up to 32 exact query strings retain
+the unboosted order and strong-match IDs; every search applies current favorites
+and returns a fresh list. Entry replacement, reorder, editor/context changes and
+explicit cache reset invalidate matches. No query cache is written to disk.
+
+The complete result lists match 1.4.6 across 12,158 comparisons on 5.2.2,
+including generated English/Chinese names, pinyin, initials, prefixes, whitespace,
+case, typos, misses and changed favorites. The 194 independently captured native
+queries retain 177/178 first-result/empty outcomes, 159/178 strict visible lists,
+1,131/1,193 matching captured positions and zero captured-result omissions.
+
+Blender 5.1.2 (`ec6e62d40fa9`) adds 10,952 matching full-list comparisons, for
+23,110 total. Its uncached-query medians are 2.18 -> 1.83 ms (Geometry),
+1.09 -> 0.92 ms (Shader), and 0.98 -> 0.85 ms (Compositor). Its Shader first-input
+sample is slightly slower (5.26 -> 5.47 ms), so first-keystroke gains are not
+claimed universal. Both builds pass cache invalidation and node creation tests;
+135 pure-Python tests and isolated 5.2.2 user-data/hot-reload tests also pass.
+
+Real GPU popup tests pass three open/close cycles and 15 synthetic
+preedit/commit/cancel/clear transitions in each Blender version. The observer
+checks that the expected query text is actually submitted for drawing, not only
+that Python state changed. Timings stop at draw-callback completion, not display
+presentation. Individual 5.2.2 first-preedit runs vary roughly 34-84 ms after
+the changes; timer scheduling and one-off initialization still matter. These
+runs support functional regression coverage, not a reliable whole-UI speedup
+percentage. No physical IME candidate latency or Windows/Linux performance was
+measured, and no user's running Blender installation or preferences were changed.
+
+Reproduce through `tools/run_isolated_blender.py` with `tools/benchmark_open.py`,
+`tools/benchmark_search_latency.py Node_Console_1.4.6.zip report.json`,
+`tools/test_search_cache.py`, and `tools/test_expanded_native_search.py`.
+Local raw reports stay in ignored `build/performance-*.json` and UI captures in
+`build/performance-next-ui-*/`, outside Git and install packages.
+
 ## 1.4.6 Native Search Alignment
 
 Date: 2026-11-02. Actual native `NODE_MT_add` search screenshots on macOS arm64,

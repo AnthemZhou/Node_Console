@@ -26,15 +26,30 @@ def main():
     second = replace(first, identifier='second')
     nc.NODE_SEARCH_ENTRIES[:] = [first, second]
     serialized = asdict(first)
-    with patch.object(nc, '_prepare_match_data', wraps=nc._prepare_match_data) as prepare:
+    assert first._native_item_cache == {}
+    first._native_items(0)
+    assert set(first._native_item_cache) == {0}
+    with patch.object(nc.native_search, 'ranked', wraps=nc.native_search.ranked) as rank:
         assert nc._search_entries('cache', set()) == [first, second]
         assert nc._search_entries('cache', {'second'}) == [second, first]
         assert nc._search_entries('cache', set()) == [first, second]
-        assert prepare.call_count == 2
+        assert rank.call_count == 2
     assert asdict(first) == serialized
     assert '_match_data' not in serialized
     passed.extend(('entry preprocessing reused', 'favorites updated immediately',
-                   'cache excluded from persistence'))
+                   'cache excluded from persistence', 'native candidates prepared per query language'))
+
+    # Results are copied, favorites are live, and equal-length index changes invalidate.
+    nc._search_entries('cache', set()).clear()
+    nc.NODE_SEARCH_ENTRIES.reverse()
+    assert nc._search_entries('cache', set()) == [second, first]
+    nc.NODE_SEARCH_ENTRIES[:] = [first, second]
+    for index in range(40):
+        nc._search_entries(f'query{index}', set())
+    assert len(nc.SEARCH_QUERY_CACHE) <= 32
+    nc._clear_search_caches()
+    assert not nc.SEARCH_QUERY_CACHE and not nc.SEARCH_QUERY_ENTRIES
+    passed.append('bounded query cache isolates results and observes index reorder/reset')
 
     changed = replace(first, english='Renamed Sample', chinese='Renamed Sample',
                       label='Renamed Sample', search_text='renamed sample',
@@ -43,6 +58,9 @@ def main():
     assert nc._query_match_parts(changed, 'renamed')['leaf_prefix']
     assert nc._query_match_parts(changed, 'cachealias')['leaf_exact']
     assert changed._match_data is not first._match_data
+    nc.NODE_SEARCH_ENTRIES[:] = [changed, second]
+    assert nc._search_entries('renamed', set())[0] is changed
+    nc.NODE_SEARCH_ENTRIES[:] = [first, second]
     passed.append('replacement entry has fresh names and aliases')
 
     with patch.object(nc, '_extension_match', wraps=nc._extension_match) as match:
@@ -125,6 +143,14 @@ def main():
         nc._clear_search_caches()
         sentinel = {'favorites': ['keep'], 'shortcuts': ['keep'], 'usage': {'keep': 42}}
         nc._write_settings(sentinel)
+        raw = nc._entry_to_cache(first)
+        raw['settings'] = [['inputs[0].default_value', [1, 2, 3]]]
+        decoded = nc._entry_from_cache(raw)
+        decoded.settings[0][1][0] = 42
+        assert raw['settings'][0][1] == [1, 2, 3]
+        assert nc._entry_from_cache(dict(raw, aliases=[['invalid']])) is None
+        assert nc._entry_from_cache(dict(raw, leaf_pinyin_boundaries=[[1]])) is None
+        passed.append('decoded vector settings do not retain mutable JSON snapshot values')
         for tree_id in ('GeometryNodeTree', 'ShaderNodeTree', 'CompositorNodeTree'):
             tree = bpy.data.node_groups.new('Prepared index test', tree_id)
             context = SimpleNamespace(space_data=SimpleNamespace(edit_tree=tree, tree_type=tree_id))

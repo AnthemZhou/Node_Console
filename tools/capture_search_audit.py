@@ -89,8 +89,8 @@ def tick():
                 nc._rebuild_search_entries(bpy.context)
                 if key not in report['catalogs']:
                     report['catalogs'][key] = [dict(id=e.identifier, english=e.english, chinese=e.chinese,
-                        kind=e.kind, node=e.node_type, paths=[[i.text for i in items] for items in e._native_items],
-                        weights=[[i.weight for i in items] for items in e._native_items],
+                        kind=e.kind, node=e.node_type, paths=[[i.text for i in e._native_items(language)] for language in (0, 1)],
+                        weights=[[i.weight for i in e._native_items(language)] for language in (0, 1)],
                         settings=e.settings, menu=bool(e.menu_paths), hidden=e.native_hidden)
                         for e in nc.NODE_SEARCH_ENTRIES]
                 menu_key = key + '|' + sample['language']

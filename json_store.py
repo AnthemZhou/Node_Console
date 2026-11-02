@@ -54,8 +54,7 @@ class JsonStore:
             self.revision += 1
         return self.revision
 
-    def read(self, path, key=None, default=None, *, project=None):
-        """Copy a requested value; optional projections must not mutate their input."""
+    def _value(self, path, key, default):
         self.refresh(path)
         value = self._data
         if key is not None:
@@ -64,9 +63,22 @@ class JsonStore:
                     value = default
                     break
                 value = value[part]
+        return value
+
+    def read(self, path, key=None, default=None, *, project=None):
+        """Copy a requested value; optional projections must not mutate their input."""
+        value = self._value(path, key, default)
         if project is not None:
             value = project(value)
         return deepcopy(value)
+
+    def derive(self, path, key, convert):
+        """Convert a read-only snapshot into detached, caller-owned objects.
+
+        Internal converters must neither mutate nor retain mutable input values.
+        Unlike read(), this avoids copying JSON that will immediately be decoded.
+        """
+        return convert(self._value(path, key, None))
 
     def write(self, path, data):
         path = Path(path).resolve()

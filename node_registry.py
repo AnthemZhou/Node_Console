@@ -59,8 +59,8 @@ def registration_signature():
             tuple(sorted(cls.bl_rna.identifier for cls in _python_node_classes())))
 
 
-def inventory(tree):
-    key = runtime_signature(tree)
+def inventory(tree, signature=None):
+    key = signature if signature is not None else runtime_signature(tree)
     if key in _inventories:
         return _inventories[key]
     supported = {}

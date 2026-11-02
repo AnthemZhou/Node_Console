@@ -53,6 +53,13 @@ state = {'phase': 'open', 'cycle': 0, 'step': 0, 'pending': None}
 report = {'version': bpy.app.version_string, 'samples': [], 'errors': []}
 draw = nc.ENS_AddNodeByEnglishSearch._draw_callback
 refresh = nc.ENS_AddNodeByEnglishSearch._refresh_query_results
+draw_text = nc._draw_text
+rendered_text = []
+
+
+def observed_text(text, *args, **kwargs):
+    rendered_text.append(text)
+    return draw_text(text, *args, **kwargs)
 
 
 def observed_refresh(self):
@@ -63,6 +70,7 @@ def observed_refresh(self):
 
 
 def observed_draw(self, context):
+    rendered_text.clear()
     start = time.perf_counter()
     if '--profile-draw' in sys.argv and state['pending'] and state['cycle'] == state['step'] == 0:
         profiler = cProfile.Profile()
@@ -74,16 +82,21 @@ def observed_draw(self, context):
         draw(self, context)
     pending = state['pending']
     if pending and (self._query, self._ime_preedit) == pending['expected']:
+        expected_text = ''.join(pending['expected']) or nc._ui_text('Search nodes...')
+        if expected_text not in rendered_text:
+            return
         pending['draw_ms'] = (time.perf_counter() - start) * 1000
         pending['elapsed_ms'] = (time.perf_counter() - pending.pop('start')) * 1000
         pending['results'] = len(self._results)
         pending['first'] = self._results[0].english if self._results else None
+        pending['rendered_query'] = expected_text
         report['samples'].append(pending)
         state['pending'] = None
 
 
 nc.ENS_AddNodeByEnglishSearch._draw_callback = observed_draw
 nc.ENS_AddNodeByEnglishSearch._refresh_query_results = observed_refresh
+nc._draw_text = observed_text
 nc.IME_UNINSTALL = adapter.install(nc, None, lambda *args, **kwargs: None, session_factory=Input)
 warm = nc._warm_search_font
 

@@ -4,17 +4,17 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.4.6-blue)
+![Version](https://img.shields.io/badge/version-1.4.7-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.4.6
+版本：1.4.7
 
 ## 中文
 
-下载 [1.4.6 正式版](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.6)：修复原生菜单漏项、节点变体、资产路径和上下文筛选，进一步对齐原生搜索结果。
+下载 [1.4.7 正式版](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.7)：减少首次打开与输入搜索时的重复计算，保持搜索顺序、收藏和现有操作方式。
 
 Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。macOS 和 Windows 可在同一自绘框中使用系统输入法输入中文；Windows 中文上屏与检索已获用户实机确认。界面保持紧凑，视觉风格接近 Blender 原生搜索。
 
@@ -34,6 +34,8 @@ Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器�
 
 1.4.6 补齐被菜单包装遗漏的输出节点、RNA 别名与矢量版「映射范围」等变体，修正资产路径，并遵循当前引擎、World、工具模式及实验开关的官方菜单条件。核心评分公式不变。178 组可比查询实测首条或空结果一致率为 99.4%，严格前列顺序一致率为 89.3%；抽样范围与局限见[验证说明](PERFORMANCE.md#146-native-search-alignment)。
 
+1.4.7 减少索引读取与拼音准备的冗余工作，按查询语言准备候选，并复用最近查询的匹配结果。Blender 5.2.2 首次无缓存索引准备耗时降低约 35%–41%；两版 Blender 共 23,110 次完整结果顺序对比一致。以上是内部计算测试，不代表整个界面同比提速，详见[性能说明](PERFORMANCE.md#147-open-and-input-latency)。
+
 macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「集合」「噪波」等节点名。组词中的拼音带下划线，候选词由系统输入法提供；确认中文上屏后更新搜索结果。组词时的回车只确认候选词，不会误创建节点；Esc 先取消组词，搜索框仍然保留。中文上屏后，再按回车即可创建并放置节点。
 
 1.4.5 也会在组词过程中按当前拼音预览结果，无需等到中文确认后才出现列表；确认中文后使用中文排序，取消组词后恢复原查询。预览不会替你确认输入法候选词。
@@ -44,7 +46,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 ### 安装
 
-1. 从上方 Release 页面下载 `Node_Console_1.4.6.zip`。
+1. 从上方 Release 页面下载 `Node_Console_1.4.7.zip`。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -99,7 +101,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 - 「接受 Beta 测试版本」默认关闭。勾选后重新检查，才会列出 GitHub 标记为 Pre-release 的版本；没有已发布的 Beta 时不会虚构选项。勾选或取消本身不会安装、降级或切换版本。
 - 选择 Beta 或较旧版本时，确认框会显示风险或回退提示。允许手动从 Beta 回到稳定版，仍先备份再替换。回退到 1.4.0 等旧版本时，更新界面也会恢复为该版本的样式。
-- 1.4.6 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
+- 1.4.7 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
 
 1.4.5 起，版本选项同时显示简短更新重点，例如 `1.4.4（首次搜索提速，旧正式版）`；已补齐 1.3.0 在线更新、1.3.1 热更新以来的版本。摘要跟随界面语言，悬停提示保留完整说明，不增加更新栏行数。
 
@@ -127,7 +129,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 ## English
 
-Download [1.4.6 stable](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.6), correcting native menu coverage, node variants, asset paths and context filtering for closer native search results.
+Download [1.4.7 stable](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.7), reducing first-open and search-input overhead while preserving result order, favorites and existing interaction.
 
 Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. macOS and Windows support system Chinese input in the existing custom field; a user has confirmed committed Chinese and node search on Windows. The layout stays compact and is inspired by Blender native search.
 
@@ -147,6 +149,8 @@ Version 1.4.5 ranks by official Blender menu paths, search weights and matching 
 
 Version 1.4.6 restores wrapped Output menus, RNA aliases and variants such as vector Map Range, corrects asset paths, and follows native engine, World, tool and experimental-feature conditions. The core scoring formula is unchanged. First-result/empty-outcome agreement reaches 99.4% across 178 comparable probes; strict visible-order agreement is 89.3%. See the [verification scope and limitations](PERFORMANCE.md#146-native-search-alignment).
 
+Version 1.4.7 removes redundant index copying and transliteration, prepares candidates per query language, and reuses recent query matches. Cold index preparation on Blender 5.2.2 improves by approximately 35%–41%; 23,110 full-order comparisons across two Blender versions remain identical. These are internal processing measurements, not equivalent whole-UI speedups; see [performance details](PERFORMANCE.md#147-open-and-input-latency).
+
 On macOS and Windows, press `Shift + A` and use your system Chinese input method to type node names such as `集合` or `噪波`. Composition text is underlined; the system provides candidates. Committed Chinese updates search results. Enter during composition confirms a candidate without creating a node; Escape cancels composition while keeping search open. After committing Chinese, press Enter again to create and place the node.
 
 Version 1.4.5 previews results using in-progress pinyin, switches to Chinese matching on confirmation, and restores the previous query on composition cancellation. Previewing does not confirm an IME candidate.
@@ -157,7 +161,7 @@ English and direct pinyin search, such as `instance`, `shili` and `zaobo`, remai
 
 ### Install
 
-1. Download `Node_Console_1.4.6.zip` from the Release page above.
+1. Download `Node_Console_1.4.7.zip` from the Release page above.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -214,7 +218,7 @@ Starting with 1.4.5, choices include a brief localized highlight in parentheses,
 
 - Accept Beta Versions is off by default. Enable it and check again to include published GitHub prereleases. No Beta options are fabricated when none exist; changing the checkbox never installs or downgrades the add-on.
 - Beta installation and downgrade dialogs display appropriate warnings. Returning from Beta to a stable release is supported with backup and confirmation. Downgrading to an older version such as 1.4.0 also restores that version's older update interface.
-- 1.4.6 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
+- 1.4.7 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
 
 To publish a Beta, tag it as e.g. `v1.4.2-beta.1`, attach `Node_Console_1.4.2-beta.1.zip`, mark the GitHub release as `Pre-release` and publish it. The package must use `ADDON_VERSION = "1.4.2-beta.1"` and `bl_info["version"] = (1, 4, 2)`; rebuild the macOS input resource for the full version too. Use `v1.4.2-rc.1` for RC builds. A title-only change or source ZIP is insufficient. The user's Beta setting filters manual update checks; it never triggers automatic installation.
 

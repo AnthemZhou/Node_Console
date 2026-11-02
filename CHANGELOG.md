@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.4.7
+
+<!-- node-console-summary: {"zh":"首次打开与输入提速","en":"Faster opening and search input"} -->
+
+### 中文
+
+- 降低首次打开时的索引准备开销：不再为普通节点生成旧搜索器才使用的整段拼音文本；读取索引时直接转换为独立条目，避免复制整份原始 JSON。
+- 原生候选按查询语言准备，并复用已排序的候选列表；保留最近 32 个查询的匹配结果，减少退格、重复输入和取消组词时的重复计算。收藏置顶实时计算，编辑器或条目变化会使结果缓存失效。
+- 保持评分公式、结果顺序、组合点检索、快捷键与输入法操作不变；优化不清空收藏、快捷节点、使用记录或设置。
+- 本机 Blender 5.2.2 三轮独立进程测试，几何/材质/合成首次无缓存索引准备分别由约 322/172/160 毫秒降至 204/101/104 毫秒。已有缓存读取及未命中查询缓存的搜索也有所改善；核心计算耗时不等于整个弹窗或系统输入法耗时。
+- Blender 5.2.2 与 5.1.2 共 23,110 次完整结果顺序对照保持一致，194 组原生样本回归无退步；通过缓存、用户数据及输入绘制回归。本轮未测 Windows/Linux 实机性能，范围与局限见 PERFORMANCE.md。
+
+### English
+
+- Reduce first-open index preparation by skipping obsolete full-text transliteration for native entries and decoding persisted entries without copying the entire raw JSON index.
+- Prepare native candidates per query language, reuse their alphabetical order, and retain up to 32 recent query matches for backspace, repeated input and composition cancellation. Apply favorites live and invalidate matches when entries or editor context change.
+- Preserve ranking, snippet search, keymaps, IME interaction and user data. Measurements and regression scope are recorded in PERFORMANCE.md.
+- Across three isolated Blender 5.2.2 processes, Geometry/Shader/Compositor cold index preparation falls from approximately 322/172/160 to 204/101/104 ms. Persisted-index loading and uncached matching also improve; core timings are not whole-popup or system-IME latency.
+- Preserve full result order in 23,110 comparisons across Blender 5.2.2 and 5.1.2, with no regression in the 194 native-search probes. Cache, user-data and input-drawing regressions pass. Windows/Linux hardware performance was not measured in this round; see PERFORMANCE.md for scope and limitations.
+
 ## 1.4.6
 
 <!-- node-console-summary: {"zh":"原生搜索结果对齐","en":"Native search result alignment"} -->

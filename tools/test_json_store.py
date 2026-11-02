@@ -50,6 +50,15 @@ class JsonStoreTests(unittest.TestCase):
         data['subset']['value'].append(3)
         self.assertEqual(self.store.read(self.path), self.initial)
 
+    def test_derive_converts_without_copying_json(self):
+        with patch('json_store.deepcopy', side_effect=AssertionError('unexpected copy')):
+            converted = self.store.derive(self.path, ('nested', 'value'), tuple)
+            self.assertEqual(converted, (1,))
+            self.assertIsNone(self.store.derive(self.path, 'absent', lambda value: value))
+        self.path.write_text(json.dumps(dict(self.initial, nested={'value': [2]})))
+        self.assertEqual(self.store.derive(self.path, ('nested', 'value'), tuple), (2,))
+        self.assertEqual(converted, (1,))
+
     def test_external_same_size_edit_and_replace(self):
         self.store.read(self.path)
         stamp = self.path.stat()
