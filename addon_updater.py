@@ -29,6 +29,21 @@ MAX_UNPACKED = 128 * 1024 * 1024
 TIMEOUT = 20
 JOB_TIMEOUT = 180
 RELEASE_CHOICE_LIMIT = 3
+# Historical releases predate the optional summary metadata in release notes.
+RELEASE_HIGHLIGHTS = {
+    "1.3.0": "Online updates and shortcut sorting",
+    "1.3.1": "Updates without restarting",
+    "1.3.2": "Search caching and safer saves",
+    "1.3.3": "Highlight the first search match",
+    "1.3.4": "Smoother shortcut dragging",
+    "1.4.0": "Mac Chinese input",
+    "1.4.1": "Windows Chinese input and Beta updates",
+    "1.4.2-beta.1": "Compact version picker",
+    "1.4.2": "Snippet categories and update layout",
+    "1.4.3": "Faster shortcut saving",
+    "1.4.4": "Faster first search",
+    "1.4.5": "Search ranking and Chinese input speed",
+}
 PROTECTED_NAMES = {"node_console_settings.json", "node_console_snippets.json"}
 REQUIRED_FILES = {"__init__.py", "node_registry.py", "node_search_aliases.json",
                   "node_console_builtin_cache.json"}
@@ -122,6 +137,29 @@ def select_release(data, current_version):
     return release_record(data)
 
 
+def _release_summary(body):
+    """Read an explicit short summary, never guess from long release notes."""
+    if not isinstance(body, str):
+        return {}
+    match = re.search(r"^<!-- node-console-summary: ([^\r\n]{1,1024}) -->[ \t]*\r?$", body, re.MULTILINE)
+    if match is None:
+        return {}
+    try:
+        values = json.loads(match[1])
+    except ValueError:
+        return {}
+    if not isinstance(values, dict):
+        return {}
+    summary = {}
+    for language, limit in (("en", 72), ("zh", 32)):
+        value = values.get(language)
+        if isinstance(value, str):
+            value = value.strip()
+            if 0 < len(value) <= limit and value.isprintable():
+                summary[language] = value
+    return summary
+
+
 def release_record(data, allow_beta=False):
     if (not isinstance(data, dict) or data.get("draft") is not False
             or type(data.get("prerelease")) is not bool
@@ -145,9 +183,13 @@ def release_record(data, allow_beta=False):
     digest = asset.get("digest") or ""
     if digest and not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", digest):
         raise UpdateError("invalid_release")
-    return {"version": label, "tag": data["tag_name"], "prerelease": data["prerelease"],
-            "url": expected_url, "size": asset["size"], "digest": digest.lower(),
-            "release_id": data.get("id"), "asset_id": asset.get("id")}
+    record = {"version": label, "tag": data["tag_name"], "prerelease": data["prerelease"],
+              "url": expected_url, "size": asset["size"], "digest": digest.lower(),
+              "release_id": data.get("id"), "asset_id": asset.get("id")}
+    summary = _release_summary(data.get("body"))
+    if summary:
+        record["summary"] = summary
+    return record
 
 
 def recent_releases(releases, allow_beta=False):

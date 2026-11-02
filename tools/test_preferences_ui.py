@@ -124,6 +124,22 @@ def main():
             for version, beta, label in [('1.4.0', False, nc._ui_text('Older Stable')),
                                          ('1.5.0-beta.1', True, 'Beta'), ('1.5.0-rc.1', True, 'RC')]:
                 assert label in nc._release_label(dict(version=version, prerelease=beta))
+            for version, highlight in nc.addon_updater.RELEASE_HIGHLIGHTS.items():
+                label = nc._release_label(dict(version=version, prerelease='-' in version))
+                assert nc._ui_text(highlight) in label, (language, version, label)
+                assert highlight in nc.UI_TEXT_ZH
+            assert nc._ui_text(nc.addon_updater.RELEASE_HIGHLIGHTS[nc.ADDON_VERSION]) in items[0][1]
+            assert items[0][1] in items[0][2]
+            future = dict(version='1.5.0-beta.1', prerelease=True,
+                          summary={'en': 'Faster startup', 'zh': '启动提速'})
+            expected = future['summary']['zh' if language == 'zh_HANS' else 'en']
+            assert expected in nc._release_label(future)
+            assert 'Beta' in nc._release_label(future)
+            with patch.object(nc, 'UPDATE_RELEASES', []):
+                offline = nc._update_release_items(prefs, None)[0]
+                assert offline[0] == 'NONE' and nc._ui_text('Installed') in offline[1]
+                assert nc._ui_text(nc.addon_updater.RELEASE_HIGHLIGHTS[nc.ADDON_VERSION]) in offline[1]
+                assert offline[1] in offline[2]
         cases += 1
     prefs = SimpleNamespace(layout=Layout(), snippet_nodes_expanded=False)
     context = SimpleNamespace(region=SimpleNamespace(width=1200))

@@ -88,6 +88,12 @@ The 20ms input timer drains changes, while elapsed-time gating retains 200ms
 idle redraws and bounds drag animation ticks. Blender RNA events do not expose
 their originating timer, so timer object comparisons must not be used.
 
+In 1.4.5, a changed preedit also refreshes results using a temporary query. It is
+never written into the committed query. Commit/cancel transitions refresh once,
+before idle redraw gating; native candidate Enter/Escape ownership is unchanged.
+The add-on also schedules one BLF CJK width measurement after enabling, outside
+an active search, to avoid loading the fallback font on the first result frame.
+
 Run `python3 -m unittest tools.test_ime tools.test_windows_ime tools.test_ime_resource` for isolated
 lifecycle, fallback, composition and resource tests. Blender package-install and
 hot-reload tests use factory startup and private configuration directories.

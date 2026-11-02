@@ -45,7 +45,7 @@ def main():
     assert changed._match_data is not first._match_data
     passed.append('replacement entry has fresh names and aliases')
 
-    with patch.object(nc, '_query_match_parts', wraps=nc._query_match_parts) as match:
+    with patch.object(nc, '_extension_match', wraps=nc._extension_match) as match:
         assert nc._search_entries('zzzznomatch', set()) == []
         assert match.call_count == len(nc.NODE_SEARCH_ENTRIES)
         match.reset_mock()
@@ -56,12 +56,12 @@ def main():
     for index in range(8500):
         nc._normalize(f'Cache Probe {index}')
         nc._search_words(f'Cache Probe {index}')
-        nc._officialish_query_key(f'Cache Probe {index}')
+        nc.native_search.words(f'Cache Probe {index}')
     assert nc._normalize.cache_info().currsize <= 8192
     assert nc._search_words.cache_info().currsize <= 8192
-    assert nc._officialish_query_key.cache_info().currsize <= 256
+    assert nc.native_search.words.cache_info().currsize <= 4096
     nc._clear_search_caches()
-    for function in (nc._normalize, nc._search_words, nc._officialish_query_key):
+    for function in (nc._normalize, nc._search_words, nc.native_search.words):
         assert function.cache_info().currsize == 0
     assert nc.NODE_SEARCH_ENTRIES == [first, second]
     passed.extend(('bounded string caches', 'text cache reset preserves active entries'))

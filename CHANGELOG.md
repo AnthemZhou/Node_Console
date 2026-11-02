@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.4.5
+
+<!-- node-console-summary: {"zh":"搜索排序与中文响应优化","en":"Search ranking and Chinese input speed"} -->
+
+### 中文
+
+- 用基于 Blender 官方源码的匹配与排序取代关键词固定顺序表；读取当前编辑器的官方菜单路径及搜索权重，支持跨单词缩写、拼写容错及词序判断。
+- 搜索排序与显示类目、颜色及双语格式分离。索引独立保存官方中英文路径，构建时不修改用户界面语言；缓存增加渲染引擎、材质用途等上下文，避免跨上下文复用错误权重。
+- 保留中文、全拼、首字母、相关收藏置顶及空输入可拖动快捷列表。官方菜单外的补充节点排在原生匹配之后；本地资产节点参与路径排序，同名不同库仍保持独立身份。
+- 保留原有节点标识和用户数据；升级仅重建索引。搜索增强与收藏属于有意的原生差异，完全同分项和不同资源环境仍可能产生顺序差别。
+- 减少输入时不再使用的旧匹配计算；输入法组词中的拼音可即时预览节点或组合点，确认后使用中文检索，取消组词则恢复原列表。启用后提前准备中文字体，降低首次显示中文结果时的停顿。
+- 更新版本下拉菜单在版本号后的括号内显示简短更新重点，补齐 1.3.0 起的历史版本，保留当前、旧正式版及测试版提示；后续版本可直接读取 Release 中的摘要，不增加联网请求或状态行。
+
+### English
+
+- Replace fixed keyword ordering with Blender-source-based matching and ranking, using editor-specific official menu paths and weights, word initials, typo tolerance and query word order.
+- Separate ranking metadata from category colors and bilingual presentation. Build independent English/Chinese paths without changing UI language; include render engine and editor purpose in index invalidation.
+- Preserve Chinese, pinyin, initials, relevant favorite boosting and draggable empty-query shortcuts. Rank supplemental nodes after native matches and include local asset paths while retaining distinct library identities.
+- Preserve entry identifiers and user data; rebuild only the index. Enhancements and favorites intentionally extend native behavior, while tied scores and differing resource environments can still change ordering.
+- Remove unused legacy matching work from each input update. Preview IME composition without committing it, refresh with confirmed Chinese, and restore results on cancellation. Prepare the CJK font after enabling to reduce the first Chinese result-list stall.
+- Add brief highlights in parentheses after update versions, covering historical releases from 1.3.0 onward while preserving installed/older stable/prerelease labels. Read future highlights from release metadata without extra requests or layout rows.
+
 ## 1.4.4
 
 ### 中文

@@ -1,0 +1,25 @@
+{
+  "source": "Manually verified real wm.search_single_menu screenshots; Blender 5.2.2 LTS d13f752e3b9c, macOS arm64, factory settings, bundled assets. English names below identify the corresponding existing Node Console entries, not screenshot typography.",
+  "samples": [
+    ["GeometryNodeTree", "mesh", ["Dual Mesh", "Mesh Line", "Mesh Bevel", "Mesh Island", "Mesh Circle", "Grid to Mesh", "Extrude Mesh", "Mesh Boolean", "Mesh to Curve", "Curve to Mesh"]],
+    ["GeometryNodeTree", "instance", ["Instance on Points", "Realize Instances", "Instance Scale", "Instance Bounds", "Scale Instances", "Rotate Instances", "Instance Rotation", "Split to Instances", "Instance Reference", "Instance Transform"]],
+    ["GeometryNodeTree", "add", ["Math > Add", "Integer Math > Add", "Vector Math > Add", "Math > Multiply Add", "Integer Math > Multiply Add", "Vector Math > Multiply Add", "Mix > Add", "Bit Math > And", "Boolean Math > And", "Boolean Math > Not And"]],
+    ["GeometryNodeTree", "line", ["Mesh Line", "Curve Line", "Linear Gizmo", "Mix > Linear Light", "Is Spline Cyclic", "Spline Length", "Spline Parameter", "Spline Resolution", "Set Spline Cyclic", "Set Spline Resolution"]],
+    ["GeometryNodeTree", "nt", ["Noise Texture", "White Noise Texture", "Curve to Points", "Interpolate Curves", "Bézier Segment", "Curve Tangent", "Endpoint Selection", "Curve of Point", "Offset Point in Curve", "Points of Curve"]],
+    ["GeometryNodeTree", "niose", ["Noise Texture", "Hair Curves Noise", "White Noise Texture", "Transpose Matrix"]],
+    ["GeometryNodeTree", "join", ["Join Geometry", "Join Bundle", "Join Strings"]],
+    ["GeometryNodeTree", "position", ["Position", "Set Position", "Set Handle Positions", "Curve Handle Positions", "Camera Info > Projection Matrix"]],
+    ["GeometryNodeTree", "集合", ["Collection", "Collection Info", "Collection Children"]],
+    ["GeometryNodeTree", "噪波", ["Noise Texture", "Hair Curves Noise", "White Noise Texture"]],
+    ["GeometryNodeTree", "实例", ["Instance on Points", "Instance Reference", "Instance Bounds", "Instance Transform", "Instance Rotation", "Instance Scale", "Instances to Points", "Instance on Elements", "Geometry to Instance", "Realize Instances"]],
+    ["ShaderNodeTree", "add", ["Mix > Add", "Math > Add", "Vector Math > Add", "Add Shader", "Math > Multiply Add", "Vector Math > Multiply Add", "Shader to RGB", "Hair Info > Random", "Geometry > Random Per Island", "Light Path > Is Shadow Ray"]],
+    ["ShaderNodeTree", "noise", ["Noise Texture", "White Noise Texture"]],
+    ["CompositorNodeTree", "blur", ["Blur", "Bokeh Blur", "Vector Blur", "Bilateral Blur", "Directional Blur", "Defocus"]],
+    ["CompositorNodeTree", "模糊", ["Blur", "Bilateral Blur", "Directional Blur", "Bokeh Blur", "Defocus", "Vector Blur", "Vector Math > Modulo"]],
+    ["ShaderNodeTree", "设置", []],
+    ["CompositorNodeTree", "设置", ["Set Alpha", "Set String Case", "Set String Case > Uppercase", "Set String Case > Lowercase"]]
+  ],
+  "tie_samples": [
+    ["GeometryNodeTree", "设置", ["Set Position", "Set Material", "Set ID", "Set Point Radius", "Set Effector", "Set NURBS Order", "Set NURBS Weight", "Set Instance Transform", "Set Grid Transform", "Set Curve Tilt"]]
+  ]
+}

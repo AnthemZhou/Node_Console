@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import stat
 import tempfile
 import unittest
@@ -109,6 +110,49 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual([item["version"] for item in updater.list_releases(True)],
                              ["1.4.2-rc.1", "1.4.2-beta.1", "1.4.1"])
 
+    def test_all_online_update_versions_have_short_highlights(self):
+        versions = re.findall(r"^## (\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)", (ROOT / "CHANGELOG.md").read_text(), re.MULTILINE)
+        expected = {version for version in versions if updater.version_key(version) >= updater.version_key("1.3.0")}
+        self.assertEqual(set(updater.RELEASE_HIGHLIGHTS), expected)
+        for highlight in updater.RELEASE_HIGHLIGHTS.values():
+            self.assertTrue(highlight.isprintable() and 0 < len(highlight) <= 72)
+
+    def test_future_release_summary_comes_from_explicit_metadata(self):
+        summary = {"en": "Faster startup", "zh": "\u542f\u52a8\u63d0\u901f"}
+        data = dict(release("1.5.0-beta.1"), prerelease=True,
+                    body="Notes\n<!-- node-console-summary: " + json.dumps(summary) + " -->\nMore notes")
+        with patch.object(updater, "_fetch", return_value=json.dumps([data]).encode()) as fetch:
+            records = updater.list_releases(True)
+        self.assertEqual(records[0]["summary"], summary)
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual(records[0]["version"], "1.5.0-beta.1")
+
+    def test_bad_summary_never_hides_an_installable_release(self):
+        for body in (None, [], "Ordinary release notes", '<!-- node-console-summary: nope -->',
+                     '<!-- node-console-summary: [] -->',
+                     '<!-- node-console-summary: {"en": 42} -->',
+                     '<!-- node-console-summary: {"en": ""} -->',
+                     '<!-- node-console-summary: {"en": "line\\nbreak"} -->',
+                     '<!-- node-console-summary: {"en": "hidden\\u202e"} -->',
+                     '<!-- node-console-summary: ' + json.dumps({"en": "x" * 73, "zh": "x" * 33}) + ' -->'):
+            with self.subTest(body=body):
+                record = updater.release_record(dict(release("1.5.0"), body=body))
+                self.assertNotIn("summary", record)
+                self.assertEqual(record["version"], "1.5.0")
+
+    def test_summary_languages_validate_independently(self):
+        self.assertEqual(updater._release_summary(
+            '<!-- node-console-summary: {"en": "  Faster startup  ", "zh": 42, "extra": "ignored"} -->'),
+            {"en": "Faster startup"})
+        self.assertEqual(updater._release_summary(
+            'Notes\r\n<!-- node-console-summary: {"en": "Faster startup"} -->\r\nMore notes'),
+            {"en": "Faster startup"})
+
+    def test_current_changelog_metadata_matches_offline_highlight(self):
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        version = re.search(r"^## (\S+)", changelog, re.MULTILINE)[1]
+        self.assertEqual(updater._release_summary(changelog)["en"], updater.RELEASE_HIGHLIGHTS[version])
+
     def test_check_worker_never_downloads_or_changes_installed_files(self):
         jobdir = self.root / "check"
         jobdir.mkdir()
@@ -121,11 +165,13 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual((self.target / "__init__.py").read_text(), source("1.2.2"))
         self.assertEqual(fetch.call_count, 1)
 
-    def selected_download(self, changed=False, beta=False, opt_in=True, corrupt=False):
+    def selected_download(self, changed=False, beta=False, opt_in=True, corrupt=False, summary=False):
         self.package()
         blob = self.archive.read_bytes()
         data = release(size=len(blob), digest="sha256:" + hashlib.sha256(blob).hexdigest())
         data["prerelease"] = beta
+        if summary:
+            data["body"] = '<!-- node-console-summary: {"en": "Faster startup"} -->'
         selected = updater.release_record(data, allow_beta=True)
         jobdir = self.root / "selected"
         jobdir.mkdir(exist_ok=True)
@@ -156,6 +202,10 @@ class UpdateTests(unittest.TestCase):
     def test_beta_cannot_download_without_explicit_opt_in(self):
         self.assertEqual(self.selected_download(beta=True, opt_in=False)[0]["code"], "invalid_release")
         self.assertEqual(self.selected_download(beta=True, opt_in=True)[0]["state"], "ready")
+
+    def test_summary_keeps_download_verification_intact(self):
+        self.assertEqual(self.selected_download(summary=True)[0]["state"], "ready")
+        self.assertEqual(self.selected_download(summary=True, changed=True)[0]["code"], "changed_release")
 
     def test_downgrade_requires_explicit_flag_and_unchanged_current_version(self):
         self.package(version="1.2.1")

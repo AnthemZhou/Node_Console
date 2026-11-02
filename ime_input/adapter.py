@@ -44,13 +44,16 @@ def install(nc, library, log, session_factory=None):
         while session.diagnostics:
             log("ime_key", detail=session.diagnostics.popleft())
         previous_query = self._query
+        refreshed = (previous_query, previous)
         outcome = None
 
         def command(query, kind, ctrl):
-            nonlocal outcome
-            if self._query != query:
+            nonlocal outcome, refreshed
+            if refreshed != (query, session.preedit):
                 self._query = query
+                self._ime_preedit = session.preedit
                 self._refresh_query_results()
+                refreshed = (query, session.preedit)
             outcome = originals["modal"](self, context, _CommandEvent(event, kind, ctrl))
             return self._query
 
@@ -58,9 +61,12 @@ def install(nc, library, log, session_factory=None):
             self._query = session.drain_actions(self._query, command)
         else:
             self._query = session.drain(self._query)
+        if getattr(self, "_ime_session", None) is not session:
+            return outcome
         self._ime_preedit = session.preedit
-        if previous_query != self._query:
+        if refreshed != (self._query, self._ime_preedit):
             self._refresh_query_results()
+        if previous_query != self._query:
             log("ime_commit", query=self._query)
         if previous_query != self._query or previous != self._ime_preedit:
             log("ime_preedit", text=self._ime_preedit)

@@ -4,17 +4,17 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.4.4-blue)
+![Version](https://img.shields.io/badge/version-1.4.5-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.4.4（正式版）
+版本：1.4.5
 
 ## 中文
 
-当前为 [1.4.4 正式版](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.4)，无需勾选 Beta 即可检查并安装。
+下载 [1.4.5 正式版](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.5)：优化原生搜索排序、中文输入响应及更新版本说明。
 
 Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。macOS 和 Windows 可在同一自绘框中使用系统输入法输入中文；Windows 中文上屏与检索已获用户实机确认。界面保持紧凑，视觉风格接近 Blender 原生搜索。
 
@@ -30,7 +30,11 @@ Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器�
 
 ### 中文输入与拼音搜索
 
+1.4.5 按 Blender 官方菜单路径、搜索权重与匹配规则排序，支持英文缩写和容错，例如 `nt`、`niose` 可以找到 Noise Texture。中文、全拼、首字母、收藏置顶与空输入快捷列表继续保留。不同编辑器的官方权重不同，`add` 不再使用统一写死的浮点/矢量优先顺序。收藏、拼音和菜单外补充节点属于增强结果，因此不承诺所有情况下与原生列表完全相同。
+
 macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入法输入「集合」「噪波」等节点名。组词中的拼音带下划线，候选词由系统输入法提供；确认中文上屏后更新搜索结果。组词时的回车只确认候选词，不会误创建节点；Esc 先取消组词，搜索框仍然保留。中文上屏后，再按回车即可创建并放置节点。
+
+1.4.5 也会在组词过程中按当前拼音预览结果，无需等到中文确认后才出现列表；确认中文后使用中文排序，取消组词后恢复原查询。预览不会替你确认输入法候选词。
 
 英文和拼音检索仍然保留，例如 `instance`、`shili`、`zaobo`，不必先转换成中文。也支持粘贴中文节点名后检索（macOS：`Command + V`，Windows/Linux：`Ctrl + V`）。
 
@@ -38,7 +42,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 ### 安装
 
-1. 下载正式版安装包 `Node_Console_1.4.4.zip`。
+1. 从上方 Release 页面下载 `Node_Console_1.4.5.zip`。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -93,9 +97,13 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 - 「接受 Beta 测试版本」默认关闭。勾选后重新检查，才会列出 GitHub 标记为 Pre-release 的版本；没有已发布的 Beta 时不会虚构选项。勾选或取消本身不会安装、降级或切换版本。
 - 选择 Beta 或较旧版本时，确认框会显示风险或回退提示。允许手动从 Beta 回到稳定版，仍先备份再替换。回退到 1.4.0 等旧版本时，更新界面也会恢复为该版本的样式。
-- 1.4.4 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
+- 1.4.5 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
+
+1.4.5 起，版本选项同时显示简短更新重点，例如 `1.4.4（首次搜索提速，旧正式版）`；已补齐 1.3.0 在线更新、1.3.1 热更新以来的版本。摘要跟随界面语言，悬停提示保留完整说明，不增加更新栏行数。
 
 发布 Beta 时，使用完整版本标签（例如 `v1.4.2-beta.1`），上传同版本安装包 `Node_Console_1.4.2-beta.1.zip`，并在 GitHub Release 勾选 `Pre-release` 后发布。包内 `ADDON_VERSION` 需为 `1.4.2-beta.1`，`bl_info` 为 `(1, 4, 2)`；macOS 原生输入资源也需按完整版本重新构建。RC 同理使用 `v1.4.2-rc.1`。仅改标题或上传源码 ZIP 不会被识别为可安装的测试版。用户手动检查更新时会按 Beta 开关筛选，不会后台自动安装。
+
+发布新版本时，在 Release 正文中保留该版 CHANGELOG 的 `node-console-summary` 注释，并同步维护 `addon_updater.RELEASE_HIGHLIGHTS` 及中文译文。例如单独一行 `<!-- node-console-summary: {"zh":"首次搜索提速","en":"Faster first search"} -->`。已安装的 1.4.5 及后续版本即可在安装前读取新版本的说明，无需额外联网；摘要限中文 32 字、英文 72 字，建议更短。缺失或格式不合法时使用内置历史摘要，未知版本显示「详见更新说明」，不编造重点、不影响安装资格。
 
 - 需要在 Blender 的 `偏好设置 > 系统` 中允许在线访问；不会替你修改该权限。
 - 下载在独立进程中执行，不占用搜索界面的主线程。网络失败、损坏的包或不兼容的 Blender 版本会提示错误，不替换插件。
@@ -117,7 +125,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 ## English
 
-The current release is [1.4.4 stable](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.4). Beta opt-in is not required to check for or install it.
+Download [1.4.5 stable](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.4.5), with improved native-style search ranking, Chinese input responsiveness and update highlights.
 
 Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. macOS and Windows support system Chinese input in the existing custom field; a user has confirmed committed Chinese and node search on Windows. The layout stays compact and is inspired by Blender native search.
 
@@ -133,7 +141,11 @@ Node Console is a custom node search add-on for Blender. It replaces the default
 
 ### Chinese Input and Pinyin Search
 
+Version 1.4.5 ranks by official Blender menu paths, search weights and matching rules, including abbreviations and typo tolerance such as `nt` and `niose` for Noise Texture. Chinese, pinyin, initials, relevant favorites and empty-query shortcuts remain available. Editor-specific native weights replace the fixed float/vector preference for `add`. Favorites, transliteration and supplemental candidates are intentional extensions, so exact native-list equality is not promised in every situation.
+
 On macOS and Windows, press `Shift + A` and use your system Chinese input method to type node names such as `集合` or `噪波`. Composition text is underlined; the system provides candidates. Committed Chinese updates search results. Enter during composition confirms a candidate without creating a node; Escape cancels composition while keeping search open. After committing Chinese, press Enter again to create and place the node.
+
+Version 1.4.5 previews results using in-progress pinyin, switches to Chinese matching on confirmation, and restores the previous query on composition cancellation. Previewing does not confirm an IME candidate.
 
 English and direct pinyin search, such as `instance`, `shili` and `zaobo`, remain available. Chinese can still be pasted (`Command + V` on macOS, `Ctrl + V` on Windows/Linux).
 
@@ -141,7 +153,7 @@ English and direct pinyin search, such as `instance`, `shili` and `zaobo`, remai
 
 ### Install
 
-1. Download the stable installation package `Node_Console_1.4.4.zip`.
+1. Download `Node_Console_1.4.5.zip` from the Release page above.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -194,11 +206,15 @@ Click Update in Node Console Preferences to list [GitHub releases](https://githu
 
 The updater contains the current version, Beta checkbox, widened release selector, Update button and install icon with tooltips. Check/download/error status stays inline after the version. Narrow windows use a stable two-row layout; status changes do not push content down, and native widgets truncate text when space is limited. It keeps the three newest version choices for the current channel, plus Other Versions, which opens GitHub Releases without changing the installation target or starting a download. Default to an upgrade or the installed version, never a downgrade; label older stable releases, Beta and RC separately.
 
+Starting with 1.4.5, choices include a brief localized highlight in parentheses, covering releases from 1.3.0 (online updates) and 1.3.1 (hot updates) onward. Tooltips retain the full text without adding layout rows.
+
 - Accept Beta Versions is off by default. Enable it and check again to include published GitHub prereleases. No Beta options are fabricated when none exist; changing the checkbox never installs or downgrades the add-on.
 - Beta installation and downgrade dialogs display appropriate warnings. Returning from Beta to a stable release is supported with backup and confirmation. Downgrading to an older version such as 1.4.0 also restores that version's older update interface.
-- 1.4.4 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
+- 1.4.5 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
 
 To publish a Beta, tag it as e.g. `v1.4.2-beta.1`, attach `Node_Console_1.4.2-beta.1.zip`, mark the GitHub release as `Pre-release` and publish it. The package must use `ADDON_VERSION = "1.4.2-beta.1"` and `bl_info["version"] = (1, 4, 2)`; rebuild the macOS input resource for the full version too. Use `v1.4.2-rc.1` for RC builds. A title-only change or source ZIP is insufficient. The user's Beta setting filters manual update checks; it never triggers automatic installation.
+
+Keep the version's `node-console-summary` CHANGELOG comment in its GitHub release body and maintain `addon_updater.RELEASE_HIGHLIGHTS` with its Chinese translation. Example standalone line: `<!-- node-console-summary: {"zh":"首次搜索提速","en":"Faster first search"} -->`. Installed versions from 1.4.5 can then show future highlights before installation without extra requests. Limits are 32 Chinese / 72 English characters; keep summaries shorter where possible. Missing/invalid metadata falls back to known historical highlights or See release notes, without affecting release eligibility.
 
 - Enable Allow Online Access in Blender Preferences > System. The add-on never changes this permission for you.
 - A separate process handles downloads. Network errors, invalid packages and incompatible Blender versions leave the installation untouched.

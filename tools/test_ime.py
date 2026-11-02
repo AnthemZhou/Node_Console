@@ -218,14 +218,42 @@ class AdapterTests(unittest.TestCase):
         self.assertFalse(second._ime_session.closed)
         self.assertIs(self.nc.ACTIVE_CONSOLE_OPERATOR, second)
 
-    def test_preedit_redraw_without_search(self):
+    def test_preedit_previews_without_committing(self):
         op = self.open()
         op._ime_session.receive(2, "ji he")
         self.event(op)
         self.assertEqual(op._ime_preedit, "ji he")
         self.assertEqual(op._query, "")
-        op._refresh_query_results.assert_not_called()
+        op._refresh_query_results.assert_called_once()
         op._tag_owner_redraw.assert_called_once()
+
+    def test_cancel_preedit_restores_committed_query_results(self):
+        op = self.open()
+        op._query = "noise "
+        op._ime_session.receive(2, "she zhi")
+        self.event(op)
+        op._refresh_query_results.reset_mock()
+        op._ime_session.receive(2, "")
+        self.event(op)
+        self.assertEqual(op._query, "noise ")
+        self.assertEqual(op._ime_preedit, "")
+        op._refresh_query_results.assert_called_once()
+        self.assertFalse(op.finished)
+
+    def test_preedit_coalesces_and_commit_bypasses_idle_redraw_gate(self):
+        op = self.open()
+        for text in ("s", "she", "she zhi"):
+            op._ime_session.receive(2, text)
+        self.event(op)
+        self.assertEqual(op._ime_preedit, "she zhi")
+        op._refresh_query_results.assert_called_once()
+        op._refresh_query_results.reset_mock()
+        op._ime_session.receive(4, "设置")
+        self.event(op)
+        self.assertEqual(op._query, "设置")
+        self.assertEqual(op.original_events, [])
+        op._refresh_query_results.assert_called_once()
+        self.assertEqual(op._tag_owner_redraw.call_count, 2)
 
     def test_commit_refreshes_once_and_updates_query(self):
         op = self.open()

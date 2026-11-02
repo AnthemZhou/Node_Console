@@ -1,5 +1,75 @@
 # Node Console Performance
 
+## 1.4.5 Native Search Ranking
+
+### Chinese Input Follow-Up
+
+The later 1.4.5 input pass removes unused legacy match fields from the hot path.
+In the same isolated 5.2.2 environment, ten warmed searches for `设置` have
+median core times of 7.93 -> 1.70 ms (Geometry), 3.72 -> 0.78 ms (Shader), and
+3.72 -> 0.92 ms (Compositor). Cold Geometry matching is 26.79 -> 21.11 ms.
+All complete result lists for the 18-query, three-editor profiling batch remain
+identical before/after this optimization. Generated per-entry names, aliases,
+pinyin and initials also retain their legacy extension-match levels.
+
+A separate real-UI test exposed a larger one-off cost in `blf.dimensions`:
+the first CJK result frame spent 153-187 ms drawing, mostly preparing the font.
+The add-on now schedules a single CJK width measurement 0.5 seconds after
+enabling, defers it during an active console, skips background Blender, and
+removes the timer on disable. It uses Blender's existing font; it neither
+replaces the font nor changes preferences. This moves roughly 170 ms of
+one-time initialization out of typing, rather than claiming to eliminate it.
+Typing immediately after enabling, before preparation runs, can still be cold.
+
+Measured synthetic IME enqueue -> draw-callback completion on 5.2.2:
+first preedit 215.82 -> 39.26 ms; committed `设置` about 19.64 ms after the
+preedit. The final 5.1.2 run records 46.76 ms and 12.70 ms respectively.
+Three open/close cycles with five preedit/commit/cancel/clear transitions each
+passed in both versions. These are real popup drawing tests with synthetic
+bridge events, not physical keyboard/IME candidate latency or display scanout.
+Windows system-IME responsiveness was not measured in this round.
+
+Composition now previews results without committing text. Confirmation applies
+Chinese matching immediately; cancellation restores the committed query or
+shortcut list. Native Enter/Escape ownership, idle redraw gating and the 20 ms
+bridge polling interval are unchanged.
+
+Reproduce with `tools/profile_search_input.py` and, with `--ui`,
+`tools/capture_input_preview.py` through the isolated runner. Local screenshots
+and raw timings are under `build/native-search-1.4.5/input-preview-final/`.
+
+### Initial Ranking Pass
+
+Date: 2026-11-02. macOS arm64, isolated Blender 5.2.2 LTS (`d13f752e3b9c`).
+Baseline: published 1.4.4 ZIP. Both versions index the same built-in assets and
+temporary local groups; no personal settings or project data are used.
+
+| Editor | 1.4.4 / 1.4.5 search median | 1.4.5 warm index preparation | 1.4.5 disk-cache preparation |
+| --- | ---: | ---: | ---: |
+| Geometry | 9.61 / 8.69 ms | 4.10 ms | 29.46 ms |
+| Shader | 4.61 / 4.09 ms | 3.90 ms | 19.98 ms |
+| Compositor | 4.66 / 4.42 ms | 4.04 ms | 20.65 ms |
+
+Search medians cover three warmed rounds of ten English, Chinese, pinyin,
+abbreviation and typo queries. This is primarily a relevance update, not a
+claim of a major speedup. Ranking intentionally changes; upgrade checks instead
+require persistent identities and stored user data to remain identical.
+The 1,155 tested identities include variants, assets and temporary local groups,
+not 1,155 unique Blender node types.
+
+Index measurements use a separate test without scanning built-in assets.
+Five warm calls and three fresh-module disk-cache calls are measured. A fully
+invalidated index takes approximately 310 / 164 / 155 ms in the three editors.
+Menu-path metadata is built only on this cold path, persisted with schema 4,
+and reused on later opens. These are core Python timings, not GPU rendering,
+IME startup or input-to-display latency. Windows/Linux timings were not measured.
+
+Reproduce with `tools/test_search_upgrade.py -- Node_Console_1.4.4.zip report.json`
+and `tools/benchmark_open.py -- report.json` through `tools/run_isolated_blender.py`.
+Native UI comparisons are separately covered by `tools/capture_native_search.py`
+and `tools/test_native_menu_search.py`; pure matching tests include upstream
+Blender vectors. Raw reports and screenshots stay local and outside the ZIP.
+
 ## 1.4.4 First-Open Index Preparation
 
 Date: 2026-10-30. Baseline: published 1.4.3 ZIP (SHA256

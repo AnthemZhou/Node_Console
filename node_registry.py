@@ -5,7 +5,7 @@ from pathlib import Path
 
 import bpy
 
-INDEX_SCHEMA = 3
+INDEX_SCHEMA = 4
 _catalog = None
 _inventories = {}
 _aliases = None
@@ -125,13 +125,20 @@ def aliases():
     return _aliases
 
 
-def chinese_label(text, context=None):
+def official_chinese_label(text, context=None):
     translation = catalog()
     if context and context != '*':
         result = translation.pgettext(context, text)
         if result != text:
             return result
     result = translation.gettext(text)
+    if result != text:
+        return result
+    return text
+
+
+def chinese_label(text, context=None):
+    result = official_chinese_label(text, context)
     if result != text:
         return result
     # These are explicitly editorial search aliases, not official translations.

@@ -40,6 +40,9 @@ def main():
                     assert items[-1][0] == nc.OTHER_RELEASES and len(items) <= 4
                     assert sum(item[0] != nc.OTHER_RELEASES for item in items) <= 3
                     for choice in items[:-1]:
+                        assert choice[1] in choice[2]
+                        version = nc.ADDON_VERSION if choice[0] == 'NONE' else choice[0][1:]
+                        assert nc._ui_text(nc.addon_updater.RELEASE_HIGHLIGHTS[version]) in choice[1]
                         prefs.update_release = choice[0]
                         selected = nc._selected_update_release()
                         open_url.reset_mock()
