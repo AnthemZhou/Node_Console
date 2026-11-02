@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.4.6
+
+<!-- node-console-summary: {"zh":"原生搜索结果对齐","en":"Native search result alignment"} -->
+
+### 中文
+
+- 修复官方菜单被其他扩展包装后漏收录“输出”节点的问题；只执行官方菜单回调，不执行第三方追加代码。
+- 将旧 RNA 别名正确对应到当前节点，补齐矢量版“映射范围”等官方变体及“类型化捆包”操作。保留已有节点标识，不重置收藏、快捷节点和使用记录。
+- 保留资产的原始目录信息，修正搜索路径中的编辑器根目录及类目名称；资产身份和不同库的同名项目保持独立。
+- 按各 Blender 版本的官方菜单条件筛选渲染引擎、World、工具模式和实验性节点。升级仅重建索引，核心评分公式与关键词权重不变。
+- 扩大到 194 组查询验证：178 组可直接对照的查询中，首条或空结果一致率由 94.4% 提升到 99.4%，严格前列顺序一致率由 73.0% 提升到 89.3%，未遗漏采集到的原生结果。拼音与跨语言增强另行测试，不计入一致率；同分项、去重及补充节点仍可能与原生不同。
+- 在隔离的 macOS Blender 5.2.2 与 5.1.2 中验证创建、菜单条件、缓存及用户数据保留；本轮未进行 Windows 原生界面对照。新增可重复运行的扩大抽样回归测试。
+
+### English
+
+- Retain official Output entries when other extensions wrap their menu; evaluate only official draw callbacks, not appended third-party code.
+- Resolve legacy RNA aliases and missing native variants, including vector Map Range and the Typed Bundle action. Preserve existing entry IDs, favorites, shortcuts and usage records.
+- Preserve original asset catalogs and correct editor-root/category search paths without merging identities across libraries.
+- Follow each Blender version's native engine, World, tool and experimental-feature menu conditions. Rebuild the index without changing the core scoring formula or keyword weights.
+- Expand validation to 194 queries. Across 178 directly comparable cases, first-result/empty-outcome agreement improves from 94.4% to 99.4%, strict visible-order agreement from 73.0% to 89.3%, with no captured native results missing. Pinyin and cross-language probes are excluded from parity rates; ties, deduplication and supplemental entries remain intentional differences.
+- Verify creation, menu conditions, caching and user-data preservation in isolated macOS Blender 5.2.2 and 5.1.2. No fresh Windows native-UI comparison in this round. Add a repeatable expanded-sample regression suite.
+
 ## 1.4.5
 
 <!-- node-console-summary: {"zh":"搜索排序与中文响应优化","en":"Search ranking and Chinese input speed"} -->

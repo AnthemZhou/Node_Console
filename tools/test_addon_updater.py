@@ -150,7 +150,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_current_changelog_metadata_matches_offline_highlight(self):
         changelog = (ROOT / "CHANGELOG.md").read_text()
-        version = re.search(r"^## (\S+)", changelog, re.MULTILINE)[1]
+        version = re.search(r"^## (\d+\.\d+\.\d+(?:-\S+)?)\s*$", changelog, re.MULTILINE)[1]
         self.assertEqual(updater._release_summary(changelog)["en"], updater.RELEASE_HIGHLIGHTS[version])
 
     def test_check_worker_never_downloads_or_changes_installed_files(self):

@@ -57,7 +57,7 @@ for tree_id in ('GeometryNodeTree','ShaderNodeTree','CompositorNodeTree'):
         actual = DirectCollector(context,bpy.app.translations.pgettext_iface)
         actual.draw('NODE_MT_add',[])
         actual_paths = {separator.join(parts) for operator,separator,parts,weight,props in actual.rows
-                        if operator in {'node.add_node','node.add_zone'}}
+                        if operator in {'node.add_node','node.add_zone','node.add_typed_bundle'}}
         language_index = 0 if language=='en_US' else 1
         assert {row[language_index] for rows in captured.values() for row in rows} == actual_paths
         nc._rebuild_search_entries(context)

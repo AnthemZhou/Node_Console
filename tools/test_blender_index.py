@@ -77,12 +77,14 @@ def main():
                 queries = [label, label.upper(), label.replace(' ', ''), entry.chinese,
                            entry.leaf_pinyin_compact, entry.leaf_pinyin_initials]
                 for query in queries:
-                    if query and not any(e.node_type == entry.node_type for e in nc._search_entries(query, set())):
+                    found = any(e.node_type == entry.node_type for e in nc._search_entries(query, set())) if query else False
+                    if query and found == entry.native_hidden:
                         report['failures'].append([tree_type, 'search result', label, query])
                 report['candidates'].setdefault(label, {})[tree_type] = {
                     'id': entry.node_type, 'chinese': entry.chinese,
                     'pinyin': entry.leaf_pinyin_compact, 'initials': entry.leaf_pinyin_initials,
                     'category': entry.category,
+                    'hidden_by_menu_context': entry.native_hidden,
                 }
             for query, expected in (('math', 'ShaderNodeMath'), ('join', 'GeometryNodeJoinGeometry'),
                                     ('inst', 'GeometryNodeInstanceOnPoints'), ('line', 'GeometryNodeMeshLine')):

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import bpy
 
-INDEX_SCHEMA = 4
+INDEX_SCHEMA = 5
 _catalog = None
 _inventories = {}
 _aliases = None

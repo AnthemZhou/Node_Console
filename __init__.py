@@ -29,13 +29,13 @@ from . import addon_reloader, addon_updater, node_registry, json_store
 from . import native_search, node_menu_search
 
 
-ADDON_VERSION = "1.4.5"
+ADDON_VERSION = "1.4.6"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 4, 5),
+    "version": (1, 4, 6),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -317,6 +317,7 @@ UI_TEXT_ZH = {
     "Faster shortcut saving": "快捷节点保存提速",
     "Faster first search": "首次搜索提速",
     "Search ranking and Chinese input speed": "搜索排序与中文响应优化",
+    "Native search result alignment": "原生搜索结果对齐",
     "See release notes": "详见更新说明",
     "Currently installed; check for updates to refresh the list": "当前已安装；检查更新以刷新版本列表",
     "Check for updates first": "请先检查更新",
@@ -403,6 +404,7 @@ class NodeSearchEntry:
     settings: tuple[tuple[str, str], ...] = ()
     aliases: tuple[str, ...] = ()
     menu_paths: tuple[tuple[str, str, float], ...] = ()
+    native_hidden: bool = False
 
     @cached_property
     def _native_items(self):
@@ -448,6 +450,7 @@ def _clear_search_caches():
     _normalize.cache_clear()
     _search_words.cache_clear()
     native_search.clear()
+    _asset_catalog_paths.cache_clear()
 
 
 def _safe_identifier(prefix: str, *parts: str) -> str:
@@ -1595,6 +1598,8 @@ def _load_asset_index() -> list[dict]:
             "color_tag": color_tag if isinstance(color_tag, str) else "",
             "description": description if isinstance(description, str) else "",
             "tree_type": tree_type if isinstance(tree_type, str) else "",
+            "menu_catalog": str(item.get("menu_catalog", "") or "") if isinstance(item, dict) else "",
+            "catalog_path": str(item.get("catalog_path", "") or "") if isinstance(item, dict) else "",
         })
     return entries
 
@@ -2222,6 +2227,7 @@ def _entry_to_cache(entry: NodeSearchEntry) -> dict:
         "settings": [list(item) for item in entry.settings],
         "aliases": list(entry.aliases),
         "menu_paths": [list(row) for row in entry.menu_paths],
+        "native_hidden": entry.native_hidden,
     }
 
 
@@ -2253,6 +2259,7 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
             aliases=tuple(item.get("aliases", ())),
             menu_paths=tuple((str(row[0]), str(row[1]), float(row[2]))
                              for row in item.get("menu_paths", ())),
+            native_hidden=bool(item.get("native_hidden", False)),
             leaf_pinyin_compact=str(item.get("leaf_pinyin_compact", "")),
             leaf_pinyin_boundaries=tuple(item.get("leaf_pinyin_boundaries", ())),
             leaf_pinyin_initials=str(item.get("leaf_pinyin_initials", "")),
@@ -3059,6 +3066,15 @@ def _entry_available_in_current_blender(context, entry: NodeSearchEntry, capabil
                        for key in ("input_node_type", "output_node_type"))
         return all(_node_tree_allows_node(context, settings.get(key, ""))
                    for key in ("input_node_type", "output_node_type"))
+    if entry.kind == "ACTION":
+        if entry.node_type != "node.add_typed_bundle":
+            return False
+        try:
+            bpy.ops.node.add_typed_bundle.get_rna_type()
+        except (AttributeError, RuntimeError):
+            return False
+        return "NodeCombineBundle" in (capabilities if capabilities is not None else
+                                       node_registry.inventory(context.space_data.edit_tree))
     if entry.kind != "NODE":
         return True
     if capabilities is not None:
@@ -3409,6 +3425,46 @@ def _is_hidden_asset_name(name: str) -> bool:
     return str(name or "").strip().startswith(".")
 
 
+@lru_cache(maxsize=128)
+def _asset_catalog_paths(path: str, modified: int) -> dict[str, str]:
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return {}
+    catalogs = {}
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        parts = line.split(":", 2)
+        if len(parts) == 3:
+            catalogs[parts[0].strip()] = parts[1].strip()
+    return catalogs
+
+
+def _asset_catalog_path(blend_path: Path, catalog_id: str) -> str:
+    for parent in blend_path.parents:
+        path = parent / "blender_assets.cats.txt"
+        try:
+            modified = path.stat().st_mtime_ns
+        except OSError:
+            continue
+        value = _asset_catalog_paths(str(path), modified).get(catalog_id)
+        if value:
+            return value
+    return ""
+
+
+def _asset_search_catalog(item: dict) -> str:
+    if item.get("catalog_path"):
+        return item["catalog_path"]
+    # Pre-schema-5 asset snapshots discarded the catalog and retained only
+    # the display category. Repair their path in memory, preserving saved IDs.
+    catalog = item.get("menu_catalog") or item.get("category") or "Unassigned"
+    if catalog == "Instance":
+        return "Instances"
+    return catalog.replace(" > ", "/").replace("-", "/")
+
+
 def _read_asset_node_groups(blend_path: Path) -> list[dict]:
     previous_groups = set(bpy.data.node_groups)
     loaded_groups = []
@@ -3443,6 +3499,7 @@ def _read_asset_node_groups(blend_path: Path) -> list[dict]:
             "name": original_name,
             "category": _asset_category_from_catalog(catalog_name, blend_path),
             "menu_catalog": catalog_name,
+            "catalog_path": _asset_catalog_path(blend_path, str(asset_data.catalog_id)) if asset_data else "",
             "color_tag": color_tag,
             "description": description,
             "tree_type": str(getattr(node_group, "bl_idname", "") or ""),
@@ -3586,9 +3643,18 @@ def _rebuild_search_entries(context):
 
     seen_keys = set()
     menu_paths = None
+    menu_details = {}
+
+    def ensure_menus():
+        nonlocal menu_paths
+        if menu_paths is None:
+            menu_paths, errors = node_menu_search.collect(context, node_registry.official_chinese_label,
+                                                          details=menu_details)
+            if errors:
+                print("Node Console: some official menus could not be indexed:", errors)
+                menu_details["excluded_types"] = set()
 
     def add_entry(entry: NodeSearchEntry, prepared=False):
-        nonlocal menu_paths
         if not _entry_available_in_current_blender(context, entry, capabilities):
             return
         if _is_redundant_mix_color_entry(entry):
@@ -3626,17 +3692,17 @@ def _rebuild_search_entries(context):
                             aliases=tuple(dict.fromkeys(aliases)),
                             search_text=_make_search_text(entry.english, chinese, label, entry.node_type),
                             leaf_pinyin_compact="", root_pinyin_compact="")
-        if not prepared and entry.kind in {"NODE", "ZONE"}:
-            if menu_paths is None:
-                menu_paths, errors = node_menu_search.collect(context, node_registry.official_chinese_label)
-                if errors:
-                    print("Node Console: some official menus could not be indexed:", errors)
+        if not prepared and entry.kind in {"NODE", "ZONE", "ACTION"}:
+            ensure_menus()
             if entry.kind == "ZONE":
                 settings = dict(entry.settings)
                 key = ("ZONE", settings.get("input_node_type"), settings.get("output_node_type"))
+            elif entry.kind == "ACTION":
+                key = ("ACTION", entry.node_type)
             else:
                 key = node_menu_search.semantic_key(entry.node_type, entry.settings)
-            entry = replace(entry, menu_paths=menu_paths.get(key, ()))
+            entry = replace(entry, menu_paths=menu_paths.get(key, ()),
+                            native_hidden=entry.node_type in menu_details.get("excluded_types", ()))
         NODE_SEARCH_ENTRIES.append(entry)
         NODE_ENTRY_BY_ID[entry.identifier] = entry
 
@@ -3712,12 +3778,10 @@ def _rebuild_search_entries(context):
             label = _entry_label(asset_name, chinese)
             description = asset_item.get("description") or f"Node group asset: {asset_name}"
             category = asset_item.get("category") or "Asset"
-            catalog = asset_item.get("menu_catalog") or category
-            catalog_parts = [part.strip() for part in re.split(r"/| > | - ", catalog) if part.strip()]
-            separator = " " + native_search.ARROW + " "
-            search_path = separator.join(catalog_parts + [asset_name])
-            chinese_path = separator.join([node_registry.official_chinese_label(part)
-                                           for part in catalog_parts + [asset_name]])
+            ensure_menus()
+            paths = node_menu_search.asset_menu_paths(
+                _asset_search_catalog(asset_item), asset_name, edit_tree.bl_idname,
+                node_registry.official_chinese_label, menu_details.get("asset_paths", {}))
             entry = NodeSearchEntry(
                 identifier=_safe_identifier("A", asset_name, str(blend_path)),
                 category=category,
@@ -3730,7 +3794,7 @@ def _rebuild_search_entries(context):
                 asset_name=asset_name,
                 asset_color_tag=asset_item.get("color_tag", ""),
                 search_text=_make_search_text(asset_name, chinese, label, ""),
-                menu_paths=((search_path, chinese_path, 0.0),),
+                menu_paths=paths,
             )
             if cacheable_entries is not None:
                 cacheable_entries.append(entry)
@@ -3888,6 +3952,27 @@ def _rebuild_search_entries(context):
     for cls in sorted(_iter_node_classes(), key=lambda item: item.bl_rna.name):
         add_builtin_entry(cls.bl_rna.identifier)
 
+    ensure_menus()
+    semantic_keys = {node_menu_search.semantic_key(e.node_type, e.settings)
+                     for e in NODE_SEARCH_ENTRIES if e.kind == "NODE"}
+    for key, (operator, settings, path) in menu_details.get("definitions", {}).items():
+        if operator == "node.add_node" and key not in semantic_keys:
+            english_parts = path[0].split(" " + native_search.ARROW + " ")
+            chinese_parts = path[1].split(" " + native_search.ARROW + " ")
+            category = " > ".join(english_parts[:-1])
+            add_builtin_entry(key[0], category, settings=settings,
+                              variant_chinese=chinese_parts[-1])
+            semantic_keys.add(key)
+        elif operator == "node.add_typed_bundle":
+            english = path[0].split(" " + native_search.ARROW + " ")[-1]
+            chinese = path[1].split(" " + native_search.ARROW + " ")[-1]
+            add_entry(NodeSearchEntry(
+                identifier=_safe_identifier("O", operator), category="Utilities > Bundle",
+                english=english, chinese=chinese, label=_entry_label(english, chinese),
+                description=bpy.ops.node.add_typed_bundle.get_rna_type().description,
+                kind="ACTION", node_type=operator, asset_color_tag=capabilities.get("NodeCombineBundle", {}).get("color_tag", "NONE"),
+                search_text=_make_search_text(english, chinese, english, "")))
+
     add_zone_entries()
     add_asset_library_entries(cacheable_entries)
     _save_search_index_cache(context, list(NODE_SEARCH_ENTRIES), cache_key)
@@ -3944,6 +4029,8 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
     extensions, weak_extensions = [], []
     normalized = _normalize(query)
     for entry in NODE_SEARCH_ENTRIES:
+        if entry.native_hidden:
+            continue
         items = entry._native_items[language]
         target = native_items if entry.menu_paths or entry.kind == "ASSET" else supplemental_items
         target.extend(items)
@@ -4092,6 +4179,13 @@ def _add_zone(context, entry: NodeSearchEntry):
     if "FINISHED" not in result:
         return None
     return getattr(context.space_data.edit_tree.nodes, "active", None)
+
+
+def _add_menu_action(context, entry: NodeSearchEntry):
+    if entry.node_type != "node.add_typed_bundle":
+        return None
+    result = bpy.ops.node.add_typed_bundle("EXEC_DEFAULT", use_transform=False)
+    return context.space_data.edit_tree.nodes.active if "FINISHED" in result else None
 
 
 def _uniform_shader():
@@ -4678,6 +4772,15 @@ class ENS_AddNodeByEnglishSearch(Operator):
                 return self._begin_placement(context, event, result)
 
             self.report({"ERROR"}, f"Unable to add zone: {entry.english}")
+            return self._finish(context, {"CANCELLED"})
+
+        if entry.kind == "ACTION":
+            try:
+                result = _add_menu_action(context, entry)
+                if result:
+                    return self._begin_placement(context, event, result)
+            except RuntimeError as ex:
+                self.report({"ERROR"}, str(ex))
             return self._finish(context, {"CANCELLED"})
 
         if entry.kind == "SNIPPET":
