@@ -4,16 +4,26 @@ import json
 from pathlib import Path
 
 import bpy
+from .search_language import search_key
 
-INDEX_SCHEMA = 5
+INDEX_SCHEMA = 7
+LANGUAGES = (
+    ('zh_HANS', '中文', ('zh_HANS', 'zh_CN')),
+    ('ja_JP', '日本語', ('ja_JP', 'ja')),
+    ('ko_KR', '한국어', ('ko_KR', 'ko')),
+    ('ru_RU', 'Русский', ('ru_RU', 'ru')),
+    ('es', 'Español', ('es',)),
+)
 _catalog = None
+_catalog_language = None
 _inventories = {}
 _aliases = None
 
 
 def clear():
-    global _catalog
+    global _catalog, _catalog_language
     _catalog = None
+    _catalog_language = None
     _inventories.clear()
 
 
@@ -97,16 +107,21 @@ def inventory(tree, signature=None):
     return supported
 
 
-def catalog():
-    global _catalog
-    if _catalog is None:
+def catalog(language='zh_HANS'):
+    global _catalog, _catalog_language
+    # One selected catalog, never all locales on startup or on each keystroke.
+    if _catalog is None or _catalog_language != language:
         _catalog = gettext.NullTranslations()
+        _catalog_language = language
+        locales = next((row[2] for row in LANGUAGES if row[0] == language), ())
+        if not locales:
+            return _catalog
         for kind in ('LOCAL', 'SYSTEM'):
             root = bpy.utils.resource_path(kind)
             if not root:
                 continue
-            for language in ('zh_HANS', 'zh_CN'):
-                path = Path(root) / 'datafiles/locale' / language / 'LC_MESSAGES/blender.mo'
+            for locale in locales:
+                path = Path(root) / 'datafiles/locale' / locale / 'LC_MESSAGES/blender.mo'
                 if path.is_file():
                     try:
                         with path.open('rb') as source:
@@ -125,8 +140,13 @@ def aliases():
     return _aliases
 
 
-def official_chinese_label(text, context=None):
-    translation = catalog()
+def search_aliases(text, language='zh_HANS'):
+    return tuple(alias for alias in aliases().get(text, ())
+                 if language == 'zh_HANS' or alias.isascii())
+
+
+def official_label(text, context=None, language='zh_HANS'):
+    translation = catalog(language)
     if context and context != '*':
         result = translation.pgettext(context, text)
         if result != text:
@@ -135,6 +155,16 @@ def official_chinese_label(text, context=None):
     if result != text:
         return result
     return text
+
+
+def official_chinese_label(text, context=None):
+    return official_label(text, context, 'zh_HANS')
+
+
+def localized_label(text, context=None, language='zh_HANS'):
+    if language == 'zh_HANS':
+        return chinese_label(text, context)
+    return official_label(text, context, language)
 
 
 def chinese_label(text, context=None):

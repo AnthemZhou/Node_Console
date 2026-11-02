@@ -48,11 +48,11 @@ def analyze(root):
     review = json.loads((root / 'review.json').read_text()) if (root / 'review.json').exists() else {}
     results = []
     for sample in report['samples']:
-        language = int(sample['language'] == 'zh_HANS')
+        language = int(sample['language'] != 'en_US')
         catalog = {e['id']: e for e in report['catalogs'][sample['context']]}
         path_map = defaultdict(set)
         for entry in catalog.values():
-            for path in entry['paths'][language]:
+            for path in entry.get('raw_paths', entry['paths'])[language] or entry['paths'][language]:
                 path_map[normalize(path)].add(entry['id'])
                 if entry['kind'] == 'ASSET' and native_search.ARROW in path:
                     # The native asset menu omits its root catalog. Identity

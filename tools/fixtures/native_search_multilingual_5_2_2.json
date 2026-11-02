@@ -1,0 +1,945 @@
+{
+  "schema": 1,
+  "blender": "5.2.2 LTS",
+  "build": "d13f752e3b9c",
+  "environment": "macOS arm64, isolated factory profile, bundled assets, pinned groups, no favorites/history",
+  "source": "Actual NODE_MT_add search screenshots, reviewed OCR; reproduction documented in PERFORMANCE.md",
+  "summary": {
+    "baseline": {
+      "total": 52,
+      "resolved": 52,
+      "first": 52,
+      "exact": 50,
+      "visible_exact": 48,
+      "native_complete": 48,
+      "complete_exact": 44,
+      "extra_cases": 4,
+      "exact_deduplicated": 50,
+      "positions": 198,
+      "position_matches": 193,
+      "same_keys": 0,
+      "missing_cases": 0
+    },
+    "context": {
+      "total": 0,
+      "resolved": 0,
+      "first": 0,
+      "exact": 0,
+      "visible_exact": 0,
+      "native_complete": 0,
+      "complete_exact": 0,
+      "extra_cases": 0,
+      "exact_deduplicated": 0,
+      "positions": 0,
+      "position_matches": 0,
+      "same_keys": 0,
+      "missing_cases": 0
+    },
+    "pinyin": {
+      "total": 0,
+      "resolved": 0,
+      "first": 0,
+      "exact": 0,
+      "visible_exact": 0,
+      "native_complete": 0,
+      "complete_exact": 0,
+      "extra_cases": 0,
+      "exact_deduplicated": 0,
+      "positions": 0,
+      "position_matches": 0,
+      "same_keys": 0,
+      "missing_cases": 0
+    },
+    "cross_language": {
+      "total": 0,
+      "resolved": 0,
+      "first": 0,
+      "exact": 0,
+      "visible_exact": 0,
+      "native_complete": 0,
+      "complete_exact": 0,
+      "extra_cases": 0,
+      "exact_deduplicated": 0,
+      "positions": 0,
+      "position_matches": 0,
+      "same_keys": 0,
+      "missing_cases": 0
+    }
+  },
+  "cases": [
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "ノイズテクスチャ",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexNoise_Noise_Texture",
+        "ENTRY:N_ShaderNodeTexWhiteNoise_White_Noise_Texture"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "位置",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeInputPosition_Position",
+        "ENTRY:N_GeometryNodeSetPosition_Set_Position",
+        "ENTRY:N_GeometryNodeSetCurveHandlePositions_Set_Handle_Positions",
+        "ENTRY:N_GeometryNodeInputCurveHandlePositions_Curve_Handle_Positions"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "ジオメトリ統合",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeJoinGeometry_Join_Geometry"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "位置設定",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeSetPosition_Set_Position",
+        "ENTRY:N_GeometryNodeSetCurveHandlePositions_Set_Handle_Positions"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "メッシュライン",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeMeshLine_Mesh_Line",
+        "ENTRY:N_GeometryNodeMeshToPoints_Mesh_to_Points",
+        "ENTRY:N_GeometryNodeInputMeshIsland_Mesh_Island"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "노이즈 텍스처",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexNoise_Noise_Texture",
+        "ENTRY:N_ShaderNodeTexWhiteNoise_White_Noise_Texture"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "위치",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeInputPosition_Position",
+        "ENTRY:N_GeometryNodeSetPosition_Set_Position",
+        "ENTRY:N_GeometryNodeSetCurveHandlePositions_Set_Handle_Positions",
+        "ENTRY:N_GeometryNodeInputCurveHandlePositions_Curve_Handle_Positions",
+        "ENTRY:N_GeometryNodeIndexSwitch_Index_Switch"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "지오메트리 가입하기",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeJoinGeometry_Join_Geometry"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "위치 설정",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeSetPosition_Set_Position",
+        "ENTRY:N_GeometryNodeSetCurveHandlePositions_Set_Handle_Positions"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "메시지 선",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeMeshLine_Mesh_Line",
+        "ENTRY:N_GeometryNodeEdgePathsToSelection_Edge_Paths_to_Selection"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Текстура шума",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexNoise_Noise_Texture",
+        "ENTRY:N_ShaderNodeTexWhiteNoise_White_Noise_Texture"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Положение",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeInputPosition_Position",
+        "ENTRY:N_GeometryNodeInputCurveHandlePositions_Curve_Handle_Positions",
+        "ENTRY:N_ShaderNodeVectorMath_Vector_Math_Refract__operation_REFRACT"
+      ],
+      "baseline_first": true,
+      "baseline_exact": false,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Соединить геометрию",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeJoinGeometry_Join_Geometry"
+      ],
+      "baseline_first": true,
+      "baseline_exact": false,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Установить положение",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeSetPosition_Set_Position",
+        "ENTRY:N_GeometryNodeSetCurveHandlePositions_Set_Handle_Positions"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Линия-меш",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeMeshLine_Mesh_Line"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Ruido",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexNoise_Noise_Texture",
+        "ENTRY:N_ShaderNodeTexWhiteNoise_White_Noise_Texture",
+        "ASSET:Hair Curves Noise"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Posición",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeInputPosition_Position",
+        "ENTRY:N_GeometryNodeSetPosition_Set_Position",
+        "ENTRY:N_GeometryNodeInputCurveHandlePositions_Curve_Handle_Positions",
+        "ENTRY:N_GeometryNodeSetCurveHandlePositions_Set_Handle_Positions",
+        "ENTRY:N_GeometryNodeCameraInfo_Camera_Info_Projection_Matrix__visible_output_Projection_"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Unir geometría",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeJoinGeometry_Join_Geometry"
+      ],
+      "baseline_first": true,
+      "baseline_exact": false,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Definir posición",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeSetPosition_Set_Position",
+        "ENTRY:N_GeometryNodeSetCurveHandlePositions_Set_Handle_Positions"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "GeometryNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Línea (malla)",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_GeometryNodeMeshLine_Mesh_Line"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "プリンシプルBSDF",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeBsdfPrincipled_Principled_BSDF"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "ノイズテクスチャ",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexNoise_Noise_Texture",
+        "ENTRY:N_ShaderNodeTexWhiteNoise_White_Noise_Texture"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "テクスチャ座標",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_UV__visible_output_UV",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Window__visible_output_Window",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Object__visible_output_Object",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Camera__visible_output_Camera",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Normal__visible_output_Normal",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Reflection__visible_output_Reflection",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Generated__visible_output_Generated"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "レイヤーウェイト",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeLayerWeight_Layer_Weight"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "프린시플드 BSDF",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeBsdfPrincipled_Principled_BSDF"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "노이즈 텍스처",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexNoise_Noise_Texture",
+        "ENTRY:N_ShaderNodeTexWhiteNoise_White_Noise_Texture"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "텍스처 좌표",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_UV__visible_output_UV",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Normal__visible_output_Normal",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Reflection__visible_output_Reflection",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Generated__visible_output_Generated",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Object__visible_output_Object",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Window__visible_output_Window",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Camera__visible_output_Camera"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "레이어 웨이트",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeLayerWeight_Layer_Weight"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Принципиальный BSDF",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeBsdfPrincipled_Principled_BSDF"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Текстура шума",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexNoise_Noise_Texture",
+        "ENTRY:N_ShaderNodeTexWhiteNoise_White_Noise_Texture"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Текстурные координаты",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_UV__visible_output_UV",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Camera__visible_output_Camera",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Normal__visible_output_Normal",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Object__visible_output_Object",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Window__visible_output_Window",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Reflection__visible_output_Reflection",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Generated__visible_output_Generated"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Вес слоя",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeLayerWeight_Layer_Weight",
+        "ENTRY:N_ShaderNodeVectorMath_Vector_Math_Distance__operation_DISTANCE"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "BSDF Principista",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeBsdfPrincipled_Principled_BSDF"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Ruido",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexNoise_Noise_Texture",
+        "ENTRY:N_ShaderNodeTexWhiteNoise_White_Noise_Texture"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Coordenadas de texturizado",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Camera__visible_output_Camera",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Generated__visible_output_Generated",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Normal__visible_output_Normal",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Object__visible_output_Object",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Reflection__visible_output_Reflection",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_UV__visible_output_UV",
+        "ENTRY:N_ShaderNodeTexCoord_Texture_Coordinate_Window__visible_output_Window"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "ShaderNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Influencia de capa",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_ShaderNodeLayerWeight_Layer_Weight"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "ぼかし",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeBlur_Blur",
+        "ENTRY:N_CompositorNodeFilter_Filter_Soften__inputs_Type_default_value_Soften",
+        "ENTRY:N_CompositorNodeDBlur_Directional_Blur",
+        "ENTRY:N_CompositorNodeBilateralblur_Bilateral_Blur",
+        "ENTRY:N_CompositorNodeDefocus_Defocus",
+        "ENTRY:N_CompositorNodeVecBlur_Vector_Blur",
+        "ENTRY:N_CompositorNodeBokehBlur_Bokeh_Blur"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "グレア",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeGlare_Glare",
+        "ENTRY:N_CompositorNodeGlare_Glare_Kernel__inputs_Type_default_value_Kernel",
+        "ENTRY:N_CompositorNodeGlare_Glare_Ghosts__inputs_Type_default_value_Ghosts",
+        "ENTRY:N_CompositorNodeGlare_Glare_Sun_Beams__inputs_Type_default_value_Sun_Beams",
+        "ENTRY:N_CompositorNodeGlare_Glare_Fog_Glow__inputs_Type_default_value_Fog_Glow",
+        "ENTRY:N_CompositorNodeGlare_Glare_Bloom__inputs_Type_default_value_Bloom",
+        "ENTRY:N_CompositorNodeGlare_Glare_Streaks__inputs_Type_default_value_Streaks",
+        "ENTRY:N_CompositorNodeGlare_Glare_Simple_Star__inputs_Type_default_value_Simple_Star",
+        "ASSET:Film Grain"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "トランスフォーム",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeTransform_Transform",
+        "ENTRY:N_CompositorNodeMapUV_Map_UV",
+        "ENTRY:N_CompositorNodeCrop_Crop",
+        "ENTRY:N_CompositorNodeCornerPin_Corner_Pin",
+        "ENTRY:N_CompositorNodeScale_Scale",
+        "ENTRY:N_CompositorNodeDisplace_Displace",
+        "ENTRY:N_CompositorNodeLensdist_Lens_Distortion",
+        "ENTRY:N_CompositorNodeMovieDistortion_Movie_Distortion",
+        "ENTRY:N_CompositorNodeRotate_Rotate",
+        "ENTRY:N_CompositorNodeTranslate_Translate"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ja_JP",
+      "query": "レンズ歪み",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeLensdist_Lens_Distortion"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "블러",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeBlur_Blur",
+        "ENTRY:N_CompositorNodeDBlur_Directional_Blur",
+        "ENTRY:N_CompositorNodeVecBlur_Vector_Blur",
+        "ENTRY:N_CompositorNodeBokehBlur_Bokeh_Blur",
+        "ENTRY:N_CompositorNodeBilateralblur_Bilateral_Blur",
+        "ENTRY:N_CompositorNodeDefocus_Defocus",
+        "ENTRY:N_CompositorNodeGlare_Glare_Bloom__inputs_Type_default_value_Bloom",
+        "ENTRY:N_ShaderNodeBlackbody_Blackbody"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "글레어",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeGlare_Glare",
+        "ENTRY:N_CompositorNodeGlare_Glare_Ghosts__inputs_Type_default_value_Ghosts",
+        "ENTRY:N_CompositorNodeGlare_Glare_Bloom__inputs_Type_default_value_Bloom",
+        "ENTRY:N_CompositorNodeGlare_Glare_Simple_Star__inputs_Type_default_value_Simple_Star",
+        "ENTRY:N_CompositorNodeGlare_Glare_Fog_Glow__inputs_Type_default_value_Fog_Glow",
+        "ENTRY:N_CompositorNodeGlare_Glare_Streaks__inputs_Type_default_value_Streaks",
+        "ENTRY:N_CompositorNodeGlare_Glare_Kernel__inputs_Type_default_value_Kernel",
+        "ENTRY:N_CompositorNodeGlare_Glare_Sun_Beams__inputs_Type_default_value_Sun_Beams"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "변환",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeTransform_Transform",
+        "ENTRY:N_CompositorNodePremulKey_Alpha_Convert",
+        "ENTRY:N_CompositorNodeConvertColorSpace_Convert_Colorspace",
+        "ENTRY:N_CompositorNodeRGBToBW_RGB_to_BW",
+        "ENTRY:N_CompositorNodeConvertToDisplay_Convert_to_Display",
+        "ENTRY:N_CompositorNodeFlip_Flip",
+        "ENTRY:N_CompositorNodeLensdist_Lens_Distortion",
+        "ENTRY:N_CompositorNodeMapUV_Map_UV",
+        "ENTRY:N_CompositorNodeMovieDistortion_Movie_Distortion",
+        "ENTRY:N_CompositorNodeDisplace_Displace"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ko_KR",
+      "query": "렌즈 왜곡",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeLensdist_Lens_Distortion"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Размытие",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeBlur_Blur",
+        "ENTRY:N_CompositorNodeBokehBlur_Bokeh_Blur",
+        "ENTRY:N_CompositorNodeVecBlur_Vector_Blur",
+        "ENTRY:N_CompositorNodeBilateralblur_Bilateral_Blur",
+        "ENTRY:N_CompositorNodeDBlur_Directional_Blur",
+        "ENTRY:N_CompositorNodeDefocus_Defocus"
+      ],
+      "baseline_first": true,
+      "baseline_exact": false,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Блики",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeGlare_Glare",
+        "ENTRY:N_CompositorNodeGlare_Glare_Sun_Beams__inputs_Type_default_value_Sun_Beams",
+        "ENTRY:N_CompositorNodeGlare_Glare_Streaks__inputs_Type_default_value_Streaks",
+        "ENTRY:N_CompositorNodeGlare_Glare_Ghosts__inputs_Type_default_value_Ghosts",
+        "ENTRY:N_CompositorNodeGlare_Glare_Simple_Star__inputs_Type_default_value_Simple_Star",
+        "ENTRY:N_CompositorNodeGlare_Glare_Bloom__inputs_Type_default_value_Bloom",
+        "ENTRY:N_CompositorNodeGlare_Glare_Fog_Glow__inputs_Type_default_value_Fog_Glow",
+        "ENTRY:N_CompositorNodeGlare_Glare_Kernel__inputs_Type_default_value_Kernel"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Трансформировать",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeTransform_Transform",
+        "ASSET:Transform and Project",
+        "ENTRY:N_CompositorNodeRotate_Rotate",
+        "ENTRY:N_CompositorNodeMovieDistortion_Movie_Distortion",
+        "ENTRY:N_CompositorNodeLensdist_Lens_Distortion",
+        "ENTRY:N_CompositorNodeScale_Scale",
+        "ENTRY:N_CompositorNodeCrop_Crop",
+        "ENTRY:N_CompositorNodeTranslate_Translate",
+        "ENTRY:N_CompositorNodeCornerPin_Corner_Pin",
+        "ENTRY:N_CompositorNodeFlip_Flip"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "ru_RU",
+      "query": "Искажение объектива",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeLensdist_Lens_Distortion"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Desenfocar",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeBlur_Blur",
+        "ENTRY:N_CompositorNodeBokehBlur_Bokeh_Blur",
+        "ENTRY:N_CompositorNodeBilateralblur_Bilateral_Blur",
+        "ENTRY:N_CompositorNodeDefocus_Defocus",
+        "ENTRY:N_CompositorNodeDBlur_Directional_Blur",
+        "ENTRY:N_CompositorNodeVecBlur_Vector_Blur"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Resplandor",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeGlare_Glare",
+        "ENTRY:N_CompositorNodeGlare_Glare_Bloom__inputs_Type_default_value_Bloom",
+        "ENTRY:N_CompositorNodeGlare_Glare_Fog_Glow__inputs_Type_default_value_Fog_Glow",
+        "ENTRY:N_CompositorNodeGlare_Glare_Simple_Star__inputs_Type_default_value_Simple_Star",
+        "ENTRY:N_CompositorNodeGlare_Glare_Ghosts__inputs_Type_default_value_Ghosts",
+        "ENTRY:N_CompositorNodeGlare_Glare_Streaks__inputs_Type_default_value_Streaks",
+        "ENTRY:N_CompositorNodeGlare_Glare_Kernel__inputs_Type_default_value_Kernel",
+        "ENTRY:N_CompositorNodeGlare_Glare_Sun_Beams__inputs_Type_default_value_Sun_Beams"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Transformación",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeTransform_Transform",
+        "ENTRY:N_CompositorNodeDisplace_Displace",
+        "ENTRY:N_CompositorNodeLensdist_Lens_Distortion",
+        "ENTRY:N_CompositorNodeMovieDistortion_Movie_Distortion",
+        "ENTRY:N_CompositorNodeScale_Scale",
+        "ENTRY:N_CompositorNodeCornerPin_Corner_Pin",
+        "ENTRY:N_CompositorNodeFlip_Flip",
+        "ENTRY:N_CompositorNodeMapUV_Map_UV",
+        "ENTRY:N_CompositorNodeTranslate_Translate",
+        "ENTRY:N_CompositorNodeCrop_Crop"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    },
+    {
+      "tree": "CompositorNodeTree",
+      "engine": "BLENDER_EEVEE",
+      "shader": "OBJECT",
+      "language": "es",
+      "query": "Distorsión de lente",
+      "group": "baseline",
+      "native": [
+        "ENTRY:N_CompositorNodeLensdist_Lens_Distortion"
+      ],
+      "baseline_first": true,
+      "baseline_exact": true,
+      "extension_has_results": true
+    }
+  ]
+}

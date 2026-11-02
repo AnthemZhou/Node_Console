@@ -45,7 +45,7 @@ def package(directory, current, next_version, failure=None):
                     content += '\n_register_impl = register\ndef register():\n    _register_impl()\n    raise RuntimeError("intentional registration failure")\n'
                 elif failure == 'import':
                     content += '\nraise RuntimeError("intentional import failure")\n'
-            if name == 'node_registry.py':
+            if name in {'node_registry.py', 'search_language.py'}:
                 content += f'\nHOT_RELOAD_TEST_MARKER = "{next_version}"\n'
             if name == 'ime_input/adapter.py':
                 content += f'\nHOT_RELOAD_TEST_MARKER = "{next_version}"\n'
@@ -148,6 +148,8 @@ def main():
                     assert nc.UPDATE_STATUS['state'] == 'updated'
                     assert nc.node_registry is not old.node_registry
                     assert nc.node_registry.HOT_RELOAD_TEST_MARKER == version
+                    assert nc.search_language.HOT_RELOAD_TEST_MARKER == version
+                    assert nc.node_registry.search_key is nc.search_language.search_key
                     if sys.platform == 'darwin':
                         assert nc.ime_input.adapter.HOT_RELOAD_TEST_MARKER == version
                     assert not any(cls.is_registered for cls in old.classes)
@@ -172,6 +174,8 @@ def main():
             nc = addon_utils.enable('Node_Console', default_set=False, persistent=True)
             assert nc.ADDON_VERSION == next_version
             assert nc.node_registry.HOT_RELOAD_TEST_MARKER == next_version
+            assert nc.search_language.HOT_RELOAD_TEST_MARKER == next_version
+            assert nc.node_registry.search_key is nc.search_language.search_key
             if sys.platform == 'darwin':
                 assert nc.ime_input.adapter.HOT_RELOAD_TEST_MARKER == next_version
             assert_preserved(nc)

@@ -43,7 +43,10 @@ for sample in samples {
     CGImageDestinationFinalize(destination)
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
-    request.recognitionLanguages = sample["language"] as? String == "zh_HANS" ? ["zh-Hans", "en-US"] : ["en-US"]
+    let locales = ["zh_HANS": "zh-Hans", "ja_JP": "ja-JP", "ko_KR": "ko-KR", "ru_RU": "ru-RU", "es": "es-ES"]
+    let supported = try request.supportedRecognitionLanguages()
+    let locale = locales[sample["language"] as? String ?? ""]
+    request.recognitionLanguages = locale.map { supported.contains($0) ? [$0, "en-US"] : ["en-US"] } ?? ["en-US"]
     request.usesLanguageCorrection = false
     try VNImageRequestHandler(cgImage: cropped).perform([request])
     let lines = (request.results ?? []).map { observation -> [String: Any] in

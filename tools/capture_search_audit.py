@@ -38,6 +38,7 @@ if '--pilot' in args:
 report = dict(version=bpy.app.version_string, build=bpy.app.build_hash.decode(),
               samples=[], catalogs={}, native_menus={}, errors=[], favorites=[], history='no executed search result')
 state = dict(index=0, phase='dismiss', context=None)
+multilingual = '--multilingual' in args
 
 
 def write_report():
@@ -60,6 +61,8 @@ def tick():
         sample = queries[state['index']]
         if state['phase'] == 'setup':
             key = '|'.join(sample[k] for k in ('tree', 'engine', 'shader'))
+            if multilingual:
+                key += '|' + sample['language']
             area = max(window.screen.areas, key=lambda a: a.width * a.height)
             if state['context'] != key:
                 old_tree = state.get('tree')
@@ -79,6 +82,9 @@ def tick():
             region = next(r for r in area.regions if r.type == 'WINDOW')
             state['region'] = region
             bpy.context.preferences.view.language = sample['language']
+            if multilingual:
+                nc._search_language = lambda: sample['language']
+                nc._clear_search_caches()
             state['phase'] = 'snapshot'
             return 0.4
         if state['phase'] == 'snapshot':
@@ -90,6 +96,7 @@ def tick():
                 if key not in report['catalogs']:
                     report['catalogs'][key] = [dict(id=e.identifier, english=e.english, chinese=e.chinese,
                         kind=e.kind, node=e.node_type, paths=[[i.text for i in e._native_items(language)] for language in (0, 1)],
+                        raw_paths=[[row[column] for row in e.menu_paths] for column in (0, 1)],
                         weights=[[i.weight for i in e._native_items(language)] for language in (0, 1)],
                         settings=e.settings, menu=bool(e.menu_paths), hidden=e.native_hidden)
                         for e in nc.NODE_SEARCH_ENTRIES]

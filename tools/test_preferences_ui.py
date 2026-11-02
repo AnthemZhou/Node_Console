@@ -141,7 +141,7 @@ def main():
                 assert nc._ui_text(nc.addon_updater.RELEASE_HIGHLIGHTS[nc.ADDON_VERSION]) in offline[1]
                 assert offline[1] in offline[2]
         cases += 1
-    prefs = SimpleNamespace(layout=Layout(), snippet_nodes_expanded=False)
+    prefs = SimpleNamespace(layout=Layout(), snippet_nodes_expanded=False, feedback_text='')
     context = SimpleNamespace(region=SimpleNamespace(width=1200))
     with patch.object(nc, '_load_asset_index', return_value=[]), \
             patch.object(nc, '_load_favorite_meta', return_value={}), \
@@ -152,14 +152,23 @@ def main():
             patch.object(nc, '_snippet_search_snapshot', return_value={'snippets': []}) as snippets:
         nc.ENS_AddonPreferences.draw(prefs, context)
         snippets.assert_not_called()
+        feedback = prefs.layout.children[-1]
+        field = next(x for x in feedback.walk() if x.kind == 'prop')
+        button = next(x for x in feedback.walk() if x.kind == 'operator')
+        assert field.props['name'] == 'feedback_text' and field.props['placeholder']
+        assert button.props['name'] == 'node_console.report_bug' and not button.parent.enabled
         settings_box = prefs.layout.children[0]
         assert settings_box.kind == 'box'
         splits = [item for item in settings_box.children if item.kind == 'split']
         assert 0 < splits[0].props['factor'] < 1
         assert splits[1].props['factor'] == 0.5
         prefs.snippet_nodes_expanded = True
+        prefs.feedback_text = '中文问题'
         nc.ENS_AddonPreferences.draw(prefs, context)
         snippets.assert_called_once()
+        feedback = prefs.layout.children[-1]
+        button = next(x for x in feedback.walk() if x.kind == 'operator')
+        assert button.props['name'] == 'node_console.report_bug' and button.parent.enabled
     cases += 1
     print('PREFERENCES_UI_REGRESSION', bpy.app.version_string, cases, 'passed', flush=True)
 

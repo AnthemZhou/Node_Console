@@ -1,4 +1,5 @@
 """Replay independently captured native search rows against the actual index."""
+import argparse
 import importlib.util
 import json
 import os
@@ -14,7 +15,12 @@ from analyze_search_audit import compare
 
 assert Path(bpy.utils.user_resource('CONFIG')).resolve() == Path(os.environ['BLENDER_USER_CONFIG']).resolve()
 bpy.context.preferences.use_preferences_save = False
-fixture = json.loads((ROOT / 'tools/fixtures/native_search_expanded_5_2_2.json').read_text())
+parser = argparse.ArgumentParser()
+parser.add_argument('output', type=Path)
+parser.add_argument('--fixture', type=Path, default=ROOT / 'tools/fixtures/native_search_expanded_5_2_2.json')
+parser.add_argument('--multilingual', action='store_true')
+args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:])
+fixture = json.loads(args.fixture.read_text())
 assert bpy.app.version_string == fixture['blender'] and bpy.app.build_hash.decode() == fixture['build'], 'Use the audited Blender build'
 spec = importlib.util.spec_from_file_location('NCExpandedTest', ROOT / '__init__.py', submodule_search_locations=[str(ROOT)])
 nc = importlib.util.module_from_spec(spec)
@@ -30,6 +36,8 @@ failures = []
 try:
     for sample in fixture['cases']:
         key = tuple(sample[k] for k in ('tree', 'engine', 'shader'))
+        if args.multilingual:
+            key += (sample['language'],)
         if key != last_context:
             if tree:
                 bpy.data.node_groups.remove(tree)
@@ -37,6 +45,9 @@ try:
             context = SimpleNamespace(space_data=SimpleNamespace(edit_tree=tree, tree_type=sample['tree'],
                 shader_type=sample['shader'], node_tree_sub_type='SCENE' if sample['tree'] == 'CompositorNodeTree' else 'MODIFIER',
                 id_from=None), engine=sample['engine'])
+            if args.multilingual:
+                nc._search_language = lambda: sample['language']
+                nc._clear_search_caches()
             nc._rebuild_search_entries(context)
             last_context = key
         bpy.context.preferences.view.language = sample['language']
@@ -58,6 +69,6 @@ report = dict(version=bpy.app.version_string, cases=len(results), comparable=len
               positions=sum(len(s['native']) for s in comparable),
               position_matches=sum(s['position_matches'] for s in comparable),
               missing_cases=sum(bool(s['missing']) for s in comparable), failures=failures)
-Path(sys.argv[sys.argv.index('--') + 1]).write_text(json.dumps(report, ensure_ascii=False, indent=2))
+args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2))
 print(json.dumps(report, ensure_ascii=False, indent=2))
 assert not failures, 'Expanded native-search regression; see report'

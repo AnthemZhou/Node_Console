@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.5.0
+
+<!-- node-console-summary: {"zh":"多语言节点搜索","en":"Multilingual node search"} -->
+
+### 中文
+
+- 新增节点语言选择：英文始终可检索，第二语言可选择中文、日语、韩语、俄语或西班牙语；显示模式同步使用所选语言，保留原有中文设置。
+- 从当前 Blender 安装包按上下文读取官方节点名、操作变体和菜单路径；缺译回退英文，不修改 Blender 界面语言。中文人工搜索别名与拼音增强继续保留，不将日文汉字转换成中文拼音。
+- 新语言支持 Unicode 大小写、全半角及组合字符规范化；仅准备所选语言词典与索引，缓存按语言隔离。保留节点标识、收藏、快捷节点、使用记录、组合点和现有输入操作。
+- 补齐日语平/片假名匹配、韩语声母/去空格/未完成音节、俄语 `е/ё` 和西语省重音检索，保留日语浊音、西语 `ñ` 与俄语软硬音符的区别；同样支持用户组合点名称，不改写显示文字。
+- 英文和本地语言分别排序，避免双语路径混排改变常用英文顺序；西语按最强匹配选择语言，同分优先英文。匹配规范化与官方原文排序分离。
+- 偏好设置底部新增原生问题反馈输入框与灰色占位提示；打开预填 GitHub Issue 草稿，由用户登录并确认后公开提交。不自动发送、上传项目或保存反馈到配置文件。
+- README 提供中、英、日、韩、俄、西六种语言说明；中文默认展开，其他语言可按需展开。
+- 保留原生评分公式；中文模式与 1.4.7 的完整结果顺序回归及既有原生样本无退步。新语言同时匹配英文和官方译名，不声称与单语言原生菜单完全同序。
+- 测试使用隔离的 macOS Blender 5.2.2/5.1.2。新增语言的真实 Mac/Windows 输入法候选窗与键盘布局尚需实机验收，合成事件测试不等同于系统输入法测试。具体范围见 PERFORMANCE.md。
+
+### English
+
+- Add a node-language selector: search English plus Chinese, Japanese, Korean, Russian or Spanish, with matching single/bilingual display options. Preserve existing Chinese preferences.
+- Read context-aware node names, operation variants and menu paths from the installed Blender catalogs, falling back to English without changing Blender's UI language. Keep Chinese editorial aliases/pinyin separate from official translations; never transliterate Japanese kanji as Chinese.
+- Normalize Unicode case, width and composed characters for new locales. Load only the selected catalog/index, isolate caches by locale and preserve node IDs, favorites, shortcuts, usage, snippets and input interaction.
+- Match Japanese kana forms, Korean initial consonants/space-free input/unfinished syllables, Russian `е/ё` and unaccented Spanish, including snippet names. Retain voiced kana, Spanish `ñ` and Russian hard/soft signs; never rewrite display names.
+- Rank English and localized paths separately; Spanish chooses the stronger match, favoring English on ties. Preserve official source spelling for native tie ordering and lengths independently of matching normalization.
+- Add a native feedback field with a muted placeholder at the bottom of Preferences. Open a prefilled GitHub Issue draft for signed-in users to review and publish; do not send automatically, upload project data or persist feedback in settings.
+- Provide Chinese, English, Japanese, Korean, Russian and Spanish README guides, with non-Chinese sections collapsed by default.
+- Retain the core native scoring formula and the default Chinese-mode ordering from 1.4.7. New locales match both English and translated paths, so they are not claimed to exactly reproduce a monolingual native menu.
+- Validate in isolated macOS Blender 5.2.2/5.1.2 processes. New-locale system IMEs, candidate windows and keyboard layouts still need Mac/Windows hardware acceptance; synthetic input events are not a substitute. See PERFORMANCE.md.
+
 ## 1.4.7
 
 <!-- node-console-summary: {"zh":"首次打开与输入提速","en":"Faster opening and search input"} -->

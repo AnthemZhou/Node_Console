@@ -5,6 +5,8 @@ Upstream: Blender Authors, source/blender/blenlib/intern/string_search.cc.
 Equal-length C++ unstable-sort ties are not guaranteed to match Python's stable
 sort. Favorites and transliteration belong in the caller, not in this module.
 """
+from __future__ import annotations
+
 from dataclasses import dataclass
 import re
 from functools import lru_cache
@@ -66,12 +68,18 @@ class Item:
     weight: float = 0
     recent: int = -1
     data: object = None
+    source_text: str | None = None
 
     def __post_init__(self):
         self.words, self.groups = words(self.text)
         self.main = self.groups[-1] if self.groups else 0
-        self.main_length = sum(len(w.encode()) for w, g in zip(self.words, self.groups) if g == self.main)
-        self.total_length = len(self.text.encode())
+        # Locale folding widens matching, but must not change official tie
+        # lengths or the menu's original UTF-8 ordering.
+        source = self.text if self.source_text is None else self.source_text
+        source_words, source_groups = words(source)
+        self.main_length = sum(len(w.encode()) for w, g in zip(source_words, source_groups) if g == self.main)
+        self.sort_key = source.encode()
+        self.total_length = len(self.sort_key)
 
 
 def initials(query, item, used, start=0):

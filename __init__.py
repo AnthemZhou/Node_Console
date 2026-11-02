@@ -11,7 +11,7 @@ import re
 import sys
 import time
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import cached_property, lru_cache
 from pathlib import Path
 
@@ -23,20 +23,20 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 # Blender may reload only this file when an installed add-on is re-enabled.
-for _child_name in ("addon_reloader", "addon_updater", "node_registry", "native_search", "node_menu_search", "json_store", "ime_input"):
+for _child_name in ("addon_reloader", "addon_updater", "search_language", "node_registry", "native_search", "node_menu_search", "json_store", "issue_report", "ime_input"):
     if _child_name in globals():
         importlib.reload(globals()[_child_name])
 from . import addon_reloader, addon_updater, node_registry, json_store
-from . import native_search, node_menu_search
+from . import native_search, node_menu_search, search_language, issue_report
 
 
-ADDON_VERSION = "1.4.7"
+ADDON_VERSION = "1.5.0"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 4, 7),
+    "version": (1, 5, 0),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -233,6 +233,16 @@ UI_TEXT_ZH = {
     "Add Shortcut": "添加快捷节点",
     "Remove Shortcut": "删除快捷节点",
     "Search Result Display": "搜索结果显示",
+    "Node Language": "节点语言",
+    "Multilingual node search": "多语言节点搜索",
+    "Bug Feedback": "问题反馈",
+    "Describe the problem and steps to reproduce...": "描述遇到的问题和复现步骤…",
+    "Open GitHub Issue": "在 GitHub 中继续",
+    "Open a draft with your text, add-on/Blender versions, platform and node language. Sign in to GitHub and confirm to publish a public issue. No scene, files or settings are uploaded.": "打开包含反馈文字、插件/Blender 版本、平台和节点语言的草稿。登录 GitHub 并确认后才会公开发布；不会上传场景、文件或设置。",
+    "Describe the problem first": "请先描述遇到的问题",
+    "Report is too long for a GitHub link; shorten it and add details on GitHub": "内容超出链接长度限制，请精简后在 GitHub 补充详情；原输入已保留",
+    "Could not open GitHub; your draft is retained": "无法打开 GitHub，已保留输入内容",
+    "GitHub draft opened; sign in and confirm there to submit": "已打开 GitHub 草稿，请登录并确认提交",
     "Enable Chinese Fuzzy Match": "启用中文模糊检索",
     "May slightly slow live search": "可能会略微降低实时搜索速度",
     "Show Cached Asset Nodes": "显示缓存的资产节点",
@@ -388,7 +398,7 @@ class NodeSearchEntry:
     identifier: str
     category: str
     english: str
-    chinese: str
+    chinese: str  # Historical storage key for the selected secondary language.
     label: str
     description: str
     kind: str
@@ -407,6 +417,7 @@ class NodeSearchEntry:
     aliases: tuple[str, ...] = ()
     menu_paths: tuple[tuple[str, str, float], ...] = ()
     native_hidden: bool = False
+    language: str = field(default_factory=lambda: _search_language())
 
     @cached_property
     def _native_item_cache(self):
@@ -422,13 +433,21 @@ class NodeSearchEntry:
             english = separator.join((self.category, self.english)).replace(" > ", separator)
             chinese = separator.join((self.category, self.chinese)).replace(" > ", separator)
             paths = ((english, chinese, 0.0),)
-        items = tuple(native_search.Item(row[language], row[2], data=self) for row in paths)
+        columns = (0, 1) if language == 2 else (language,)
+        names = dict.fromkeys((row[column], row[2])
+                             for row in paths for column in columns)
+        items = tuple(native_search.Item(node_registry.search_key(text, self.language), weight,
+                                        data=self, source_text=text) for text, weight in names)
         self._native_item_cache[language] = items
         return items
 
     @cached_property
     def _match_data(self):
         return _prepare_match_data(self)
+
+    @cached_property
+    def _language_profile(self):
+        return search_language.profile(self.chinese.split(" > ")[-1], self.language)
 
     @cached_property
     def _extension_data(self):
@@ -439,12 +458,12 @@ class NodeSearchEntry:
         leaves = tuple(part[-1].replace(" ", "") for part in parts if part)
         profiles = ([_pinyin_profile_for_parts([alias]) for alias in self.aliases]
                     + _alternate_pinyin_profiles(" ".join(chinese_parts[-1:]))
-                    + _alternate_pinyin_profiles(" ".join(chinese_parts[:-1])))
+                    + _alternate_pinyin_profiles(" ".join(chinese_parts[:-1]))) if self.language == "zh_HANS" else []
         return (_normalize(self.english), _normalize(self.chinese), aliases,
                 leaves + tuple(alias.replace(" ", "") for alias in aliases), profiles)
 
     def __post_init__(self):
-        if self.leaf_pinyin_compact or self.root_pinyin_compact:
+        if self.language != "zh_HANS" or self.leaf_pinyin_compact or self.root_pinyin_compact:
             return
         chinese_parts = [_normalize(part) for part in self.chinese.split(" > ") if part.strip()]
         leaf_compact, leaf_boundaries, leaf_initials, _leaf_text = _pinyin_profile_for_parts(chinese_parts[-1:])
@@ -478,6 +497,7 @@ def _clear_search_caches():
     _normalize.cache_clear()
     _search_words.cache_clear()
     native_search.clear()
+    search_language.clear()
     _asset_catalog_paths.cache_clear()
 
 
@@ -1374,6 +1394,7 @@ def _save_preference_settings():
     data.update(
         {
             "display_mode": prefs.display_mode,
+            "search_language": prefs.search_language,
             "chinese_fuzzy_match": prefs.chinese_fuzzy_match,
             "ui_scale": prefs.ui_scale,
             "shortcut_key": prefs.shortcut_key,
@@ -1413,7 +1434,7 @@ def _load_preferences_from_settings():
         data["category_color_mode"] = "BLOCK" if data.get("show_category_color_tags") else "OFF"
     PREFERENCES_LOADING = True
     try:
-        for name in ("display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "snippet_shortcut_key", "snippet_shortcut_shift", "snippet_shortcut_ctrl", "snippet_shortcut_alt", "snippet_shortcut_oskey", "scan_asset_libraries", "category_color_mode", "console_width", "snippet_library_path", "snippet_nodes_expanded", "accept_beta_updates"):
+        for name in ("search_language", "display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "snippet_shortcut_key", "snippet_shortcut_shift", "snippet_shortcut_ctrl", "snippet_shortcut_alt", "snippet_shortcut_oskey", "scan_asset_libraries", "category_color_mode", "console_width", "snippet_library_path", "snippet_nodes_expanded", "accept_beta_updates"):
             if name in data:
                 try:
                     setattr(prefs, name, data[name])
@@ -2014,11 +2035,11 @@ def _snippet_to_entry(snippet: dict) -> NodeSearchEntry:
     chinese_category = f"{_ui_text('Snippet Node')} > {category_label}"
     identifier = f"snippet:{snippet.get('id', '')}"
     search_text = " ".join([
-        _normalize(name),
-        _normalize(category_label),
-        _normalize(english_category),
-        _pinyin_search_text(name),
-        _pinyin_search_text(category_label),
+        name,
+        category_label,
+        english_category,
+        _pinyin_search_text(name) if _search_language() == "zh_HANS" else "",
+        _pinyin_search_text(category_label) if _search_language() == "zh_HANS" else "",
     ])
     return NodeSearchEntry(
         identifier=identifier,
@@ -2029,7 +2050,7 @@ def _snippet_to_entry(snippet: dict) -> NodeSearchEntry:
         description=str(snippet.get("description", "")),
         kind="SNIPPET",
         node_type=f"Snippet:{_snippet_category_color_type(category)}",
-        search_text=_normalize(search_text),
+        search_text=_normalize(node_registry.search_key(search_text, _search_language())),
     )
 
 
@@ -2049,7 +2070,7 @@ def _snippet_summaries(items):
 
 def _snippet_search_snapshot():
     revision = SNIPPETS_STORE.refresh(_snippets_path())
-    key = (revision, _is_chinese_interface(), _display_mode())
+    key = (revision, _is_chinese_interface(), _display_mode(), _search_language())
     if SNIPPET_SEARCH_CACHE.get("key") != key:
         snippets = SNIPPETS_STORE.read(_snippets_path(), "snippets", [], project=_snippet_summaries)
         SNIPPET_SEARCH_CACHE.clear()
@@ -2076,7 +2097,7 @@ def _search_snippets(query: str, tree_id: str, favorites: set[str]) -> list[Node
 def _search_entries_from_list(entries: list[NodeSearchEntry], query: str, favorites: set[str] | None = None) -> list[NodeSearchEntry]:
     favorites = favorites or set()
     scored = []
-    normalized_query = _normalize(query)
+    normalized_query = _normalize(node_registry.search_key(query, _search_language()))
     compact_query = normalized_query.replace(" ", "")
     for index, entry in enumerate(entries):
         text = entry.search_text or _normalize(" ".join([entry.english, entry.chinese, entry.label]))
@@ -2088,9 +2109,13 @@ def _search_entries_from_list(entries: list[NodeSearchEntry], query: str, favori
             score = 100
         elif _ordered_chars_match(compact_query, compact_text):
             score = 60
+        if entry.language != "zh_HANS":
+            level = search_language.extension_level(entry._language_profile, normalized_query, entry.language)
+            if level:
+                score = max(score or 0, 100 + level)
         if score is None:
             continue
-        label = _normalize(entry.label)
+        label = _normalize(node_registry.search_key(entry.label, entry.language))
         if label.startswith(normalized_query):
             score += 400
         elif normalized_query in label:
@@ -2229,7 +2254,7 @@ def _search_index_cache_key(context, runtime=None) -> str:
     tree = getattr(context.space_data, "edit_tree", None)
     capabilities = hashlib.sha256(repr(runtime if runtime is not None else node_registry.runtime_signature(tree)).encode()).hexdigest()[:16] if tree else ""
     menu_context = hashlib.sha256(repr(node_menu_search.context_signature(context)).encode()).hexdigest()[:16]
-    return f"{_addon_version_string()}:{node_registry.INDEX_SCHEMA}:{blender}:{_node_tree_id(context)}:{capabilities}:{menu_context}:{_asset_index_signature()}"
+    return f"{_addon_version_string()}:{node_registry.INDEX_SCHEMA}:{blender}:{_search_language()}:{_node_tree_id(context)}:{capabilities}:{menu_context}:{_asset_index_signature()}"
 
 
 def _entry_to_cache(entry: NodeSearchEntry) -> dict:
@@ -2256,6 +2281,7 @@ def _entry_to_cache(entry: NodeSearchEntry) -> dict:
         "aliases": list(entry.aliases),
         "menu_paths": [list(row) for row in entry.menu_paths],
         "native_hidden": entry.native_hidden,
+        "language": entry.language,
     }
 
 
@@ -2264,7 +2290,8 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
         english = str(item["english"])
         chinese = str(item.get("chinese") or english)
         node_type = str(item.get("node_type", ""))
-        if node_type == "NodeFrame" and english == "Frame":
+        language = str(item.get("language", _search_language()))
+        if node_type == "NodeFrame" and english == "Frame" and language == "zh_HANS":
             chinese = "框"
         settings = tuple(tuple(pair) for pair in deepcopy(item.get("settings", [])))
         aliases = tuple(item.get("aliases", ()))
@@ -2293,6 +2320,7 @@ def _entry_from_cache(item: dict) -> NodeSearchEntry | None:
             menu_paths=tuple((str(row[0]), str(row[1]), float(row[2]))
                              for row in item.get("menu_paths", ())),
             native_hidden=bool(item.get("native_hidden", False)),
+            language=language,
             leaf_pinyin_compact=str(item.get("leaf_pinyin_compact", "")),
             leaf_pinyin_boundaries=leaf_boundaries,
             leaf_pinyin_initials=str(item.get("leaf_pinyin_initials", "")),
@@ -2515,15 +2543,40 @@ def _translation_label(text: str, translation_context: str | None = None) -> str
     if not text:
         return text
 
-    cache_key = (text, translation_context)
+    language = _search_language()
+    cache_key = (language, text, translation_context)
     cached = TRANSLATION_LABEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
-    translated = node_registry.chinese_label(text, translation_context)
+    translated = node_registry.localized_label(text, translation_context, language)
 
     TRANSLATION_LABEL_CACHE[cache_key] = translated
     return translated
+
+
+def _search_language() -> str:
+    prefs = _preferences()
+    return getattr(prefs, "search_language", "zh_HANS")
+
+
+def _official_translation(text, context=None):
+    return node_registry.official_label(text, context, _search_language())
+
+
+# Keep enum identifiers/numeric values and Python strings alive for saved RNA
+# preferences. Only the visible secondary-language labels change.
+DISPLAY_MODE_ITEMS = {
+    code: (("ENGLISH", "English", "Show only English names", 0),
+           ("CHINESE", name, "Show selected language names where available", 1),
+           ("ENGLISH_CHINESE", "English / " + name, "English names first", 2),
+           ("CHINESE_ENGLISH", name + " / English", "Selected language names first", 3))
+    for code, name, _locales in node_registry.LANGUAGES
+}
+
+
+def _display_mode_items(self, _context):
+    return DISPLAY_MODE_ITEMS.get(self.search_language, DISPLAY_MODE_ITEMS["zh_HANS"])
 
 
 def _is_chinese_interface() -> bool:
@@ -2541,6 +2594,10 @@ def _ui_text(text: str) -> str:
 
 
 def _display_category_label(category: str) -> str:
+    if _search_language() != "zh_HANS":
+        if _display_mode() == "ENGLISH":
+            return category
+        return " > ".join(_translation_label(part.strip()) for part in category.split(" > "))
     if not _is_chinese_interface():
         return category
 
@@ -2596,10 +2653,21 @@ def _entry_primary_label(entry: NodeSearchEntry) -> str:
 def _entry_display_label(identifier: str, fallback: str = "") -> str:
     entry = NODE_ENTRY_BY_ID.get(identifier)
     if entry:
+        if entry.language != _search_language():
+            rna = bpy.types.Node.bl_rna_get_subclass(entry.node_type) if entry.kind == "NODE" else None
+            context = getattr(rna, "translation_context", None)
+            parts = entry.english.split(" > ")
+            translated = [_translation_label(parts[0], context)]
+            for key, _value in entry.settings:
+                prop = rna.properties.get(key) if rna else None
+                if prop and prop.type == 'ENUM':
+                    context = prop.translation_context
+            translated.extend(_translation_label(part, context) for part in parts[1:])
+            return _entry_label(entry.english, " > ".join(translated))
         return _entry_label(entry.english, entry.chinese)
 
     label = fallback or identifier
-    if " / " in label:
+    if _search_language() == "zh_HANS" and " / " in label:
         first, second = [part.strip() for part in label.split(" / ", 1)]
         first_is_ascii = all(ord(char) < 128 for char in first)
         second_is_ascii = all(ord(char) < 128 for char in second)
@@ -3672,6 +3740,7 @@ def _rebuild_search_entries(context):
     capabilities = node_registry.inventory(tree, runtime) if tree else {}
     cache_key = _search_index_cache_key(context, runtime)
 
+    language = _search_language()
     seen_keys = set()
     menu_paths = None
     menu_details = {}
@@ -3679,7 +3748,7 @@ def _rebuild_search_entries(context):
     def ensure_menus():
         nonlocal menu_paths
         if menu_paths is None:
-            menu_paths, errors = node_menu_search.collect(context, node_registry.official_chinese_label,
+            menu_paths, errors = node_menu_search.collect(context, _official_translation,
                                                           details=menu_details)
             if errors:
                 print("Node Console: some official menus could not be indexed:", errors)
@@ -3691,7 +3760,7 @@ def _rebuild_search_entries(context):
         if _is_redundant_mix_color_entry(entry):
             return
         if entry.kind == "ASSET":
-            aliases = tuple(node_registry.aliases().get(entry.english, ()))
+            aliases = node_registry.search_aliases(entry.english, language)
             if aliases != entry.aliases:
                 entry = replace(entry, aliases=aliases)
             previous = NODE_ENTRY_BY_ID.get(entry.identifier)
@@ -3715,15 +3784,18 @@ def _rebuild_search_entries(context):
             for part in parts[1:]:
                 chinese_parts.append(_translation_label(part, enum_context))
             chinese = " > ".join(chinese_parts)
-            if chinese == entry.english and entry.chinese != entry.english:
+            if language == "zh_HANS" and chinese == entry.english and entry.chinese != entry.english:
                 chinese = entry.chinese
             label = _entry_label(entry.english, chinese)
-            aliases = list(entry.aliases) + list(node_registry.aliases().get(parts[-1], ()))
-            if chinese != entry.chinese:
+            aliases = list(entry.aliases) if language == "zh_HANS" else []
+            aliases.extend(node_registry.search_aliases(parts[-1], language))
+            if language == "zh_HANS" and chinese != entry.chinese:
                 aliases.append(entry.chinese.split(" > ")[-1])
-            entry = replace(entry, chinese=chinese, label=label,
+            entry = replace(entry, chinese=chinese, label=label, language=language,
                             aliases=tuple(dict.fromkeys(aliases)),
-                            leaf_pinyin_compact="", root_pinyin_compact="")
+                            leaf_pinyin_compact="", root_pinyin_compact="",
+                            leaf_pinyin_boundaries=(), root_pinyin_boundaries=(),
+                            leaf_pinyin_initials="", root_pinyin_initials="")
         if not prepared and entry.kind in {"NODE", "ZONE", "ACTION"}:
             ensure_menus()
             if entry.kind == "ZONE":
@@ -3783,7 +3855,7 @@ def _rebuild_search_entries(context):
                     asset_name=asset_name,
                     asset_color_tag=color_tag,
                     menu_paths=(("Group \u25b8 " + asset_name,
-                                 node_registry.official_chinese_label("Group") + " \u25b8 " + asset_name,
+                                 _official_translation("Group") + " \u25b8 " + asset_name,
                                  -1.0 if getattr(node_group, "is_linked_packed", False) else 0.0),),
                 )
             )
@@ -3812,7 +3884,7 @@ def _rebuild_search_entries(context):
             ensure_menus()
             paths = node_menu_search.asset_menu_paths(
                 _asset_search_catalog(asset_item), asset_name, edit_tree.bl_idname,
-                node_registry.official_chinese_label, menu_details.get("asset_paths", {}))
+                _official_translation, menu_details.get("asset_paths", {}))
             entry = NodeSearchEntry(
                 identifier=_safe_identifier("A", asset_name, str(blend_path)),
                 category=category,
@@ -3899,7 +3971,7 @@ def _rebuild_search_entries(context):
                 color_tag = capabilities[node_type]['color_tag']
                 category = _asset_category_from_color_tag(color_tag) or category
         base_chinese = variant_chinese if variant_chinese and not variant_label else _translation_label(base_english, getattr(bl_rna, "translation_context", None))
-        if node_type == "NodeFrame" and base_english == "Frame":
+        if node_type == "NodeFrame" and base_english == "Frame" and language == "zh_HANS":
             base_chinese = "框"
         if variant_label:
             english = f"{base_english} > {variant_label}"
@@ -4030,13 +4102,15 @@ def _extension_match(entry: NodeSearchEntry, query: str, match=None) -> int:
     # Space-free input is a longstanding convenience, not native word matching.
     if len(compact) >= 4 and compact in compact_leaves:
         level = max(level, 5)
+    if entry.language != "zh_HANS" and not query.isascii():
+        level = max(level, search_language.extension_level(entry._language_profile, query, entry.language))
     return level
 
 
 def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str], allow_weak_pinyin=False, match=None):
     if not query.strip():
         return None
-    language = 1 if re.search(r"[\u3400-\u9fff]", query) else 0
+    query, language = _query_language(query, entry.language)
     query_words, _groups = native_search.words(query)
     scores = [native_search.score(query_words, item) for item in entry._native_items(language)]
     scores = [score for score in scores if score is not None]
@@ -4044,6 +4118,17 @@ def _score_entry(entry: NodeSearchEntry, query: str, favorites: set[str], allow_
         return max(scores)
     level = _extension_match(entry, _normalize(query), match)
     return 900 + level if level >= (2 if allow_weak_pinyin else 3) else None
+
+
+def _query_language(query, language=None):
+    language = language or _search_language()
+    if language == "zh_HANS":
+        return query, 1 if re.search(r"[\u3400-\u9fff]", query) else 0
+    query = node_registry.search_key(query, language)
+    # Spanish shares Latin script with English: choose the stronger native
+    # match below. Other scripts identify the intended index without mixing
+    # translated path lengths into English ranking.
+    return query, 2 if language == "es" else (0 if query.isascii() else 1)
 
 
 def _search_candidates(language):
@@ -4062,7 +4147,7 @@ def _search_candidates(language):
                 target = native if entry.menu_paths or entry.kind == "ASSET" else supplemental
                 target.extend(entry._native_items(language))
         for items in (native, supplemental):
-            items.sort(key=lambda item: item.text.encode("utf-8"))
+            items.sort(key=lambda item: item.sort_key)
         SEARCH_QUERY_ITEMS[language] = (native, supplemental)
     return SEARCH_QUERY_ITEMS[language]
 
@@ -4070,8 +4155,8 @@ def _search_candidates(language):
 def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
     if not query.strip():
         return []
-    language = 1 if re.search(r"[\u3400-\u9fff]", query) else 0
-    native_items, supplemental_items = _search_candidates(language)
+    query, language = _query_language(query)
+    native_items, supplemental_items = _search_candidates(0 if language == 2 else language)
     cached = SEARCH_QUERY_CACHE.get(query)
     if cached is not None:
         ordered, strong_ids = cached
@@ -4090,6 +4175,21 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
 
     ranked = native_search.ranked(native_items, query)
     supplemental = native_search.ranked(supplemental_items, query)
+    secondary = []
+    if language == 2:
+        local_items, local_supplemental = _search_candidates(1)
+        local = native_search.ranked(local_items, query)
+        local_extra = native_search.ranked(local_supplemental, query)
+        # Equal evidence favors the existing English order. A stronger Spanish
+        # word match wins over an English fuzzy/initial match.
+        english_score = ranked[0][0] if ranked else -1
+        local_score = local[0][0] if local else -1
+        if local_score > english_score:
+            secondary, ranked, supplemental = ranked + supplemental, local, local_extra
+            language = 1
+        else:
+            secondary = local + local_extra
+            language = 0
     word_count = len(native_search.words(query)[0])
     strong_threshold = 1000 + 4 * word_count
 
@@ -4097,10 +4197,12 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
     weak = [item.data for score, item in ranked if score < strong_threshold]
     extra_strong = [item.data for score, item in supplemental if score >= strong_threshold]
     extra_weak = [item.data for score, item in supplemental if score < strong_threshold]
-    extensions.sort(key=lambda pair: (-pair[0], len(pair[1].chinese), pair[1].english))
+    extension_key = lambda pair: (-pair[0], len(pair[1].english if language == 0 and pair[1].language != "zh_HANS" else pair[1].chinese), pair[1].english)
+    extensions.sort(key=extension_key)
     ordered = strong + [entry for _level, entry in extensions] + weak + extra_strong + extra_weak
+    ordered.extend(item.data for _score, item in secondary)
     if not ordered:
-        weak_extensions.sort(key=lambda pair: (-pair[0], len(pair[1].chinese), pair[1].english))
+        weak_extensions.sort(key=extension_key)
         ordered = [entry for _level, entry in weak_extensions]
     seen = set()
     result = []
@@ -4111,6 +4213,7 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
     # Only relevant favorites are boosted; the underlying native order is stable.
     strong_ids = {entry.identifier for entry in strong + extra_strong}
     strong_ids.update(entry.identifier for _level, entry in extensions)
+    strong_ids.update(item.data.identifier for score, item in secondary if score >= strong_threshold)
     # Cache only matching, not the live favorite boost or mutable result list.
     if len(SEARCH_QUERY_CACHE) >= 32:
         SEARCH_QUERY_CACHE.pop(next(iter(SEARCH_QUERY_CACHE)))
@@ -4253,7 +4356,9 @@ def _warm_search_font():
         return 1.0
     try:
         blf.size(FONT_ID, _scaled(13, _ui_scale()))
-        blf.dimensions(FONT_ID, "\u4e2d\u6587")
+        samples = {"zh_HANS": "中文", "ja_JP": "日本語ノード", "ko_KR": "노드",
+                   "ru_RU": "Узел", "es": "Español", "en_US": "Node"}
+        blf.dimensions(FONT_ID, samples.get(_search_language(), "Node"))
     except (RuntimeError, ValueError):
         pass
     return None
@@ -5590,7 +5695,11 @@ class ENS_AddNodeByEnglishSearch(Operator):
             display_category = _display_category_label(display_category)
             category_text = f"{display_category} ▸"
             category_text = category_text.replace(" > ", " ▸ ")
-            category_text = _clip_text(category_text, max(0, fav_x - category_x), category_size)
+            category_budget = max(0, fav_x - category_x)
+            if entry.language != "zh_HANS":
+                # Translated paths can be much longer than their English names.
+                category_budget *= 0.45
+            category_text = _clip_text(category_text, category_budget, category_size)
             category_width = _text_width(category_text, category_size)
             label_gap = _scaled(10, scale)
             block_gap = _scaled(7, scale)
@@ -6220,8 +6329,76 @@ class NODECONSOLE_OT_InstallRelease(Operator):
         return {"FINISHED"}
 
 
+FEEDBACK_DRAFT = ""
+
+
+def _feedback_text_get(_self):
+    return FEEDBACK_DRAFT
+
+
+def _feedback_text_set(_self, value):
+    global FEEDBACK_DRAFT
+    FEEDBACK_DRAFT = value
+
+
+def _draw_feedback(layout, prefs):
+    box = layout.box()
+    header = box.row()
+    header.label(text=_ui_text("Bug Feedback"))
+    action = header.row()
+    action.alignment = "RIGHT"
+    action.enabled = bool(prefs.feedback_text.strip())
+    action.operator(NODECONSOLE_OT_ReportBug.bl_idname, text=_ui_text("Open GitHub Issue"), icon="URL")
+    field = box.row()
+    field.scale_y = 1.6
+    field.prop(prefs, "feedback_text", text="", translate=False,
+               placeholder=_ui_text("Describe the problem and steps to reproduce..."))
+
+
+class NODECONSOLE_OT_ReportBug(Operator):
+    bl_idname = "node_console.report_bug"
+    bl_label = "Open GitHub Issue"
+    bl_options = {"INTERNAL"}
+
+    @classmethod
+    def description(cls, _context, _properties):
+        return _ui_text("Open a draft with your text, add-on/Blender versions, platform and node language. Sign in to GitHub and confirm to publish a public issue. No scene, files or settings are uploaded.")
+
+    def execute(self, _context):
+        prefs = _preferences()
+        if prefs is None:
+            return {"CANCELLED"}
+        try:
+            url = issue_report.draft_url(prefs.feedback_text, ADDON_VERSION,
+                bpy.app.version_string, sys.platform, _search_language())
+        except ValueError as exc:
+            self.report({"WARNING"}, _ui_text(str(exc)))
+            return {"CANCELLED"}
+        try:
+            opened = bpy.ops.wm.url_open(url=url)
+        except RuntimeError:
+            opened = {"CANCELLED"}
+        if "FINISHED" not in opened:
+            self.report({"WARNING"}, _ui_text("Could not open GitHub; your draft is retained"))
+            return {"CANCELLED"}
+        self.report({"INFO"}, _ui_text("GitHub draft opened; sign in and confirm there to submit"))
+        return {"FINISHED"}
+
+
 class ENS_AddonPreferences(AddonPreferences):
     bl_idname = ADDON_ID
+
+    # A custom getter/setter keeps the draft out of ID properties and saved
+    # settings. Same-session hot reload can still preserve it in memory.
+    feedback_text: StringProperty(name="Bug Feedback", options={"SKIP_SAVE"},
+        get=_feedback_text_get, set=_feedback_text_set)
+
+    search_language: EnumProperty(
+        name="Node Language",
+        description="Search in English and this language using Blender's installed translations",
+        items=tuple((code, name, "", index) for index, (code, name, _locales) in enumerate(node_registry.LANGUAGES)),
+        default="zh_HANS", update=_preference_changed,
+    )
 
     accept_beta_updates: BoolProperty(name="Accept Beta Versions",
         description="Include published prereleases when checking for updates; does not install automatically",
@@ -6232,13 +6409,8 @@ class ENS_AddonPreferences(AddonPreferences):
     display_mode: EnumProperty(
         name="Search Result Display",
         description="How node names are shown in the custom search panel",
-        items=(
-            ("ENGLISH", "English", "Show only English names"),
-            ("CHINESE", "中文", "Show only translated names where available"),
-            ("ENGLISH_CHINESE", "English / 中文", "Show English names first with Chinese translations"),
-            ("CHINESE_ENGLISH", "中文 / English", "Show Chinese translations first with English names"),
-        ),
-        default="ENGLISH_CHINESE",
+        items=_display_mode_items,
+        default=2,
         update=_preference_changed,
     )
     chinese_fuzzy_match: BoolProperty(
@@ -6413,9 +6585,12 @@ class ENS_AddonPreferences(AddonPreferences):
         display_left = display_top.box().column(align=True)
         display_right = display_top.box().column(align=True)
 
+        language_row = display_left.split(factor=0.56, align=True)
+        language_row.label(text=_ui_text("Node Language"))
+        language_row.prop(self, "search_language", text="", translate=False)
         display_row = display_left.split(factor=0.56, align=True)
         display_row.label(text=_ui_text("Search Result Display"))
-        display_row.prop(self, "display_mode", text="")
+        display_row.prop(self, "display_mode", text="", translate=False)
         category_row = display_left.split(factor=0.56, align=True)
         category_row.label(text=_ui_text("Category Color Display"))
         category_row.prop(self, "category_color_mode", text="")
@@ -6581,6 +6756,7 @@ class ENS_AddonPreferences(AddonPreferences):
         header.prop(self, "snippet_nodes_expanded", text="", icon="TRIA_DOWN" if self.snippet_nodes_expanded else "TRIA_RIGHT", emboss=False)
         header.label(text=_ui_text("Snippet Nodes"))
         if not self.snippet_nodes_expanded:
+            _draw_feedback(layout, self)
             return
         snippets = sorted(_snippet_search_snapshot()["snippets"], key=lambda item: (str(item.get("tree_type", "")), str(item.get("category", "")), str(item.get("name", "")).lower()))
         if not snippets:
@@ -6605,6 +6781,8 @@ class ENS_AddonPreferences(AddonPreferences):
                     remove_op = row.operator(NODECONSOLE_OT_RemoveSnippet.bl_idname, text="", icon="X")
                     remove_op.snippet_id = str(snippet.get("id", ""))
 
+        _draw_feedback(layout, self)
+
 
 classes = (
     ENS_AddNodeByEnglishSearch,
@@ -6618,6 +6796,7 @@ classes = (
     NODECONSOLE_OT_MoveShortcut,
     NODECONSOLE_OT_UpdateAddon,
     NODECONSOLE_OT_InstallRelease,
+    NODECONSOLE_OT_ReportBug,
     ENS_AddonPreferences,
 )
 

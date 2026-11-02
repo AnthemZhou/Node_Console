@@ -1,5 +1,5 @@
 {
-  "source": "Editorial search aliases maintained by Node Console. Not official Blender UI or manual translations. Official UI names are read separately from the running Blender zh_HANS blender.mo catalog, with RNA translation contexts.",
+  "source": "Editorial English/Chinese search aliases maintained by Node Console. Not official Blender UI or manual translations. Official UI names are read separately from the selected language's installed Blender blender.mo catalog, with RNA translation contexts. English aliases apply to all supported languages; Chinese aliases only apply to Chinese mode.",
   "aliases": {
     "Frame": ["框"],
     "Field to List": ["场转列表"],

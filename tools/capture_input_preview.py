@@ -15,6 +15,7 @@ import time
 import traceback
 
 import bpy
+import gpu
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path(sys.argv[sys.argv.index('--') + 1]).resolve()
@@ -31,6 +32,8 @@ adapter = importlib.import_module(nc.__name__ + '.ime_input.adapter')
 Composition = importlib.import_module(nc.__name__ + '.ime_input.session').Composition
 nc._settings_path = lambda: OUTPUT / 'settings.json'
 nc._preferences = lambda: None
+LANGUAGE = sys.argv[sys.argv.index('--language') + 1] if '--language' in sys.argv else 'zh_HANS'
+nc._search_language = lambda: LANGUAGE
 
 
 class Input(Composition):
@@ -51,6 +54,7 @@ class Input(Composition):
 
 state = {'phase': 'open', 'cycle': 0, 'step': 0, 'pending': None}
 report = {'version': bpy.app.version_string, 'samples': [], 'errors': []}
+report['language'] = LANGUAGE
 draw = nc.ENS_AddNodeByEnglishSearch._draw_callback
 refresh = nc.ENS_AddNodeByEnglishSearch._refresh_query_results
 draw_text = nc._draw_text
@@ -89,9 +93,23 @@ def observed_draw(self, context):
         pending['elapsed_ms'] = (time.perf_counter() - pending.pop('start')) * 1000
         pending['results'] = len(self._results)
         pending['first'] = self._results[0].english if self._results else None
+        pending['noise_present'] = any(entry.node_type == 'ShaderNodeTexNoise' for entry in self._results)
         pending['rendered_query'] = expected_text
         report['samples'].append(pending)
         state['pending'] = None
+        if LANGUAGE != 'zh_HANS' and pending['cycle'] == 0 and pending['step'] in (0, 1):
+            x, y, width, height = map(int, self._panel_rect)
+            pixels = gpu.state.active_framebuffer_get().read_color(x, y, width, height, 4, 0, 'FLOAT')
+            pixels.dimensions = width * height * 4
+            preview = bpy.data.images.new('Node Console test framebuffer', width=width, height=height, alpha=True)
+            try:
+                preview.pixels.foreach_set(pixels)
+                filename = 'preedit-framebuffer.png' if pending['step'] == 0 else 'committed-framebuffer.png'
+                preview.filepath_raw = str(OUTPUT / filename)
+                preview.file_format = 'PNG'
+                preview.save()
+            finally:
+                bpy.data.images.remove(preview)
 
 
 nc.ENS_AddNodeByEnglishSearch._draw_callback = observed_draw
@@ -119,6 +137,12 @@ area.spaces.active.node_tree = tree
 steps = [(2, 'she zhi', ('', 'she zhi')), (4, '\u8bbe\u7f6e', ('\u8bbe\u7f6e', '')),
          (2, 'xin', ('\u8bbe\u7f6e', 'xin')), (2, '', ('\u8bbe\u7f6e', '')),
          (4, '', ('', ''))]
+if LANGUAGE != 'zh_HANS':
+    committed = nc._official_translation('Noise Texture', bpy.types.ShaderNodeTexNoise.bl_rna.translation_context)
+    preedit = {'ja_JP': 'のいず', 'ko_KR': '노이', 'ru_RU': 'шу', 'es': 'rui'}[LANGUAGE]
+    steps = [(2, preedit, ('', preedit)), (4, committed, (committed, '')),
+             (2, preedit, (committed, preedit)), (2, '', (committed, '')),
+             (4, '', ('', ''))]
 
 
 def tick():
@@ -131,6 +155,8 @@ def tick():
                     assert len(report['samples']) == 15
                     assert all(sample['results'] for sample in report['samples']
                                if sample['step'] in (0, 1, 3))
+                    if LANGUAGE != 'zh_HANS':
+                        assert all(sample['noise_present'] for sample in report['samples'] if sample['step'] in (0, 1, 3))
                     (OUTPUT / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
                     print('INPUT_PREVIEW_OK', [round(s['elapsed_ms'], 2) for s in report['samples']], flush=True)
                     nc.unregister()
@@ -160,7 +186,14 @@ def tick():
                 assert time.perf_counter() - state['pending']['start'] < 3, 'Input did not redraw'
                 return 0.03
             if state['cycle'] == 0 and state['step'] in (0, 1):
+                # The draw observer can run before the OS presents that buffer.
+                # Allow another frame before capturing a visual artifact.
+                if not state.get('capture_ready'):
+                    state['capture_ready'] = True
+                    area.tag_redraw()
+                    return 0.2
                 bpy.ops.screen.screenshot(filepath=str(OUTPUT / f"preview-{state['step']}.png"), check_existing=False)
+                state['capture_ready'] = False
             state['step'] += 1
             state['phase'] = 'send'
             return 0.05

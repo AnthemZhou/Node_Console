@@ -1,5 +1,125 @@
 # Node Console Performance
 
+## 1.5.0 Multilingual Search
+
+Release validation on macOS arm64, isolated Blender
+5.2.2 LTS (`d13f752e3b9c`) and 5.1.2 (`ec6e62d40fa9`). No personal Blender
+preferences, installed add-ons or project files are modified by these tests.
+
+### Translation and Matching Scope
+
+- Use the installed Blender MO files, not a network translation service. Select
+  one of Chinese, Japanese, Korean, Russian and Spanish alongside English.
+  Blender's locale IDs and catalog directories differ: `ja_JP`/`ja`,
+  `ko_KR`/`ko`, `ru_RU`/`ru`, plus `zh_HANS` and `es`.
+- Resolve RNA and enum/menu contexts, then the default context, then English.
+  This follows Blender's [translation-context design](https://developer.blender.org/docs/features/interface/internationalization/).
+  Chinese editorial aliases remain explicitly separate. Do not change the
+  user's Blender interface language to obtain translations.
+- New locales normalize Unicode case, full/half-width forms and composed
+  characters. Japanese folds katakana to hiragana for matching, not display;
+  Korean supports initial consonants, omitted spaces and partial syllables;
+  Russian folds `ё` to `е`, Spanish folds accents but preserves `ñ`. Retain
+  Japanese voicing and Russian hard/soft signs. Unicode normalization and
+  Hangul decomposition follow [UAX #15](https://unicode.org/reports/tr15/).
+  No speculative kanji readings or romanization dictionary is added. Keep
+  the original Chinese ranking path unchanged.
+- New locales use the existing scoring formula with separate English/local
+  candidate orders. Spanish chooses the higher top score, favoring English
+  on ties. Source text retains official UTF-8 sorting and lengths, independently
+  of matching keys. This still does not promise an identical monolingual list:
+  additional case-insensitive, bilingual and abbreviation matches are intentional.
+- Load only the selected catalog; persist per-language indexes and retain the
+  bounded recent-query cache. Existing cache schema is bumped to 7. Entry IDs,
+  favorites, usage and settings do not depend on translated text. Japanese
+  kanji are not sent through Chinese pinyin preprocessing.
+
+### Validation
+
+`tools/test_multilingual.py` independently reads the installed gettext catalogs
+and exercises the registered preferences, every indexed built-in entry,
+all five locales and all three editors. Across the two Blender versions:
+
+- 43,311 search assertions: English and localized names, operation variants,
+  uppercase, whitespace, decomposed accents/Hangul and full-width input.
+- 10,215 node creations using the add-on's actual creation entry point. These
+  are repeated node/variant creations across locales, not new node counts.
+- 14,954 additional typing-variant reachability checks over official translated
+  entries, 60 live-favorite checks and 120 snippet-name/ordering checks. These
+  verify membership, not top-one ranking for every ambiguous abbreviation.
+- 16 representative everyday queries improve from 12 to 16 passing top-five
+  checks. Across 144 English top-five comparisons, all original prefixes remain
+  intact (143 identical lists; the short Spanish shader `position` result grows
+  with additional lower-ranked translated matches).
+- Stable identifiers across languages, cache round trips, English fallback,
+  real translated-name coverage, preference persistence and unchanged Blender
+  UI language. User-data sentinels survive switching languages and rebuilding.
+- Against the published 1.4.7 ZIP, 23,110 complete ordered-list comparisons
+  remain identical in default Chinese mode, including live favorite boosts.
+- The existing 194 native-search probes retain 178 comparable cases, 177
+  first-result/empty agreements, 159 exact visible lists, 1,131/1,193 matching
+  positions and zero missing native-result cases. These remain the original
+  English/Chinese oracle, not evidence of Japanese/Korean/Russian/Spanish parity.
+- A separate set of 52 actual `NODE_MT_add` popup captures in the four new
+  languages covers all three editors in Blender 5.2.2. Exact OCR path resolution
+  (no fuzzy oracle substitution) gives 52/52 matching first results, 48/52
+  matching visible lists, 193/198 matching positions and no missing captured
+  results. Four ten-row menus may continue below the captured region. Of the
+  other 48 complete native lists, 44 match completely; four include additional
+  valid case-insensitive/bilingual matches in Node Console. These differences
+  are retained rather than hiding useful nodes. The portable fixture is
+  `tools/fixtures/native_search_multilingual_5_2_2.json`, not a claim of
+  universal native parity or language fluency.
+
+Selected-language translation coverage in Blender 5.2.2, counting unparameterized
+RNA-name entries whose displayed name differs from English (not a percentage
+of all catalog strings, and not necessarily a missing translation when equal):
+
+| Language | Geometry | Shader | Compositor |
+| --- | ---: | ---: | ---: |
+| Chinese | 359 | 118 | 167 |
+| Japanese | 359 | 118 | 166 |
+| Korean | 320 | 117 | 160 |
+| Russian | 359 | 118 | 167 |
+| Spanish | 355 | 113 | 163 |
+
+The GPU input-preview harness accepts `--language ja_JP`, `ko_KR`, `ru_RU`
+or `es` after the isolated runner's `--` separator. It verifies preedit,
+document commit, cancellation, clear and repeated opening, observing the real
+draw callback and reading the committed panel framebuffer. These are synthetic
+bridge events, **not physical system-IME or candidate-window validation**.
+The second pass checks Noise Texture is reachable during preedit as well as
+after commit in all four languages, across three open/close cycles each
+(60 draw/input observations total).
+
+Existing Chinese Mac/Windows acceptance is unchanged. New language-specific
+system IMEs, Intel Mac, Windows/Linux hardware and keyboard-layout behavior are
+not certified by these tests. New-language result paths can be longer, so their
+category label is capped to leave space for the node name. Timing samples from
+correctness runs are diagnostic only, not a new performance-speedup claim.
+
+`tools/benchmark_language_experience.py` compares the pre-polish 1.5.0 ZIP with
+this pass over four locales and three editors. In one diagnostic 5.2.2 run,
+uncached-query medians are 0.72-3.99 ms and repeated-query medians 0.009-0.026 ms;
+first-query candidate preparation is 5.85-26.81 ms. Spanish still needs both
+Latin-script indexes and does not share the same cost reduction as the three
+distinct-script languages. These are Python search timings, not total popup,
+physical typing or OS candidate-window latency; no new platform-wide speedup
+claim is made.
+
+Reproduce through `tools/run_isolated_blender.py` using
+`tools/test_multilingual.py`, `tools/test_search_cache.py`,
+`tools/test_user_data.py`, `tools/test_preferences_ui.py`,
+`tools/test_expanded_native_search.py`, and
+`tools/benchmark_search_latency.py Node_Console_1.4.7.zip <output.json>`.
+For the additional native oracle, run `tools/test_expanded_native_search.py
+<output.json> --fixture tools/fixtures/native_search_multilingual_5_2_2.json
+--multilingual` through the isolated runner (put options after its `--`).
+`tools/audit_language_experience.py <output.json> --verify` checks the everyday
+queries and English-order invariants. `tools/test_search_language.py` covers
+negative normalization cases and bounded caches without Blender.
+Detailed reports and screenshots stay under ignored `build/`.
+
 ## 1.4.7 Open and Input Latency
 
 Baseline: published 1.4.6 ZIP. macOS arm64, isolated Blender 5.2.2 LTS

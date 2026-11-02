@@ -9,6 +9,24 @@ from ime_input.session import Composition, CocoaSession
 
 
 class CompositionTests(unittest.TestCase):
+    def test_multilingual_preedit_commit_cancel_and_reopen(self):
+        for composing, committed in [('のいず', 'ノイズテクスチャ'), ('노이', '노이즈 텍스처'),
+                                      ('шу', 'Текстура шума'), ('text', 'Textura de ruido')]:
+            for _ in range(3):
+                with self.subTest(committed=committed):
+                    state = Composition()
+                    state.receive(2, composing)
+                    self.assertEqual(state.drain(''), '')
+                    self.assertEqual(state.preedit, composing)
+                    state.receive(4, committed)
+                    self.assertEqual(state.drain(''), committed)
+                    state.receive(2, composing)
+                    state.receive(2, '')
+                    self.assertEqual(state.drain(committed), committed)
+                    state.close()
+                    state.receive(4, 'late')
+                    self.assertEqual(state.drain(committed), committed)
+
     def test_preedit_does_not_change_search(self):
         state = Composition()
         state.receive(2, "ji he")
