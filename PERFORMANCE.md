@@ -1,5 +1,55 @@
 # Node Console Performance
 
+## 1.5.2 Chinese and Pinyin Alignment
+
+Compare 1.5.2 against the published 1.5.1 ZIP in isolated macOS
+arm64 Blender 5.2.2 LTS (`d13f752e3b9c`) and 5.1.2 (`ec6e62d40fa9`).
+The oracle here is **Node Console's Chinese result list**, not a new native
+Blender UI capture. Samples cover Geometry, Shader and Compositor, using
+Chinese names, aliases, full menu phrases and two-character prefixes/suffixes.
+English probes include full names/paths, words, prefixes, initials and selected
+typos. Counts below are comparisons per editor/version, not unique keywords.
+
+| Blender | Chinese/pinyin pairs | Identical full order before | Identical full order after | English unchanged |
+| --- | ---: | ---: | ---: | ---: |
+| 5.2.2 | 1,783 | 857 | 1,710 | 6,237 / 6,237 |
+| 5.1.2 | 1,548 | 753 | 1,493 | 5,676 / 5,676 |
+| Total | 3,331 | 1,610 | 3,203 (96.2%) | 11,913 / 11,913 |
+
+All 3,331 direct Chinese lists also remain unchanged. For 3,159 recognized,
+unambiguous non-English-priority pairs, the full Chinese list is an identical
+ordered prefix of the pinyin result; legacy alias-only extras may follow.
+Their syllable-spaced forms have the same complete result as compact pinyin.
+`实例`, `shili`, `shi li` and `SHI LI` match completely, including the
+category-only Randomize Transforms asset. Homophones such as `几何`/`集合`,
+context-sensitive readings and English/short-query ambiguity remain distinct;
+do not interpret 96.2% as universal equivalence or native-menu parity.
+
+The reverse index is lazy and cleared on entry replacement/reorder or a search
+cache reset; it is not serialized, so no persisted schema change is needed.
+English queries with native word/prefix/initial evidence bypass it. A first
+complete-pinyin query after preparing entries took about 8-31 ms in these runs.
+On 5.2.2, six representative uncached pinyin queries had per-editor medians
+of about 1.6-4.8 ms (formerly about 1.0-2.4 ms): using the full Chinese match
+costs more work than the old narrower pinyin matcher. Recent-query cache hits
+remain around 0.01-0.04 ms. English medians were similar to baseline. These
+small local samples describe core search, not whole-popup or IME latency.
+
+Additional regressions: 151 pure tests; 24 cache lifecycle cases on each
+Blender version; six isolated hot-reload/recovery scenarios on 5.2.2; the
+existing 194 native-search probes and 52 new-language native captures without
+regression; 22,557 multilingual search checks and 5,330 node creations on
+5.2.2. Disabling system transliteration exercises the fallback path on macOS,
+not a Windows hardware test. Snippet-mode ranking and system IME code are
+unchanged. Tests never load or save personal Blender preferences.
+
+Reproduce with `tools/run_isolated_blender.py --blender <Blender executable>`
+followed by `tools/test_pinyin_parity.py build/pinyin-parity.json`; append
+`fallback` for the no-system-transliteration run. Focused tests are
+`tools/test_pinyin_integration.py` through the same isolated runner and
+`python3 -m unittest tools.test_pinyin_search`. Detailed generated reports
+remain under ignored `build/`, not separate versioned validation documents.
+
 ## 1.5.0 Multilingual Search
 
 Release validation on macOS arm64, isolated Blender

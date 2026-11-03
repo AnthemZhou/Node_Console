@@ -23,20 +23,20 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 # Blender may reload only this file when an installed add-on is re-enabled.
-for _child_name in ("addon_reloader", "addon_updater", "search_language", "node_registry", "native_search", "node_menu_search", "json_store", "ime_input"):
+for _child_name in ("addon_reloader", "addon_updater", "search_language", "node_registry", "native_search", "pinyin_search", "node_menu_search", "json_store", "ime_input"):
     if _child_name in globals():
         importlib.reload(globals()[_child_name])
 from . import addon_reloader, addon_updater, node_registry, json_store
-from . import native_search, node_menu_search, search_language
+from . import native_search, node_menu_search, search_language, pinyin_search
 
 
-ADDON_VERSION = "1.5.1"
+ADDON_VERSION = "1.5.2"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 5, 1),
+    "version": (1, 5, 2),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -236,6 +236,7 @@ UI_TEXT_ZH = {
     "Node Language": "节点语言",
     "Multilingual node search": "多语言节点搜索",
     "Preferences layout cleanup": "偏好设置布局整理",
+    "Chinese and pinyin ranking alignment": "中文与拼音排序对齐",
     "Enable Chinese Fuzzy Match": "启用中文模糊检索",
     "May slightly slow live search": "可能会略微降低实时搜索速度",
     "Show Cached Asset Nodes": "显示缓存的资产节点",
@@ -473,10 +474,11 @@ NODE_ENTRY_BY_ID: dict[str, NodeSearchEntry] = {}
 SEARCH_QUERY_ENTRIES = ()
 SEARCH_QUERY_ITEMS = None
 SEARCH_QUERY_CACHE = {}
+SEARCH_PINYIN_INDEX = None
 
 
 def _clear_search_caches():
-    global NODE_CLASS_CACHE, SEARCH_QUERY_ENTRIES, SEARCH_QUERY_ITEMS
+    global NODE_CLASS_CACHE, SEARCH_QUERY_ENTRIES, SEARCH_QUERY_ITEMS, SEARCH_PINYIN_INDEX
     MENU_ENTRY_CACHE.clear()
     TRANSLATION_LABEL_CACHE.clear()
     SNIPPET_SEARCH_CACHE.clear()
@@ -485,6 +487,7 @@ def _clear_search_caches():
     NODE_CLASS_CACHE = None
     SEARCH_QUERY_ENTRIES = ()
     SEARCH_QUERY_ITEMS = None
+    SEARCH_PINYIN_INDEX = None
     SEARCH_QUERY_CACHE.clear()
     node_registry.clear()
     _normalize.cache_clear()
@@ -4125,11 +4128,12 @@ def _query_language(query, language=None):
 
 
 def _search_candidates(language):
-    global SEARCH_QUERY_ENTRIES, SEARCH_QUERY_ITEMS
+    global SEARCH_QUERY_ENTRIES, SEARCH_QUERY_ITEMS, SEARCH_PINYIN_INDEX
     if (len(SEARCH_QUERY_ENTRIES) != len(NODE_SEARCH_ENTRIES)
             or any(old is not new for old, new in zip(SEARCH_QUERY_ENTRIES, NODE_SEARCH_ENTRIES))):
         SEARCH_QUERY_ENTRIES = tuple(NODE_SEARCH_ENTRIES)
         SEARCH_QUERY_ITEMS = None
+        SEARCH_PINYIN_INDEX = None
         SEARCH_QUERY_CACHE.clear()
     if SEARCH_QUERY_ITEMS is None:
         SEARCH_QUERY_ITEMS = {}
@@ -4143,6 +4147,77 @@ def _search_candidates(language):
             items.sort(key=lambda item: item.sort_key)
         SEARCH_QUERY_ITEMS[language] = (native, supplemental)
     return SEARCH_QUERY_ITEMS[language]
+
+
+def _make_pinyin_index(entries):
+    texts = []
+    for entry in entries:
+        if entry.native_hidden or entry.language != "zh_HANS":
+            continue
+        texts.extend(item.text for item in entry._native_items(1))
+        texts.extend((entry.chinese, *entry.aliases))
+    return pinyin_search.QueryIndex(texts, lambda text: (
+        _pinyin_profile(text), *_alternate_pinyin_profiles(text)))
+
+
+def _pinyin_queries(query):
+    global SEARCH_PINYIN_INDEX
+    if SEARCH_PINYIN_INDEX is None:
+        SEARCH_PINYIN_INDEX = _make_pinyin_index(NODE_SEARCH_ENTRIES)
+    return SEARCH_PINYIN_INDEX.resolve(query)
+
+
+def _merge_pinyin_results(translations, original, strong_ids, extension_ids):
+    resolved = []
+    translated_ids = set()
+    for query in translations:
+        found = _search_entries(query, set())
+        translated_strong = SEARCH_QUERY_CACHE[query][1]
+        resolved.append((found, translated_strong))
+        translated_ids.update(translated_strong)
+    if len(resolved) == 1:
+        preferred = resolved[0][0]
+    else:
+        # Homophones remain independent candidates. Interleave their strong
+        # results before fuzzy tails instead of guessing one Chinese spelling.
+        ranked = {}
+        for group, (entries, relevant) in enumerate(resolved):
+            for position, entry in enumerate(entries):
+                key = (entry.identifier not in relevant, position, group)
+                old = ranked.get(entry.identifier)
+                if old is None or key < old[0]:
+                    ranked[entry.identifier] = (key, entry)
+        preferred = [entry for _key, entry in sorted(ranked.values(), key=lambda item: item[0])]
+    seen = {entry.identifier for entry in preferred}
+    extra = [entry for entry in original
+             if entry.identifier not in seen and entry.identifier in extension_ids]
+    strong_ids.clear()
+    strong_ids.update(translated_ids)
+    strong_ids.update(entry.identifier for entry in extra)
+    return preferred + extra
+
+
+def _english_query_has_priority(query, ranked, supplemental):
+    if len(query.replace(" ", "")) < 4:
+        return True
+    words = native_search.words(query)[0]
+    threshold = 1000 + 4 * len(words)
+    candidates = [item for score, item in (*ranked, *supplemental) if score >= threshold]
+    if len(words) <= 1:
+        return bool(candidates)
+    # Spelled-out syllables such as "shi li" must not be mistaken for a
+    # scattered-letter match in "Utilities > ... > Shift". Real English
+    # words and prefixes ("set pos", "noise tex") still take precedence.
+    for item in candidates:
+        available = list(item.words)
+        for word in sorted(words, key=len, reverse=True):
+            index = next((i for i, candidate in enumerate(available) if candidate.startswith(word)), None)
+            if index is None:
+                break
+            available.pop(index)
+        else:
+            return True
+    return False
 
 
 def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
@@ -4207,6 +4282,17 @@ def _search_entries(query: str, favorites: set[str]) -> list[NodeSearchEntry]:
     strong_ids = {entry.identifier for entry in strong + extra_strong}
     strong_ids.update(entry.identifier for _level, entry in extensions)
     strong_ids.update(item.data.identifier for score, item in secondary if score >= strong_threshold)
+    # Keep English word/prefix/initial matches on the original ranking path.
+    # Only complete, recognized pinyin gets the Chinese path's scores/weights.
+    if (language == 0 and _search_language() == "zh_HANS"
+            and pinyin_search.QUERY.fullmatch(normalized)
+            and not _english_query_has_priority(normalized, ranked, supplemental)
+            and not any(level >= 5 and normalized in entry._extension_data[2]
+                        for level, entry in extensions)):
+        translations = _pinyin_queries(normalized)
+        if translations:
+            result = _merge_pinyin_results(translations, result, strong_ids,
+                                          {entry.identifier for _level, entry in extensions})
     # Cache only matching, not the live favorite boost or mutable result list.
     if len(SEARCH_QUERY_CACHE) >= 32:
         SEARCH_QUERY_CACHE.pop(next(iter(SEARCH_QUERY_CACHE)))

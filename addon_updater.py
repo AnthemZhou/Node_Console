@@ -47,6 +47,7 @@ RELEASE_HIGHLIGHTS = {
     "1.4.7": "Faster opening and search input",
     "1.5.0": "Multilingual node search",
     "1.5.1": "Preferences layout cleanup",
+    "1.5.2": "Chinese and pinyin ranking alignment",
 }
 PROTECTED_NAMES = {"node_console_settings.json", "node_console_snippets.json"}
 REQUIRED_FILES = {"__init__.py", "node_registry.py", "node_search_aliases.json",

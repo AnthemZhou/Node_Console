@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.2
+
+<!-- node-console-summary: {"zh":"中文与拼音排序对齐","en":"Chinese and pinyin ranking alignment"} -->
+
+### 中文
+
+- 完整拼音按实际索引中的中文节点名、别名与完整菜单路径解析，复用中文结果排序和菜单权重，修复中文与全拼查询遗漏类目匹配、结果顺序不同的问题，不针对单个关键词硬编码。
+- 支持大小写和音节间空格；保留同音词的多个候选。英文词、前缀及短输入沿用原有搜索路径，未完成拼音和首字母继续使用原匹配逻辑，因此有歧义的输入不承诺与某一个中文词完全同序。
+- 拼音路径索引按需准备，随节点索引变化失效；保留实时收藏排序及现有设置、快捷节点、使用记录和组合点文件。未改变组合点模式的搜索器。
+- 隔离的 macOS Blender 5.2.2 LTS / 5.1.2 三类编辑器共 3,331 组中文与拼音对照，完整同序由 1,610 组提升到 3,203 组（96.2%）；11,913 次英文完整结果顺序保持不变，现有原生搜索样本无退步。这不是与原生菜单的全量一致率；同音词及短输入仍有歧义，本轮未进行 Windows 实机测试。范围与耗时见 PERFORMANCE.md。
+
+### English
+
+- Resolve complete pinyin against Chinese names, aliases and full menu paths in the actual node index, reusing Chinese ordering and menu weights. Fix category-only omissions and divergent ordering without keyword-specific boosts.
+- Accept case variants and syllable spacing; retain multiple homophones. Preserve English words, prefixes and short queries, plus legacy incomplete-pinyin/initial matching. Ambiguous input is not guaranteed to equal one Chinese spelling.
+- Prepare the pinyin path index on demand and invalidate it with node entries. Preserve live favorites, settings, shortcuts, usage and snippet files; leave the snippet-mode search engine unchanged.
+- Across isolated macOS Blender 5.2.2 LTS / 5.1.2 and three editors, identical Chinese/pinyin full lists improve from 1,610 to 3,203 of 3,331 pairs (96.2%). All 11,913 English full-order comparisons remain unchanged, with no regression in existing native probes. This is not universal native-menu parity; homophones and short input remain ambiguous. No new Windows hardware validation; see PERFORMANCE.md for scope and timings.
+
 ## 1.5.1
 
 <!-- node-console-summary: {"zh":"偏好设置布局整理","en":"Preferences layout cleanup"} -->
