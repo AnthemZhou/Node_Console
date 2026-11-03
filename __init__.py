@@ -23,20 +23,20 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 # Blender may reload only this file when an installed add-on is re-enabled.
-for _child_name in ("addon_reloader", "addon_updater", "search_language", "node_registry", "native_search", "node_menu_search", "json_store", "issue_report", "ime_input"):
+for _child_name in ("addon_reloader", "addon_updater", "search_language", "node_registry", "native_search", "node_menu_search", "json_store", "ime_input"):
     if _child_name in globals():
         importlib.reload(globals()[_child_name])
 from . import addon_reloader, addon_updater, node_registry, json_store
-from . import native_search, node_menu_search, search_language, issue_report
+from . import native_search, node_menu_search, search_language
 
 
-ADDON_VERSION = "1.5.0"
+ADDON_VERSION = "1.5.1"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 5, 0),
+    "version": (1, 5, 1),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -235,14 +235,7 @@ UI_TEXT_ZH = {
     "Search Result Display": "搜索结果显示",
     "Node Language": "节点语言",
     "Multilingual node search": "多语言节点搜索",
-    "Bug Feedback": "问题反馈",
-    "Describe the problem and steps to reproduce...": "描述遇到的问题和复现步骤…",
-    "Open GitHub Issue": "在 GitHub 中继续",
-    "Open a draft with your text, add-on/Blender versions, platform and node language. Sign in to GitHub and confirm to publish a public issue. No scene, files or settings are uploaded.": "打开包含反馈文字、插件/Blender 版本、平台和节点语言的草稿。登录 GitHub 并确认后才会公开发布；不会上传场景、文件或设置。",
-    "Describe the problem first": "请先描述遇到的问题",
-    "Report is too long for a GitHub link; shorten it and add details on GitHub": "内容超出链接长度限制，请精简后在 GitHub 补充详情；原输入已保留",
-    "Could not open GitHub; your draft is retained": "无法打开 GitHub，已保留输入内容",
-    "GitHub draft opened; sign in and confirm there to submit": "已打开 GitHub 草稿，请登录并确认提交",
+    "Preferences layout cleanup": "偏好设置布局整理",
     "Enable Chinese Fuzzy Match": "启用中文模糊检索",
     "May slightly slow live search": "可能会略微降低实时搜索速度",
     "Show Cached Asset Nodes": "显示缓存的资产节点",
@@ -6329,69 +6322,8 @@ class NODECONSOLE_OT_InstallRelease(Operator):
         return {"FINISHED"}
 
 
-FEEDBACK_DRAFT = ""
-
-
-def _feedback_text_get(_self):
-    return FEEDBACK_DRAFT
-
-
-def _feedback_text_set(_self, value):
-    global FEEDBACK_DRAFT
-    FEEDBACK_DRAFT = value
-
-
-def _draw_feedback(layout, prefs):
-    box = layout.box()
-    header = box.row()
-    header.label(text=_ui_text("Bug Feedback"))
-    action = header.row()
-    action.alignment = "RIGHT"
-    action.enabled = bool(prefs.feedback_text.strip())
-    action.operator(NODECONSOLE_OT_ReportBug.bl_idname, text=_ui_text("Open GitHub Issue"), icon="URL")
-    field = box.row()
-    field.scale_y = 1.6
-    field.prop(prefs, "feedback_text", text="", translate=False,
-               placeholder=_ui_text("Describe the problem and steps to reproduce..."))
-
-
-class NODECONSOLE_OT_ReportBug(Operator):
-    bl_idname = "node_console.report_bug"
-    bl_label = "Open GitHub Issue"
-    bl_options = {"INTERNAL"}
-
-    @classmethod
-    def description(cls, _context, _properties):
-        return _ui_text("Open a draft with your text, add-on/Blender versions, platform and node language. Sign in to GitHub and confirm to publish a public issue. No scene, files or settings are uploaded.")
-
-    def execute(self, _context):
-        prefs = _preferences()
-        if prefs is None:
-            return {"CANCELLED"}
-        try:
-            url = issue_report.draft_url(prefs.feedback_text, ADDON_VERSION,
-                bpy.app.version_string, sys.platform, _search_language())
-        except ValueError as exc:
-            self.report({"WARNING"}, _ui_text(str(exc)))
-            return {"CANCELLED"}
-        try:
-            opened = bpy.ops.wm.url_open(url=url)
-        except RuntimeError:
-            opened = {"CANCELLED"}
-        if "FINISHED" not in opened:
-            self.report({"WARNING"}, _ui_text("Could not open GitHub; your draft is retained"))
-            return {"CANCELLED"}
-        self.report({"INFO"}, _ui_text("GitHub draft opened; sign in and confirm there to submit"))
-        return {"FINISHED"}
-
-
 class ENS_AddonPreferences(AddonPreferences):
     bl_idname = ADDON_ID
-
-    # A custom getter/setter keeps the draft out of ID properties and saved
-    # settings. Same-session hot reload can still preserve it in memory.
-    feedback_text: StringProperty(name="Bug Feedback", options={"SKIP_SAVE"},
-        get=_feedback_text_get, set=_feedback_text_set)
 
     search_language: EnumProperty(
         name="Node Language",
@@ -6561,7 +6493,6 @@ class ENS_AddonPreferences(AddonPreferences):
 
         settings_box = layout.box()
         _draw_update_header(settings_box, _context)
-        settings_box.separator()
         private_links = settings_box.split(factor=0.5, align=False)
         private_left = private_links.column(align=True)
         private_right = private_links.column(align=True)
@@ -6732,6 +6663,34 @@ class ENS_AddonPreferences(AddonPreferences):
                     remove_op.identifier = identifier
                     remove_op.tree_id = tree_id
 
+        snippets_box = layout.box()
+        header = snippets_box.row(align=True)
+        header.prop(self, "snippet_nodes_expanded", text="", icon="TRIA_DOWN" if self.snippet_nodes_expanded else "TRIA_RIGHT", emboss=False)
+        header.label(text=_ui_text("Snippet Nodes"))
+        if self.snippet_nodes_expanded:
+            snippets = sorted(_snippet_search_snapshot()["snippets"], key=lambda item: (str(item.get("tree_type", "")), str(item.get("category", "")), str(item.get("name", "")).lower()))
+            if not snippets:
+                snippets_box.label(text=_ui_text("No snippet nodes"))
+            else:
+                first_rendered = True
+                for tree_id, label in NODE_TREE_GROUPS:
+                    group = [item for item in snippets if item.get("tree_type") == tree_id]
+                    if not group:
+                        continue
+                    if not first_rendered:
+                        snippets_box.separator(type="LINE")
+                    first_rendered = False
+                    header = snippets_box.row()
+                    header.enabled = False
+                    header.label(text=_ui_text(label))
+                    for snippet in group:
+                        node_count = snippet["node_count"]
+                        link_count = snippet["link_count"]
+                        row = snippets_box.row(align=True)
+                        row.label(text=f"{_snippet_category_label(snippet.get('category', 'NONE'))} > {snippet.get('name', '')}  ({node_count} {_ui_text('nodes')} / {link_count} {_ui_text('links')})")
+                        remove_op = row.operator(NODECONSOLE_OT_RemoveSnippet.bl_idname, text="", icon="X")
+                        remove_op.snippet_id = str(snippet.get("id", ""))
+
         library_box = layout.box()
         library_header = library_box.row(align=True)
         library_header.label(text=_ui_text("Snippet Libraries"), icon="TRIA_DOWN")
@@ -6751,38 +6710,6 @@ class ENS_AddonPreferences(AddonPreferences):
         remove_button.url = ""
         library_box.prop(self, "snippet_library_path", text=_ui_text("Snippet Library File"))
 
-        snippets_box = layout.box()
-        header = snippets_box.row(align=True)
-        header.prop(self, "snippet_nodes_expanded", text="", icon="TRIA_DOWN" if self.snippet_nodes_expanded else "TRIA_RIGHT", emboss=False)
-        header.label(text=_ui_text("Snippet Nodes"))
-        if not self.snippet_nodes_expanded:
-            _draw_feedback(layout, self)
-            return
-        snippets = sorted(_snippet_search_snapshot()["snippets"], key=lambda item: (str(item.get("tree_type", "")), str(item.get("category", "")), str(item.get("name", "")).lower()))
-        if not snippets:
-            snippets_box.label(text=_ui_text("No snippet nodes"))
-        else:
-            first_rendered = True
-            for tree_id, label in NODE_TREE_GROUPS:
-                group = [item for item in snippets if item.get("tree_type") == tree_id]
-                if not group:
-                    continue
-                if not first_rendered:
-                    snippets_box.separator(type="LINE")
-                first_rendered = False
-                header = snippets_box.row()
-                header.enabled = False
-                header.label(text=_ui_text(label))
-                for snippet in group:
-                    node_count = snippet["node_count"]
-                    link_count = snippet["link_count"]
-                    row = snippets_box.row(align=True)
-                    row.label(text=f"{_snippet_category_label(snippet.get('category', 'NONE'))} > {snippet.get('name', '')}  ({node_count} {_ui_text('nodes')} / {link_count} {_ui_text('links')})")
-                    remove_op = row.operator(NODECONSOLE_OT_RemoveSnippet.bl_idname, text="", icon="X")
-                    remove_op.snippet_id = str(snippet.get("id", ""))
-
-        _draw_feedback(layout, self)
-
 
 classes = (
     ENS_AddNodeByEnglishSearch,
@@ -6796,7 +6723,6 @@ classes = (
     NODECONSOLE_OT_MoveShortcut,
     NODECONSOLE_OT_UpdateAddon,
     NODECONSOLE_OT_InstallRelease,
-    NODECONSOLE_OT_ReportBug,
     ENS_AddonPreferences,
 )
 

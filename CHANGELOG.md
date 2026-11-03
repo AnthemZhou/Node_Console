@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.1
+
+<!-- node-console-summary: {"zh":"偏好设置布局整理","en":"Preferences layout cleanup"} -->
+
+### 中文
+
+- 移除需要登录 GitHub 的问题反馈入口及相关文档说明。
+- 将「组合点」置于「组合点库」上方；收起组合点列表不影响下方库设置。
+- 保留现有多语言搜索、收藏、快捷节点、使用权重和组合点数据。
+- 在隔离的 macOS Blender 5.2.2 LTS / 5.1.2 中验证偏好设置布局及安装；未新增 Windows 实机测试。
+
+### English
+
+- Remove the feedback entry requiring GitHub sign-in and its documentation.
+- Show Snippet Nodes above Snippet Libraries; keep library settings visible when the list is collapsed.
+- Preserve multilingual search, favorites, shortcuts, usage weights and snippet data.
+- Validate Preferences layout and installation in isolated macOS Blender 5.2.2 LTS / 5.1.2; no new Windows hardware tests.
+
 ## 1.5.0
 
 <!-- node-console-summary: {"zh":"多语言节点搜索","en":"Multilingual node search"} -->

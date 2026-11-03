@@ -1,4 +1,4 @@
-"""Update header layout regressions in a factory-startup Blender process."""
+"""Preferences layout regressions in a factory-startup Blender process."""
 import importlib.util
 from pathlib import Path
 import sys
@@ -141,35 +141,64 @@ def main():
                 assert nc._ui_text(nc.addon_updater.RELEASE_HIGHLIGHTS[nc.ADDON_VERSION]) in offline[1]
                 assert offline[1] in offline[2]
         cases += 1
-    prefs = SimpleNamespace(layout=Layout(), snippet_nodes_expanded=False, feedback_text='')
-    context = SimpleNamespace(region=SimpleNamespace(width=1200))
+    sample = {'id': 'test-snippet', 'name': 'Example', 'tree_type': 'GeometryNodeTree',
+              'category': 'NONE', 'node_count': 3, 'link_count': 2}
+    assert 'feedback_text' not in nc.ENS_AddonPreferences.__annotations__
+    assert not any(cls.bl_idname == 'node_console.report_bug' for cls in nc.classes)
     with patch.object(nc, '_load_asset_index', return_value=[]), \
             patch.object(nc, '_load_favorite_meta', return_value={}), \
             patch.object(nc, '_load_identifier_tree_meta', return_value={}), \
             patch.object(nc, '_load_favorites', return_value=set()), \
             patch.object(nc, '_load_shortcuts', return_value=[]), \
             patch.object(nc, '_shortcut_conflict_labels', return_value=[]), \
-            patch.object(nc, '_snippet_search_snapshot', return_value={'snippets': []}) as snippets:
-        nc.ENS_AddonPreferences.draw(prefs, context)
-        snippets.assert_not_called()
-        feedback = prefs.layout.children[-1]
-        field = next(x for x in feedback.walk() if x.kind == 'prop')
-        button = next(x for x in feedback.walk() if x.kind == 'operator')
-        assert field.props['name'] == 'feedback_text' and field.props['placeholder']
-        assert button.props['name'] == 'node_console.report_bug' and not button.parent.enabled
-        settings_box = prefs.layout.children[0]
-        assert settings_box.kind == 'box'
-        splits = [item for item in settings_box.children if item.kind == 'split']
-        assert 0 < splits[0].props['factor'] < 1
-        assert splits[1].props['factor'] == 0.5
-        prefs.snippet_nodes_expanded = True
-        prefs.feedback_text = '中文问题'
-        nc.ENS_AddonPreferences.draw(prefs, context)
-        snippets.assert_called_once()
-        feedback = prefs.layout.children[-1]
-        button = next(x for x in feedback.walk() if x.kind == 'operator')
-        assert button.props['name'] == 'node_console.report_bug' and button.parent.enabled
-    cases += 1
+            patch.object(nc, '_snippet_search_snapshot') as snippets:
+        for language in ('en_US', 'zh_HANS'):
+            bpy.context.preferences.view.language = language
+            for width in (1200, 420):
+                context = SimpleNamespace(region=SimpleNamespace(width=width),
+                    preferences=SimpleNamespace(system=SimpleNamespace(ui_scale=1.0)))
+                for expanded, saved in ((False, [sample]), (True, []), (True, [sample])):
+                    prefs = SimpleNamespace(layout=Layout(), snippet_nodes_expanded=expanded)
+                    snippets.reset_mock()
+                    snippets.return_value = {'snippets': saved}
+                    nc.ENS_AddonPreferences.draw(prefs, context)
+                    if expanded:
+                        snippets.assert_called_once_with()
+                    else:
+                        snippets.assert_not_called()
+                    snippet_box, library_box = prefs.layout.children[-2:]
+                    labels = lambda box: [x.props['text'] for x in box.walk() if x.kind == 'label']
+                    assert snippet_box.kind == library_box.kind == 'box'
+                    assert labels(snippet_box)[0] == nc._ui_text('Snippet Nodes')
+                    assert labels(library_box)[0] == nc._ui_text('Snippet Libraries')
+                    assert nc._ui_text('Default Library') in labels(library_box)
+                    assert any(x.kind == 'prop' and x.props['name'] == 'snippet_library_path'
+                               for x in library_box.walk())
+                    toggle = next(x for x in snippet_box.walk() if x.kind == 'prop')
+                    assert toggle.props['icon'] == ('TRIA_DOWN' if expanded else 'TRIA_RIGHT')
+                    remove = [x for x in snippet_box.walk() if x.kind == 'operator']
+                    if expanded and saved:
+                        assert len(remove) == 1 and remove[0].snippet_id == sample['id']
+                        assert remove[0].props['name'] == nc.NODECONSOLE_OT_RemoveSnippet.bl_idname
+                        assert any(f"3 {nc._ui_text('nodes')} / 2 {nc._ui_text('links')}" in text
+                                   for text in labels(snippet_box))
+                    else:
+                        assert not remove
+                        assert labels(snippet_box)[1:] == ([nc._ui_text('No snippet nodes')] if expanded else [])
+                    assert not any(x.kind == 'prop' and x.props['name'] == 'feedback_text'
+                                   or x.kind == 'operator' and x.props['name'] == 'node_console.report_bug'
+                                   for x in prefs.layout.walk())
+                    settings_box = prefs.layout.children[0]
+                    assert settings_box.kind == 'box'
+                    social_index = 1 if width == 1200 else 2
+                    social = settings_box.children[social_index]
+                    assert social.kind == 'split' and social.props['factor'] == 0.5
+                    buttons = [x for x in social.walk() if x.kind == 'operator']
+                    assert len(buttons) == 4 and buttons[0].url.startswith('https://space.bilibili.com/')
+                    assert all(x.kind in {'row', 'split'} for x in settings_box.children[:social_index])
+                    assert settings_box.children[social_index + 1].kind == 'separator'
+                    assert settings_box.children[social_index + 1].props['type'] == 'LINE'
+                    cases += 1
     print('PREFERENCES_UI_REGRESSION', bpy.app.version_string, cases, 'passed', flush=True)
 
 

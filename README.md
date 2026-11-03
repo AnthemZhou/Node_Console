@@ -4,22 +4,22 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.5.0-blue)
+![Version](https://img.shields.io/badge/version-1.5.1-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.5.0
+版本：1.5.1
 
-[下载 / Download](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.0) · [Issues](https://github.com/AnthemZhou/Node_Console/issues)
+[下载 / Download](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.1) · [Issues](https://github.com/AnthemZhou/Node_Console/issues)
 
 ## Languages / 语言
 
 <details>
 <summary>English</summary>
 
-Version 1.5.0 adds Japanese, Korean, Russian and Spanish node search, plus a bug-feedback field in Preferences. Download [Node_Console_1.5.0.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.5.0/Node_Console_1.5.0.zip).
+Version 1.5.1 tidies Preferences, places Snippet Nodes above Snippet Libraries and removes the GitHub sign-in feedback entry. Multilingual search from 1.5.0 is retained. Download [Node_Console_1.5.1.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.5.1/Node_Console_1.5.1.zip).
 
 Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. macOS and Windows support system Chinese input in the existing custom field; a user has confirmed committed Chinese and node search on Windows. The layout stays compact and is inspired by Blender native search.
 
@@ -68,7 +68,7 @@ Search, node creation and synthetic input drawing are tested. **Real Japanese/Ko
 
 ### Install
 
-1. Download `Node_Console_1.5.0.zip` from the release above, not GitHub's automatically generated Source code archives.
+1. Download `Node_Console_1.5.1.zip` from the release above, not GitHub's automatically generated Source code archives.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -112,7 +112,8 @@ Snippet Nodes are stored in an external JSON library file. Preferences provide c
 - `Refresh Asset Index`: rebuilds the asset node cache manually.
 - `Shortcut`: changes the key and modifiers used to open Node Console.
 - `Save Snippet Node Shortcut`: changes the shortcut used to save the selected node set.
-- `Snippet Libraries`: shows the snippet JSON library location and saved snippets.
+- `Snippet Nodes`: expands the saved snippet list, grouped by node editor.
+- `Snippet Libraries`: shows the snippet JSON library location below the snippet list, even when that list is collapsed.
 - `Favorites`: lists favorite nodes and lets you remove them.
 - `Shortcuts`: lists shortcut nodes and lets you remove or reorder them.
 
@@ -126,7 +127,7 @@ Starting with 1.4.5, choices include a brief localized highlight in parentheses,
 
 - Accept Beta Versions is off by default. Enable it and check again to include published GitHub prereleases. No Beta options are fabricated when none exist; changing the checkbox never installs or downgrades the add-on.
 - Beta installation and downgrade dialogs display appropriate warnings. Returning from Beta to a stable release is supported with backup and confirmation. Downgrading to an older version such as 1.4.0 also restores that version's older update interface.
-- 1.5.0 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
+- 1.5.1 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
 
 To publish a Beta, tag it as e.g. `v1.4.2-beta.1`, attach `Node_Console_1.4.2-beta.1.zip`, mark the GitHub release as `Pre-release` and publish it. The package must use `ADDON_VERSION = "1.4.2-beta.1"` and `bl_info["version"] = (1, 4, 2)`; rebuild the macOS input resource for the full version too. Use `v1.4.2-rc.1` for RC builds. A title-only change or source ZIP is insufficient. The user's Beta setting filters manual update checks; it never triggers automatic installation.
 
@@ -138,12 +139,6 @@ Keep the version's `node-console-summary` CHANGELOG comment in its GitHub releas
 - Updates activate without restarting Blender. Activation waits for node search, placement or snippet naming to finish, then reloads only Node Console. Blender and other add-ons' keymaps are not reset or re-registered. Failed activation attempts to restore the previous version; if recovery fails, a message asks you to restart and check the backup.
 - Git source checkouts cannot be replaced through this button. Install a version containing the updater before using this feature for the first time.
 - Existing 1.4.0 users can upgrade via the original Update button; version selection appears after installing 1.4.1. Updating from 1.3.0 still requires one restart; 1.3.1 and later support subsequent hot activation.
-
-### Bug Feedback
-
-The Bug Feedback section at the bottom of Preferences uses a native Blender text field. Its muted placeholder disappears when you type. Describe the problem and reproduction steps, then click Open GitHub Issue. **Sign in to GitHub and confirm submission on the web page to publish a public issue.** Typing does not send anything automatically.
-
-The draft contains only your text, Node Console/Blender versions, platform and selected node language. It does not read or upload scenes, files, other add-on lists or preferences. Text stays in memory for the current session, outside saved settings, and is retained when opening the page or on errors. Overlong reports ask you to shorten the text; add further details and screenshots on GitHub. Never include passwords, tokens or private project data in a public issue.
 
 ### Notes
 
@@ -161,11 +156,11 @@ The draft contains only your text, Node Console/Blender versions, platform and s
 <details>
 <summary>日本語</summary>
 
-Node Console 1.5.0 は Blender のノード検索アドオンです。ジオメトリ、シェーダー、コンポジターの各ノードエディターで、英語と選択した言語の両方からノードを検索できます。
+Node Console 1.5.1 は Blender のノード検索アドオンです。ジオメトリ、シェーダー、コンポジターの各ノードエディターで、英語と選択した言語の両方からノードを検索できます。
 
 ### インストールと言語設定
 
-1. [リリースページ](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.0)から `Node_Console_1.5.0.zip` をダウンロードします。GitHub の Source code ZIP ではありません。
+1. [リリースページ](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.1)から `Node_Console_1.5.1.zip` をダウンロードします。GitHub の Source code ZIP ではありません。
 2. Blender の環境設定で「ディスクからインストール」を選び、ZIP をインストールして Node Console を有効にします。動作確認済みバージョンは 5.1.2 / 5.2.2 LTS です。
 3. アドオン設定の `Node Language` を `日本語` にします。`Search Result Display` で英語のみ、日本語のみ、または両方の表示順を選べます。Blender 自体の表示言語は変更しません。
 
@@ -182,9 +177,7 @@ Node Console 1.5.0 は Blender のノード検索アドオンです。ジオメ�
 
 設定の更新ボタンで GitHub のリリースを確認し、バージョンを選んでインストールを確定します。Beta は任意で、初期状態では無効です。更新前のバックアップを保持し、お気に入りやライブラリを消去しません。
 
-### 不具合の報告と検証範囲
-
-設定の一番下の `Bug Feedback` に問題と再現手順を入力し、`Open GitHub Issue` を押します。薄い文字の入力ヒントは入力すると消えます。GitHub にログインして草稿を確認・送信すると公開 Issue になります。入力中の自動送信はありません。草稿には入力内容、アドオンと Blender のバージョン、プラットフォーム、ノード言語だけを含め、シーンやファイルはアップロードしません。入力内容は現在のセッションのメモリにのみ保持します。
+### 検証範囲
 
 検索・ノード作成・描画は分離した Blender 環境で検証済みです。ただし、日本語・韓国語の実際のシステム IME 候補ウィンドウや全キーボード配置を Mac/Windows で網羅的に検証したわけではありません。設定画面と操作メッセージは主に英語・中国語のままです。[検証範囲](PERFORMANCE.md)と[変更履歴](CHANGELOG.md)も参照してください。
 
@@ -193,11 +186,11 @@ Node Console 1.5.0 は Blender のノード検索アドオンです。ジオメ�
 <details>
 <summary>한국어</summary>
 
-Node Console 1.5.0은 Blender용 노드 검색 애드온입니다. 지오메트리, 셰이더, 컴포지터 노드 편집기에서 영어와 선택한 언어로 노드를 검색할 수 있습니다.
+Node Console 1.5.1은 Blender용 노드 검색 애드온입니다. 지오메트리, 셰이더, 컴포지터 노드 편집기에서 영어와 선택한 언어로 노드를 검색할 수 있습니다.
 
 ### 설치와 언어 설정
 
-1. [릴리스 페이지](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.0)에서 `Node_Console_1.5.0.zip`을 다운로드합니다. GitHub의 Source code ZIP은 설치 패키지가 아닙니다.
+1. [릴리스 페이지](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.1)에서 `Node_Console_1.5.1.zip`을 다운로드합니다. GitHub의 Source code ZIP은 설치 패키지가 아닙니다.
 2. Blender 환경설정에서 디스크로부터 설치를 선택하고 ZIP을 설치한 뒤 Node Console을 활성화합니다. 검증한 Blender 버전은 5.1.2 / 5.2.2 LTS입니다.
 3. 애드온 설정의 `Node Language`를 `한국어`로 선택합니다. `Search Result Display`에서 영어만, 한국어만 또는 두 언어의 표시 순서를 선택할 수 있습니다. Blender 자체의 인터페이스 언어는 바뀌지 않습니다.
 
@@ -214,9 +207,7 @@ Node Console 1.5.0은 Blender용 노드 검색 애드온입니다. 지오메트�
 
 환경설정의 업데이트 버튼으로 GitHub 릴리스를 확인하고 버전을 선택한 뒤 설치를 확정합니다. Beta 수신은 선택 사항이며 기본값은 꺼짐입니다. 업데이트 전 백업을 보관하며 즐겨찾기나 라이브러리를 지우지 않습니다.
 
-### 버그 제보와 검증 범위
-
-환경설정 맨 아래의 `Bug Feedback`에 문제와 재현 방법을 입력하고 `Open GitHub Issue`를 누릅니다. 흐린 안내 문구는 입력하면 사라집니다. GitHub에 로그인해 초안을 확인하고 제출해야 공개 Issue가 생성됩니다. 입력 중 자동 전송하지 않습니다. 초안에는 작성한 내용, 애드온/Blender 버전, 플랫폼, 노드 언어만 포함하며 장면이나 파일을 업로드하지 않습니다. 입력 내용은 현재 세션의 메모리에만 보관됩니다.
+### 검증 범위
 
 검색, 노드 생성, 화면 그리기는 격리된 Blender 환경에서 검증했습니다. 다만 한국어·일본어 시스템 IME의 실제 후보 창, 모든 키보드 배열과 포커스 동작을 Mac/Windows에서 모두 검증한 것은 아닙니다. 설정 화면과 조작 메시지는 주로 영어·중국어입니다. [검증 범위](PERFORMANCE.md)와 [변경 기록](CHANGELOG.md)을 참고하세요.
 
@@ -225,11 +216,11 @@ Node Console 1.5.0은 Blender용 노드 검색 애드온입니다. 지오메트�
 <details>
 <summary>Русский</summary>
 
-Node Console 1.5.0 позволяет искать и добавлять узлы Blender на английском и выбранном языке. Поддерживаются редакторы геометрических узлов, шейдеров и композитинга.
+Node Console 1.5.1 позволяет искать и добавлять узлы Blender на английском и выбранном языке. Поддерживаются редакторы геометрических узлов, шейдеров и композитинга.
 
 ### Установка и язык
 
-1. Скачайте `Node_Console_1.5.0.zip` со [страницы релиза](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.0), а не автоматически созданный архив Source code.
+1. Скачайте `Node_Console_1.5.1.zip` со [страницы релиза](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.1), а не автоматически созданный архив Source code.
 2. В настройках Blender выберите установку расширения с диска, укажите ZIP и включите Node Console. Проверенные версии Blender: 5.1.2 и 5.2.2 LTS.
 3. В настройке `Node Language` выберите `Русский`. Параметр `Search Result Display` задаёт английские, русские или двуязычные названия и их порядок. Язык интерфейса самого Blender не меняется.
 
@@ -246,9 +237,7 @@ Node Console 1.5.0 позволяет искать и добавлять узл�
 
 Кнопка обновления проверяет релизы GitHub. Выберите версию и подтвердите установку. Beta-версии включаются отдельно и по умолчанию скрыты. Перед заменой сохраняется резервная копия; избранное и библиотеки не очищаются.
 
-### Сообщение об ошибке и ограничения
-
-Внизу настроек заполните `Bug Feedback` и нажмите `Open GitHub Issue`. Серый текст-подсказка исчезает при вводе. Откроется черновик: войдите в GitHub, проверьте его и подтвердите отправку, чтобы создать публичный Issue. Автоматической отправки при наборе нет. Черновик содержит только ваш текст, версии Node Console и Blender, платформу и язык узлов. Сцены и файлы не загружаются; текст хранится только в памяти текущего сеанса.
+### Ограничения
 
 Поиск, создание узлов и отрисовка проверены в изолированных экземплярах Blender. Это не полная проверка всех системных методов ввода, раскладок и окон кандидатов на Mac/Windows, особенно для японского и корейского. Настройки и служебные сообщения пока преимущественно на английском и китайском. Подробнее: [проверки](PERFORMANCE.md) и [история изменений](CHANGELOG.md).
 
@@ -257,11 +246,11 @@ Node Console 1.5.0 позволяет искать и добавлять узл�
 <details>
 <summary>Español</summary>
 
-Node Console 1.5.0 permite buscar y añadir nodos de Blender en inglés y en el idioma seleccionado. Funciona en los editores de nodos de geometría, sombreado y composición.
+Node Console 1.5.1 permite buscar y añadir nodos de Blender en inglés y en el idioma seleccionado. Funciona en los editores de nodos de geometría, sombreado y composición.
 
 ### Instalación e idioma
 
-1. Descarga `Node_Console_1.5.0.zip` desde la [página de la versión](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.0), no los archivos Source code generados por GitHub.
+1. Descarga `Node_Console_1.5.1.zip` desde la [página de la versión](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.1), no los archivos Source code generados por GitHub.
 2. En las preferencias de Blender, instala el ZIP desde disco y activa Node Console. Las versiones de Blender comprobadas son 5.1.2 y 5.2.2 LTS.
 3. Selecciona `Español` en `Node Language`. En `Search Result Display` puedes mostrar inglés, español o ambos idiomas en el orden que prefieras. No se cambia el idioma de la interfaz de Blender.
 
@@ -278,9 +267,7 @@ Selecciona nodos o un marco y pulsa `Ctrl + Shift + G` (macOS: `Command + Shift 
 
 El botón de actualización consulta las versiones publicadas en GitHub. Selecciona una versión y confirma la instalación. Las versiones Beta son opcionales y están desactivadas por defecto. Se conserva una copia de seguridad antes de sustituir el complemento, sin borrar favoritos ni bibliotecas.
 
-### Informar de errores y alcance de las pruebas
-
-Al final de las preferencias, escribe el problema y los pasos para reproducirlo en `Bug Feedback` y pulsa `Open GitHub Issue`. El texto gris de ayuda desaparece al escribir. Se abre un borrador: debes iniciar sesión en GitHub, revisarlo y confirmar el envío para crear una incidencia pública. No se envía nada automáticamente al escribir. El borrador solo incluye tu texto, las versiones del complemento y Blender, la plataforma y el idioma de los nodos. No se suben escenas ni archivos; el texto solo se conserva en la memoria de la sesión actual.
+### Alcance de las pruebas
 
 La búsqueda, la creación de nodos y el dibujo de la interfaz se han probado en instancias aisladas de Blender. No se han verificado exhaustivamente todos los métodos de entrada, teclados y ventanas de candidatos de Mac/Windows, especialmente los IME japonés y coreano. Los ajustes y mensajes siguen principalmente en inglés y chino. Consulta las [pruebas y limitaciones](PERFORMANCE.md) y el [registro de cambios](CHANGELOG.md).
 
@@ -288,7 +275,7 @@ La búsqueda, la creación de nodos y el dibujo de la interfaz se han probado en
 
 ## 中文
 
-1.5.0 新增日语、韩语、俄语和西班牙语节点搜索，以及偏好设置中的问题反馈入口。安装包：[Node_Console_1.5.0.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.5.0/Node_Console_1.5.0.zip)。
+1.5.1 整理偏好设置，将组合点列表置于库设置上方，并移除需要登录 GitHub 的反馈入口；保留 1.5.0 的多语言搜索。安装包：[Node_Console_1.5.1.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.5.1/Node_Console_1.5.1.zip)。
 
 Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。macOS 和 Windows 可在同一自绘框中使用系统输入法输入中文；Windows 中文上屏与检索已获用户实机确认。界面保持紧凑，视觉风格接近 Blender 原生搜索。
 
@@ -337,7 +324,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 ### 安装
 
-1. 从上方 Release 下载 `Node_Console_1.5.0.zip`，不要使用 GitHub 自动生成的 Source code 压缩包。
+1. 从上方 Release 下载 `Node_Console_1.5.1.zip`，不要使用 GitHub 自动生成的 Source code 压缩包。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -381,7 +368,8 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 - `刷新资产索引`（Refresh Asset Index）：手动刷新资产节点缓存。
 - `快捷键`（Shortcut）：修改打开 Node Console 的快捷键。
 - `保存组合点快捷键`（Save Snippet Node Shortcut）：修改保存当前选中节点组合的快捷键。
-- `组合点库`（Snippet Libraries）：查看组合点 JSON 库文件的位置和已保存的组合点。
+- `组合点`（Snippet Nodes）：展开查看已保存的组合点，按节点编辑器分组。
+- `组合点库`（Snippet Libraries）：位于组合点列表下方，查看组合点 JSON 库文件的位置；收起列表后仍可使用。
 - `收藏`（Favorites）：查看并删除收藏节点。
 - `快捷节点`（Shortcuts）：查看、删除或调整快捷节点顺序。
 
@@ -393,7 +381,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 - 「接受 Beta 测试版本」默认关闭。勾选后重新检查，才会列出 GitHub 标记为 Pre-release 的版本；没有已发布的 Beta 时不会虚构选项。勾选或取消本身不会安装、降级或切换版本。
 - 选择 Beta 或较旧版本时，确认框会显示风险或回退提示。允许手动从 Beta 回到稳定版，仍先备份再替换。回退到 1.4.0 等旧版本时，更新界面也会恢复为该版本的样式。
-- 1.5.0 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
+- 1.5.1 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
 
 1.4.5 起，版本选项同时显示简短更新重点，例如 `1.4.4（首次搜索提速，旧正式版）`；已补齐 1.3.0 在线更新、1.3.1 热更新以来的版本。摘要跟随界面语言，悬停提示保留完整说明，不增加更新栏行数。
 
@@ -407,12 +395,6 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 - 下载完成后自动热更新，无需重启 Blender。搜索、节点放置或组合点命名尚未结束时会等待，完成后只重载 Node Console，不重置或重新注册 Blender 和其他插件的快捷键。新版启用失败会尝试恢复原版本；若无法自动恢复，界面会提示重启并检查备份。
 - Git 源码工程不接受自动替换。首次使用此按钮需要先安装包含此功能的版本。
 - 已安装 1.4.0 的用户可通过原来的「更新」按钮升级到 1.4.1；升级后才出现版本选择和 Beta 开关。从 1.3.0 的旧更新器升级仍需首次重启，1.3.1 起支持后续热加载。
-
-### 问题反馈
-
-偏好设置最下方的「问题反馈」使用 Blender 原生输入框：空白时显示灰色提示，输入后提示消失。填写遇到的问题和复现步骤，再点击「在 GitHub 中继续」。浏览器会打开预填好的 Issue 草稿；**需要登录 GitHub 并在网页确认提交后，你的反馈才会成为公开 Issue**，不会在键入时自动发送。
-
-草稿仅附带你填写的文字、Node Console/Blender 版本、平台及节点语言，不读取或上传场景、文件、其他插件清单或偏好设置。输入只暂存在当前会话中，不写入设置文件；打开网页或发生错误时不会清空。内容超出链接长度限制时会提示精简，你可以在 GitHub 中继续补充文字和截图。不要在公开反馈中包含密码、令牌或私人项目资料。
 
 ### 说明
 
