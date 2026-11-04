@@ -30,13 +30,13 @@ from . import addon_reloader, addon_updater, node_registry, json_store
 from . import native_search, node_menu_search, search_language, pinyin_search
 
 
-ADDON_VERSION = "1.5.2"
+ADDON_VERSION = "1.5.3"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 5, 2),
+    "version": (1, 5, 3),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -237,6 +237,7 @@ UI_TEXT_ZH = {
     "Multilingual node search": "多语言节点搜索",
     "Preferences layout cleanup": "偏好设置布局整理",
     "Chinese and pinyin ranking alignment": "中文与拼音排序对齐",
+    "English-only node search": "英文单语节点搜索",
     "Enable Chinese Fuzzy Match": "启用中文模糊检索",
     "May slightly slow live search": "可能会略微降低实时搜索速度",
     "Show Cached Asset Nodes": "显示缓存的资产节点",
@@ -1430,12 +1431,21 @@ def _load_preferences_from_settings():
         data["category_color_mode"] = "BLOCK" if data.get("show_category_color_tags") else "OFF"
     PREFERENCES_LOADING = True
     try:
+        # Old display preferences imply the original Chinese secondary language.
+        # Only a fresh installation follows Blender's current interface locale.
+        if "search_language" not in data and not prefs.is_property_set("search_language"):
+            legacy_display = "display_mode" in data or prefs.is_property_set("display_mode")
+            prefs.search_language = "zh_HANS" if legacy_display else _default_search_language()
         for name in ("search_language", "display_mode", "chinese_fuzzy_match", "ui_scale", "shortcut_key", "shortcut_shift", "shortcut_ctrl", "shortcut_alt", "shortcut_oskey", "snippet_shortcut_key", "snippet_shortcut_shift", "snippet_shortcut_ctrl", "snippet_shortcut_alt", "snippet_shortcut_oskey", "scan_asset_libraries", "category_color_mode", "console_width", "snippet_library_path", "snippet_nodes_expanded", "accept_beta_updates"):
             if name in data:
                 try:
                     setattr(prefs, name, data[name])
                 except Exception:
                     pass
+        if prefs.search_language == "en_US":
+            prefs.display_mode = "ENGLISH"
+        elif "display_mode" not in data and not prefs.is_property_set("display_mode"):
+            prefs.display_mode = "ENGLISH_CHINESE"
     finally:
         PREFERENCES_LOADING = False
 
@@ -2523,6 +2533,17 @@ def _preference_changed(_self, _context):
     _save_preference_settings()
 
 
+def _node_language_changed(self, context):
+    global PREFERENCES_LOADING
+    if not PREFERENCES_LOADING and self.search_language == "en_US":
+        PREFERENCES_LOADING = True
+        try:
+            self.display_mode = "ENGLISH"
+        finally:
+            PREFERENCES_LOADING = False
+    _preference_changed(self, context)
+
+
 def _visual_preference_changed(_self, _context):
     TEXT_WIDTH_CACHE.clear()
     _save_preference_settings()
@@ -2556,6 +2577,22 @@ def _search_language() -> str:
     return getattr(prefs, "search_language", "zh_HANS")
 
 
+def _default_search_language() -> str:
+    try:
+        view = bpy.context.preferences.view
+        if not view.use_translate_interface:
+            return "en_US"
+        language = view.language
+        if language == "DEFAULT":
+            language = bpy.app.translations.locale
+        for code, _name, locales in node_registry.LANGUAGES:
+            if language in (code, *locales):
+                return code
+    except (AttributeError, RuntimeError):
+        pass
+    return "en_US"
+
+
 def _official_translation(text, context=None):
     return node_registry.official_label(text, context, _search_language())
 
@@ -2569,6 +2606,11 @@ DISPLAY_MODE_ITEMS = {
            ("CHINESE_ENGLISH", name + " / English", "Selected language names first", 3))
     for code, name, _locales in node_registry.LANGUAGES
 }
+DISPLAY_MODE_ITEMS["en_US"] = (("ENGLISH", "English", "Show only English names", 0),)
+# Keep existing RNA values while presenting English first in the menu.
+NODE_LANGUAGE_ITEMS = tuple(sorted(
+    ((code, name, "", index) for index, (code, name, _locales) in enumerate(node_registry.LANGUAGES)),
+    key=lambda item: item[0] != "en_US"))
 
 
 def _display_mode_items(self, _context):
@@ -2606,6 +2648,8 @@ def _display_category_label(category: str) -> str:
 
 
 def _display_mode() -> str:
+    if _search_language() == "en_US":
+        return "ENGLISH"
     prefs = _preferences()
     return prefs.display_mode if prefs else "ENGLISH_CHINESE"
 
@@ -2663,7 +2707,8 @@ def _entry_display_label(identifier: str, fallback: str = "") -> str:
         return _entry_label(entry.english, entry.chinese)
 
     label = fallback or identifier
-    if _search_language() == "zh_HANS" and " / " in label:
+    if (_search_language() == "zh_HANS" or _search_language() == "en_US"
+            and identifier.startswith(("N_", "Z_", "O_"))) and " / " in label:
         first, second = [part.strip() for part in label.split(" / ", 1)]
         first_is_ascii = all(ord(char) < 128 for char in first)
         second_is_ascii = all(ord(char) < 128 for char in second)
@@ -6413,9 +6458,9 @@ class ENS_AddonPreferences(AddonPreferences):
 
     search_language: EnumProperty(
         name="Node Language",
-        description="Search in English and this language using Blender's installed translations",
-        items=tuple((code, name, "", index) for index, (code, name, _locales) in enumerate(node_registry.LANGUAGES)),
-        default="zh_HANS", update=_preference_changed,
+        description="Use English only, or search English and a second language using Blender's installed translations",
+        items=NODE_LANGUAGE_ITEMS,
+        default=_default_search_language(), update=_node_language_changed,
     )
 
     accept_beta_updates: BoolProperty(name="Accept Beta Versions",
@@ -6428,7 +6473,7 @@ class ENS_AddonPreferences(AddonPreferences):
         name="Search Result Display",
         description="How node names are shown in the custom search panel",
         items=_display_mode_items,
-        default=2,
+        default=0 if _default_search_language() == "en_US" else 2,
         update=_preference_changed,
     )
     chinese_fuzzy_match: BoolProperty(
@@ -6606,6 +6651,7 @@ class ENS_AddonPreferences(AddonPreferences):
         language_row.label(text=_ui_text("Node Language"))
         language_row.prop(self, "search_language", text="", translate=False)
         display_row = display_left.split(factor=0.56, align=True)
+        display_row.enabled = getattr(self, "search_language", "zh_HANS") != "en_US"
         display_row.label(text=_ui_text("Search Result Display"))
         display_row.prop(self, "display_mode", text="", translate=False)
         category_row = display_left.split(factor=0.56, align=True)

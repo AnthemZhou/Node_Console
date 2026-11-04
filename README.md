@@ -4,28 +4,28 @@
 
 
 ![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.5.2-blue)
+![Version](https://img.shields.io/badge/version-1.5.3-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.5.2
+版本：1.5.3
 
-[下载 / Download](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.2) · [Issues](https://github.com/AnthemZhou/Node_Console/issues)
+[下载 / Download](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.3) · [Issues](https://github.com/AnthemZhou/Node_Console/issues)
 
 ## Languages / 语言
 
 <details>
 <summary>English</summary>
 
-Version 1.5.2 aligns complete pinyin with Chinese search, including category paths and native menu weights, while preserving existing English ordering. Multilingual search and Preferences improvements are retained. Download [Node_Console_1.5.2.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.5.2/Node_Console_1.5.2.zip).
+Version 1.5.3 adds English-only node search. Fresh English Blender installations default to English names and categories; saved language preferences, multilingual search and Chinese/pinyin alignment are retained. Download [Node_Console_1.5.3.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.5.3/Node_Console_1.5.3.zip).
 
 Node Console is a custom node search add-on for Blender. It replaces the default `Shift + A` search in the Node Editor. Search by English name, Chinese or pinyin, and use favorites and shortcuts to customize search weighting. macOS and Windows support system Chinese input in the existing custom field; a user has confirmed committed Chinese and node search on Windows. The layout stays compact and is inspired by Blender native search.
 
 ### Features
 
-- Search English plus Chinese, Japanese, Korean, Russian or Spanish with bilingual display, independently of Blender's interface language. Chinese pinyin and initials remain supported.
+- Use English-only search, or English plus Chinese, Japanese, Korean, Russian or Spanish with bilingual display, independently of Blender's interface language. Chinese mode retains pinyin and initials.
 - Supports system Chinese input in the existing search field on macOS and Windows; see platform verification scope below.
 - Supports favorite nodes and shortcut nodes. Favorites and shortcuts can customize search weighting and make common nodes faster to create.
 - Shows colored node type tags on the left side of search results, making nodes easier to scan by type.
@@ -53,7 +53,9 @@ Version 1.5.2 resolves complete pinyin against indexed Chinese names, aliases an
 
 ### Multilingual Search (1.5.0)
 
-Choose a secondary language in Preferences > Node Language. English remains searchable in every mode. Search Result Display offers English-only, selected-language-only, or either bilingual order. Upgrades retain Chinese and your saved display mode; Blender's UI language is not changed.
+Since 1.5.3, Preferences > Node Language offers `English` for English-only search and display, without preparing a secondary-language catalog or pinyin. Fresh installs follow Blender's interface language, so an English Blender defaults to English-only. Saved language choices and legacy display preferences are retained; changing Blender's interface language later does not override them. Existing users can select English manually. English mode fixes Search Result Display to English. Custom group/asset/snippet names remain unchanged. See [validation scope](PERFORMANCE.md#153-english-only-mode).
+
+Choose Chinese, Japanese, Korean, Russian or Spanish for a secondary language. English remains searchable in every mode. Search Result Display then offers English-only, selected-language-only, or either bilingual order. Blender's UI language is not changed.
 
 Names, operation variants and menu paths use the installed Blender catalogs with their RNA/menu translation contexts. Missing translations fall back to English. Chinese editorial aliases remain separate from official names. Settings and action text remain primarily English/Chinese; this is not complete UI localization.
 
@@ -70,7 +72,7 @@ Search, node creation and synthetic input drawing are tested. **Real Japanese/Ko
 
 ### Install
 
-1. Download `Node_Console_1.5.2.zip` from the release above, not GitHub's automatically generated Source code archives.
+1. Download `Node_Console_1.5.3.zip` from the release above, not GitHub's automatically generated Source code archives.
 2. In Blender, open `Edit > Preferences > Add-ons`.
 3. Click `Install...`, then choose the downloaded zip file.
 4. Enable `Node Console`.
@@ -105,7 +107,7 @@ Snippet Nodes are stored in an external JSON library file. Preferences provide c
 
 ### Preferences
 
-- `Node Language`: choose Chinese, Japanese, Korean, Russian or Spanish; English is always searchable.
+- `Node Language`: choose `English` for English-only search or a secondary language for bilingual search. English is always searchable.
 - `Search Result Display`: choose English, the selected language, or either bilingual order.
 - `Console Size`: adjusts the search panel size from 0.5 to 2.0.
 - `Console Width`: adjusts the horizontal search panel width, defaults to 400, and stays in sync with right-edge dragging in the search panel.
@@ -129,7 +131,7 @@ Starting with 1.4.5, choices include a brief localized highlight in parentheses,
 
 - Accept Beta Versions is off by default. Enable it and check again to include published GitHub prereleases. No Beta options are fabricated when none exist; changing the checkbox never installs or downgrades the add-on.
 - Beta installation and downgrade dialogs display appropriate warnings. Returning from Beta to a stable release is supported with backup and confirmation. Downgrading to an older version such as 1.4.0 also restores that version's older update interface.
-- 1.5.2 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
+- 1.5.3 is stable and available with Beta disabled. Historical prereleases remain accessible through Other Versions.
 
 To publish a Beta, tag it as e.g. `v1.4.2-beta.1`, attach `Node_Console_1.4.2-beta.1.zip`, mark the GitHub release as `Pre-release` and publish it. The package must use `ADDON_VERSION = "1.4.2-beta.1"` and `bl_info["version"] = (1, 4, 2)`; rebuild the macOS input resource for the full version too. Use `v1.4.2-rc.1` for RC builds. A title-only change or source ZIP is insufficient. The user's Beta setting filters manual update checks; it never triggers automatic installation.
 
@@ -158,11 +160,13 @@ Keep the version's `node-console-summary` CHANGELOG comment in its GitHub releas
 <details>
 <summary>日本語</summary>
 
-Node Console 1.5.2 は Blender のノード検索アドオンです。ジオメトリ、シェーダー、コンポジターの各ノードエディターで、英語と選択した言語の両方からノードを検索できます。
+Node Console 1.5.3 は Blender のノード検索アドオンです。ジオメトリ、シェーダー、コンポジターの各ノードエディターで、英語と選択した言語の両方からノードを検索できます。
+
+1.5.3 では `Node Language` に `English` が追加され、英語のみで検索・表示できます。英語 UI の Blender に初めて導入する場合は英語のみが既定となり、保存済みの言語設定は維持されます。
 
 ### インストールと言語設定
 
-1. [リリースページ](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.2)から `Node_Console_1.5.2.zip` をダウンロードします。GitHub の Source code ZIP ではありません。
+1. [リリースページ](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.3)から `Node_Console_1.5.3.zip` をダウンロードします。GitHub の Source code ZIP ではありません。
 2. Blender の環境設定で「ディスクからインストール」を選び、ZIP をインストールして Node Console を有効にします。動作確認済みバージョンは 5.1.2 / 5.2.2 LTS です。
 3. アドオン設定の `Node Language` を `日本語` にします。`Search Result Display` で英語のみ、日本語のみ、または両方の表示順を選べます。Blender 自体の表示言語は変更しません。
 
@@ -188,11 +192,13 @@ Node Console 1.5.2 は Blender のノード検索アドオンです。ジオメ�
 <details>
 <summary>한국어</summary>
 
-Node Console 1.5.2는 Blender용 노드 검색 애드온입니다. 지오메트리, 셰이더, 컴포지터 노드 편집기에서 영어와 선택한 언어로 노드를 검색할 수 있습니다.
+Node Console 1.5.3은 Blender용 노드 검색 애드온입니다. 지오메트리, 셰이더, 컴포지터 노드 편집기에서 영어와 선택한 언어로 노드를 검색할 수 있습니다.
+
+1.5.3에서는 `Node Language`에 `English`가 추가되어 영어로만 검색하고 표시할 수 있습니다. 영어 UI의 Blender에 처음 설치하면 영어 전용 모드가 기본값이며, 기존에 저장한 언어 설정은 유지됩니다.
 
 ### 설치와 언어 설정
 
-1. [릴리스 페이지](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.2)에서 `Node_Console_1.5.2.zip`을 다운로드합니다. GitHub의 Source code ZIP은 설치 패키지가 아닙니다.
+1. [릴리스 페이지](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.3)에서 `Node_Console_1.5.3.zip`을 다운로드합니다. GitHub의 Source code ZIP은 설치 패키지가 아닙니다.
 2. Blender 환경설정에서 디스크로부터 설치를 선택하고 ZIP을 설치한 뒤 Node Console을 활성화합니다. 검증한 Blender 버전은 5.1.2 / 5.2.2 LTS입니다.
 3. 애드온 설정의 `Node Language`를 `한국어`로 선택합니다. `Search Result Display`에서 영어만, 한국어만 또는 두 언어의 표시 순서를 선택할 수 있습니다. Blender 자체의 인터페이스 언어는 바뀌지 않습니다.
 
@@ -218,11 +224,13 @@ Node Console 1.5.2는 Blender용 노드 검색 애드온입니다. 지오메트�
 <details>
 <summary>Русский</summary>
 
-Node Console 1.5.2 позволяет искать и добавлять узлы Blender на английском и выбранном языке. Поддерживаются редакторы геометрических узлов, шейдеров и композитинга.
+Node Console 1.5.3 позволяет искать и добавлять узлы Blender на английском и выбранном языке. Поддерживаются редакторы геометрических узлов, шейдеров и композитинга.
+
+В 1.5.3 в настройке `Node Language` появился вариант `English`: поиск и названия только на английском. При первой установке в Blender с английским интерфейсом он выбран по умолчанию; ранее сохранённые языковые настройки не меняются.
 
 ### Установка и язык
 
-1. Скачайте `Node_Console_1.5.2.zip` со [страницы релиза](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.2), а не автоматически созданный архив Source code.
+1. Скачайте `Node_Console_1.5.3.zip` со [страницы релиза](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.3), а не автоматически созданный архив Source code.
 2. В настройках Blender выберите установку расширения с диска, укажите ZIP и включите Node Console. Проверенные версии Blender: 5.1.2 и 5.2.2 LTS.
 3. В настройке `Node Language` выберите `Русский`. Параметр `Search Result Display` задаёт английские, русские или двуязычные названия и их порядок. Язык интерфейса самого Blender не меняется.
 
@@ -248,11 +256,13 @@ Node Console 1.5.2 позволяет искать и добавлять узл�
 <details>
 <summary>Español</summary>
 
-Node Console 1.5.2 permite buscar y añadir nodos de Blender en inglés y en el idioma seleccionado. Funciona en los editores de nodos de geometría, sombreado y composición.
+Node Console 1.5.3 permite buscar y añadir nodos de Blender en inglés y en el idioma seleccionado. Funciona en los editores de nodos de geometría, sombreado y composición.
+
+En 1.5.3, `Node Language` incluye `English` para buscar y mostrar nombres solo en inglés. Una instalación nueva en Blender con interfaz en inglés usa este modo por defecto; las preferencias de idioma ya guardadas se conservan.
 
 ### Instalación e idioma
 
-1. Descarga `Node_Console_1.5.2.zip` desde la [página de la versión](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.2), no los archivos Source code generados por GitHub.
+1. Descarga `Node_Console_1.5.3.zip` desde la [página de la versión](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.3), no los archivos Source code generados por GitHub.
 2. En las preferencias de Blender, instala el ZIP desde disco y activa Node Console. Las versiones de Blender comprobadas son 5.1.2 y 5.2.2 LTS.
 3. Selecciona `Español` en `Node Language`. En `Search Result Display` puedes mostrar inglés, español o ambos idiomas en el orden que prefieras. No se cambia el idioma de la interfaz de Blender.
 
@@ -277,13 +287,13 @@ La búsqueda, la creación de nodos y el dibujo de la interfaz se han probado en
 
 ## 中文
 
-1.5.2 对齐完整拼音与中文搜索，补齐类目路径匹配并复用中文菜单排序，保留现有英文顺序、多语言搜索和偏好设置改进。安装包：[Node_Console_1.5.2.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.5.2/Node_Console_1.5.2.zip)。
+1.5.3 新增英文单语节点搜索：英文 Blender 首次安装默认只显示英文节点名和类目；保留已有语言设置、多语言搜索及中文/拼音排序对齐。安装包：[Node_Console_1.5.3.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.5.3/Node_Console_1.5.3.zip)。
 
 Node Console 是一个 Blender 节点搜索插件。它会替换节点编辑器里的 `Shift + A` 搜索，让你可以用英文、中文或拼音搜索节点，并通过 favorite 和 shortcut 自定义搜索权重。macOS 和 Windows 可在同一自绘框中使用系统输入法输入中文；Windows 中文上屏与检索已获用户实机确认。界面保持紧凑，视觉风格接近 Blender 原生搜索。
 
 ### 功能
 
-- 支持英文＋所选语言（中文、日语、韩语、俄语、西班牙语）搜索和双语显示，不依赖当前 Blender 界面语言；中文保留拼音和首字母检索。
+- 支持英文单语，或英文＋所选语言（中文、日语、韩语、俄语、西班牙语）搜索和双语显示，不依赖当前 Blender 界面语言；中文模式保留拼音和首字母检索。
 - macOS 和 Windows 支持在现有搜索框内使用系统中文输入法；平台验证范围见下文。
 - 支持收藏节点和快捷节点。favorite 和 shortcut 可以自定义搜索权重，也方便快速创建常用节点。
 - 在搜索结果左侧显示节点类型颜色标签，方便根据节点类型快速检索。
@@ -311,7 +321,9 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 ### 多语言节点搜索（1.5.0）
 
-在偏好设置的「节点语言 / Node Language」选择中文、日本語、한국어、Русский 或 Español。英文始终可检索；「搜索结果显示」可选择仅英文、仅所选语言，或两种语言的前后顺序。升级默认保留中文和原显示设置，不改变 Blender 自身的界面语言。
+1.5.3 在「节点语言 / Node Language」新增 `English`：只使用英文节点名与类目，不准备第二语言词典或拼音；「搜索结果显示」固定为 English。首次安装且没有保存过语言/显示设置时，默认跟随 Blender 界面语言，英文 Blender 默认使用英文单语模式。已有语言选择与旧版显示偏好保持不变，之后切换 Blender 界面语言也不会覆盖它们；旧用户可手动选择 English。用户自定义节点组、资产和组合点名称保持原样。详见[验证范围](PERFORMANCE.md#153-english-only-mode)。
+
+选择中文、日本語、한국어、Русский 或 Español 时，英文始终可检索；「搜索结果显示」可选择仅英文、仅所选语言，或两种语言的前后顺序。不改变 Blender 自身的界面语言。
 
 节点、操作变体及搜索菜单路径使用当前 Blender 安装包的官方翻译，按 RNA/菜单翻译上下文读取；缺译时回退英文。中文历史译名和人工别名仍只作为中文搜索增强。插件设置和操作提示仍主要为中英界面，本次不是所有 UI 文案的完整翻译。
 
@@ -328,7 +340,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 ### 安装
 
-1. 从上方 Release 下载 `Node_Console_1.5.2.zip`，不要使用 GitHub 自动生成的 Source code 压缩包。
+1. 从上方 Release 下载 `Node_Console_1.5.3.zip`，不要使用 GitHub 自动生成的 Source code 压缩包。
 2. 在 Blender 中打开 `编辑 > 偏好设置 > 插件`。
 3. 点击 `安装...`，选择下载的 zip 文件。
 4. 启用 `Node Console`。
@@ -385,7 +397,7 @@ macOS 和 Windows 用户可以按 `Shift + A` 后，直接用系统中文输入�
 
 - 「接受 Beta 测试版本」默认关闭。勾选后重新检查，才会列出 GitHub 标记为 Pre-release 的版本；没有已发布的 Beta 时不会虚构选项。勾选或取消本身不会安装、降级或切换版本。
 - 选择 Beta 或较旧版本时，确认框会显示风险或回退提示。允许手动从 Beta 回到稳定版，仍先备份再替换。回退到 1.4.0 等旧版本时，更新界面也会恢复为该版本的样式。
-- 1.5.2 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
+- 1.5.3 为正式版，关闭 Beta 开关也能获取；历史预发布版仍可在「其他版本」中找到。
 
 1.4.5 起，版本选项同时显示简短更新重点，例如 `1.4.4（首次搜索提速，旧正式版）`；已补齐 1.3.0 在线更新、1.3.1 热更新以来的版本。摘要跟随界面语言，悬停提示保留完整说明，不增加更新栏行数。
 

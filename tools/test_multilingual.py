@@ -28,8 +28,9 @@ def main():
     addon = bpy.context.preferences.addons.new()
     addon.module = nc.ADDON_ID
     prefs = addon.preferences
-    assert prefs.search_language == 'zh_HANS'
-    assert prefs.display_mode == 'ENGLISH_CHINESE'
+    nc._load_preferences_from_settings()
+    assert prefs.search_language == nc._default_search_language()
+    assert prefs.display_mode == ('ENGLISH' if prefs.search_language == 'en_US' else 'ENGLISH_CHINESE')
     prefs.scan_asset_libraries = False
     nc._write_settings({'favorites': ['saved-id'], 'usage': {'saved-id': 42},
                         'shortcuts': ['saved-id'], 'unknown_setting': [1, 2]})
@@ -41,7 +42,7 @@ def main():
     identities = {}
     for code, name, locales in nc.node_registry.LANGUAGES:
         prefs.search_language = code
-        prefs.display_mode = 'ENGLISH_CHINESE'
+        prefs.display_mode = 'ENGLISH' if code == 'en_US' else 'ENGLISH_CHINESE'
         assert not nc.SEARCH_QUERY_CACHE
         # Read the installed MO separately as the oracle (not the add-on helper).
         oracle = gettext.NullTranslations()
@@ -136,7 +137,7 @@ def main():
             bpy.data.node_groups.remove(tree)
         names = {'zh_HANS': ('随机选择', 'suijixuanze'), 'ja_JP': ('ノイズ設定', 'のいず'),
                  'ko_KR': ('노이즈 설정', 'ㄴㅇㅈ'), 'ru_RU': ('Объём', 'объем'),
-                 'es': ('Posición', 'posicion')}
+                 'es': ('Posición', 'posicion'), 'en_US': ('Random Selection', 'random selection')}
         title, query = names[code]
         snippets = [nc._snippet_to_entry(dict(id=str(i), name=title + str(i), category='NONE')) for i in range(2)]
         for text in (query, unicodedata.normalize('NFD', title), title):
@@ -146,10 +147,10 @@ def main():
             assert nc._search_entries_from_list(snippets, text) == found
             assert snippets[0].label == title + '0'
             report['snippet_checks'] += 4
-        for mode in ('ENGLISH', 'CHINESE', 'ENGLISH_CHINESE', 'CHINESE_ENGLISH'):
+        for mode, _label, _description, _value in nc._display_mode_items(prefs, None):
             prefs.display_mode = mode
             assert prefs.display_mode == mode
-        assert nc._display_mode_items(prefs, None)[1][1] == name
+        assert nc._display_mode_items(prefs, None)[0 if code == 'en_US' else 1][1] == name
         assert (bpy.context.preferences.view.language, bpy.context.preferences.view.use_translate_interface) == baseline_ui
         assert all(nc._load_settings()[k] == v for k, v in baseline_settings.items())
         print('MULTILINGUAL_LOCALE_OK', code, flush=True)

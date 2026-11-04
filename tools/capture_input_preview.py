@@ -139,7 +139,7 @@ steps = [(2, 'she zhi', ('', 'she zhi')), (4, '\u8bbe\u7f6e', ('\u8bbe\u7f6e', '
          (4, '', ('', ''))]
 if LANGUAGE != 'zh_HANS':
     committed = nc._official_translation('Noise Texture', bpy.types.ShaderNodeTexNoise.bl_rna.translation_context)
-    preedit = {'ja_JP': 'のいず', 'ko_KR': '노이', 'ru_RU': 'шу', 'es': 'rui'}[LANGUAGE]
+    preedit = {'ja_JP': 'のいず', 'ko_KR': '노이', 'ru_RU': 'шу', 'es': 'rui', 'en_US': 'noi'}[LANGUAGE]
     steps = [(2, preedit, ('', preedit)), (4, committed, (committed, '')),
              (2, preedit, (committed, preedit)), (2, '', (committed, '')),
              (4, '', ('', ''))]

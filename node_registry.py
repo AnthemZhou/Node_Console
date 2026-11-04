@@ -13,6 +13,7 @@ LANGUAGES = (
     ('ko_KR', '한국어', ('ko_KR', 'ko')),
     ('ru_RU', 'Русский', ('ru_RU', 'ru')),
     ('es', 'Español', ('es',)),
+    ('en_US', 'English', ()),
 )
 _catalog = None
 _catalog_language = None

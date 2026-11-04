@@ -19,6 +19,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('output', type=Path)
 parser.add_argument('--fixture', type=Path, default=ROOT / 'tools/fixtures/native_search_expanded_5_2_2.json')
 parser.add_argument('--multilingual', action='store_true')
+parser.add_argument('--english-only', action='store_true')
 args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:])
 fixture = json.loads(args.fixture.read_text())
 assert bpy.app.version_string == fixture['blender'] and bpy.app.build_hash.decode() == fixture['build'], 'Use the audited Blender build'
@@ -28,6 +29,11 @@ sys.modules[spec.name] = nc
 spec.loader.exec_module(nc)
 nc._settings_path = lambda: Path(os.environ['BLENDER_USER_CONFIG']) / 'expanded-test.json'
 nc._preferences = lambda: None
+if args.english_only:
+    assert not args.multilingual
+    nc._search_language = lambda: 'en_US'
+    fixture['cases'] = [case for case in fixture['cases']
+                        if case['language'] == 'en_US' and case['group'] in {'baseline', 'context'}]
 nc._refresh_asset_index()
 last_context = None
 tree = None

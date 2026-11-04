@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.3
+
+<!-- node-console-summary: {"zh":"英文单语节点搜索","en":"English-only node search"} -->
+
+### 中文
+
+- 节点语言新增 English 单语选项，置于菜单首位；结果和节点类目只显示英文，不准备中文译名或拼音索引。保留英文搜索、收藏、快捷节点及组合点功能，自定义名称不翻译、不改写。
+- 首次启用且没有已保存的语言/显示偏好时，默认跟随 Blender 当前界面语言；英文界面（含关闭界面翻译）默认使用 English。旧版双语显示设置、已保存的语言选择及用户数据保持不变，不随之后切换界面语言而被覆盖。
+- English 模式下结果显示固定为 English；保留旧语言枚举的数值标识，切换语言后重建对应索引，避免旧语言缓存混入结果。
+- 在隔离的 macOS Blender 5.2.2 LTS / 5.1.2 中验证默认设置、升级保留、语言切换、资产与自定义名称；2,037 次界面语言切换查询顺序一致，89 组英文原生搜索样本无退步，中文/拼音及多语言回归通过。纯英文和双语热重载均保留场景、设置和快捷键；本轮未进行 Windows 实机测试。
+
+### English
+
+- Add English-only Node Language at the top of the menu. Show English names/categories without preparing Chinese translations or pinyin; retain search, favorites, shortcuts and snippets, leaving custom names unchanged.
+- On a fresh installation with no saved language/display preferences, follow Blender's interface language. English UI (including disabled interface translation) defaults to English-only. Preserve saved language choices, legacy bilingual preferences and user data; later UI-language changes do not override them.
+- Fix Search Result Display to English in this mode, keep existing language enum values stable and rebuild language-specific indexes on switching.
+- Validate defaults, migration, language switching, assets and custom names in isolated macOS Blender 5.2.2 LTS / 5.1.2. All 2,037 UI-language-switch query comparisons retain their order; 89 English native probes show no regression, and Chinese/pinyin and multilingual regressions pass. English-only and bilingual hot reload preserve graphs, settings and keymaps. No new Windows hardware validation.
+
 ## 1.5.2
 
 <!-- node-console-summary: {"zh":"中文与拼音排序对齐","en":"Chinese and pinyin ranking alignment"} -->

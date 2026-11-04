@@ -1,5 +1,36 @@
 # Node Console Performance
 
+## 1.5.3 English-Only Mode
+
+Add `en_US` as an English-only node language, without changing the saved RNA
+numbers of the five existing languages. Only fresh preferences follow Blender's
+interface locale; saved JSON/native preferences and legacy display-only settings
+retain their language/display choice. English-only fixes the display to English,
+skips Chinese/pinyin preparation and preserves custom names and node identities.
+
+Validation uses isolated macOS Blender 5.2.2 LTS and 5.1.2:
+
+- `tools/test_english_mode.py` exercises fresh defaults, disabled UI translation,
+  saved-language/display migration, persistence, language-isolated caches,
+  built-in names, assets, custom groups, snippet names and user-data sentinels.
+  It raises if English indexing tries to prepare pinyin or load a translation
+  catalog. Across the two versions, 2,037 queries keep their order when Blender's
+  UI switches between English and Chinese with Node Language fixed to English.
+- The existing English native-search fixture contributes 89 comparable probes
+  on 5.2.2: 88 first-result/empty agreements, 78 exact visible lists, zero missing
+  native results and no regression from recorded baselines. English-only is not
+  a promise to reproduce every native menu exactly; aliases/favorites remain.
+- The six-language 5.2.2 regression includes 24,627 search assertions and 6,396
+  node creations. The existing Chinese/pinyin algorithm is unchanged.
+- Real isolated Preferences and GPU search captures show English names and
+  categories. The input harness exercises 15 synthetic draw/input observations;
+  it does not certify physical IMEs. Six hot-reload/recovery scenarios run for
+  each of English-only and Chinese bilingual settings, preserving keymaps,
+  preferences, graph data and user files.
+
+Generated evidence stays in ignored `build/`. No new Windows hardware validation
+or changes to personal Blender settings. Historical release packages are unchanged.
+
 ## 1.5.2 Chinese and Pinyin Alignment
 
 Compare 1.5.2 against the published 1.5.1 ZIP in isolated macOS

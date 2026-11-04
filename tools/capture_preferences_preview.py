@@ -21,7 +21,8 @@ assert scripts.parent == Path(os.environ['BLENDER_USER_CONFIG']).resolve().paren
 assert scripts.parent.name.startswith('node-console-isolated-')
 bpy.context.preferences.use_preferences_save = False
 bpy.context.preferences.view.show_splash = False
-bpy.context.preferences.view.language = 'zh_HANS'
+english = '--english' in sys.argv
+bpy.context.preferences.view.language = 'en_US' if english else 'zh_HANS'
 target = scripts / 'addons' / 'Node_Console'
 for name in RUNTIME_FILES:
     destination = target / name
@@ -36,7 +37,7 @@ assert 'feedback_text' not in prefs.bl_rna.properties
 addon_utils.module_bl_info(addon_utils.addons_fake_modules['Node_Console'])['show_expanded'] = True
 nc._snippet_search_snapshot = lambda: {'snippets': [
     {'id': 'preview', 'tree_type': 'GeometryNodeTree', 'category': 'NONE',
-     'name': '\u968f\u673a\u8282\u70b9\u9009\u62e9', 'node_count': 3, 'link_count': 0}]}
+     'name': 'Random Selection' if english else '\u968f\u673a\u8282\u70b9\u9009\u62e9', 'node_count': 3, 'link_count': 0}]}
 prefs.snippet_nodes_expanded = True
 area = max(bpy.context.screen.areas, key=lambda item: item.width * item.height)
 area.type = 'PREFERENCES'

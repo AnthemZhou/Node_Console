@@ -71,7 +71,8 @@ def main():
         other_metadata.pop('Node_Console', None)
         try:
             prefs = nc._preferences()
-            prefs.display_mode = 'CHINESE_ENGLISH'
+            prefs.search_language = 'en_US' if 'english' in sys.argv else 'zh_HANS'
+            prefs.display_mode = 'ENGLISH' if prefs.search_language == 'en_US' else 'CHINESE_ENGLISH'
             prefs.console_width = 333
             prefs.shortcut_alt = True
             prefs.snippet_shortcut_key = 'F'
