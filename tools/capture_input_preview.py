@@ -61,6 +61,11 @@ draw_text = nc._draw_text
 rendered_text = []
 
 
+def result_state(op):
+    return (tuple(entry.identifier for entry in op._results), op._selected_index,
+            op._scroll_offset, op._keyboard_selection_active)
+
+
 def observed_text(text, *args, **kwargs):
     rendered_text.append(text)
     return draw_text(text, *args, **kwargs)
@@ -70,6 +75,7 @@ def observed_refresh(self):
     start = time.perf_counter()
     refresh(self)
     if state['pending']:
+        state['pending']['search_calls'] += 1
         state['pending']['search_ms'] = (time.perf_counter() - start) * 1000
 
 
@@ -89,6 +95,12 @@ def observed_draw(self, context):
         expected_text = ''.join(pending['expected']) or nc._ui_text('Search nodes...')
         if expected_text not in rendered_text:
             return
+        pending['results_unchanged'] = result_state(self) == pending['before_results']
+        expected_searches = int(pending['previous_query'] != self._query)
+        assert pending['search_calls'] == expected_searches, pending
+        if pending['kind'] == 2:
+            assert pending['results_unchanged'], 'Composition changed results or selection'
+        del pending['before_results']
         pending['draw_ms'] = (time.perf_counter() - start) * 1000
         pending['elapsed_ms'] = (time.perf_counter() - pending.pop('start')) * 1000
         pending['results'] = len(self._results)
@@ -97,7 +109,7 @@ def observed_draw(self, context):
         pending['rendered_query'] = expected_text
         report['samples'].append(pending)
         state['pending'] = None
-        if LANGUAGE != 'zh_HANS' and pending['cycle'] == 0 and pending['step'] in (0, 1):
+        if pending['cycle'] == 0 and pending['step'] in (0, 1):
             x, y, width, height = map(int, self._panel_rect)
             pixels = gpu.state.active_framebuffer_get().read_color(x, y, width, height, 4, 0, 'FLOAT')
             pixels.dimensions = width * height * 4
@@ -154,9 +166,9 @@ def tick():
                 if state['cycle'] == 3:
                     assert len(report['samples']) == 15
                     assert all(sample['results'] for sample in report['samples']
-                               if sample['step'] in (0, 1, 3))
+                               if sample['step'] in (1, 3))
                     if LANGUAGE != 'zh_HANS':
-                        assert all(sample['noise_present'] for sample in report['samples'] if sample['step'] in (0, 1, 3))
+                        assert all(sample['noise_present'] for sample in report['samples'] if sample['step'] in (1, 3))
                     (OUTPUT / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
                     print('INPUT_PREVIEW_OK', [round(s['elapsed_ms'], 2) for s in report['samples']], flush=True)
                     nc.unregister()
@@ -177,9 +189,12 @@ def tick():
                     state.update(cycle=state['cycle'] + 1, step=0, phase='open')
                     return 0.1
                 kind, text, expected = steps[state['step']]
+                op = nc.ACTIVE_CONSOLE_OPERATOR
                 state['pending'] = dict(cycle=state['cycle'], step=state['step'],
+                                        kind=kind, previous_query=op._query,
+                                        before_results=result_state(op), search_calls=0,
                                         expected=expected, start=time.perf_counter())
-                nc.ACTIVE_CONSOLE_OPERATOR._ime_session.receive(kind, text)
+                op._ime_session.receive(kind, text)
                 state['phase'] = 'wait'
                 return 0.03
             if state['pending']:

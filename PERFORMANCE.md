@@ -1,5 +1,35 @@
 # Node Console Performance
 
+## 1.5.4 Search After IME Confirmation
+
+In-progress IME text now updates the input field only. Node and snippet queries
+use committed text, and candidate changes/cancellation do not search, reset
+selection or move the result scroll position. This supersedes the live-preedit
+search behavior measured in older sections below. Direct English/pinyin entry
+still searches on each committed edit; search scoring and indexes are unchanged.
+
+`tools/test_ime.py` checks both full-document and Windows append/command event
+streams, candidate edits, cancellation, commit followed by new composition,
+direct input and confirmation ordering. `tools/test_shortcut_ui.py` checks the
+real node/snippet query methods. The isolated GPU input harness now asserts zero
+search refreshes and unchanged results/selection while composing or cancelling,
+then one refresh per changed committed query across repeated open/close cycles.
+These synthetic tests do not replace physical Mac/Windows IME acceptance.
+
+Japanese/Korean follow-up: isolated Blender 5.2.2 LTS and 5.1.2 each pass
+15 GPU draw/input observations per language (60 total): 36 composition/cancel
+steps perform no search and preserve results/selection; 24 commit/clear steps
+refresh exactly once. Both languages retain Noise Texture in committed results,
+and the captured GPU fields show composition text separately from result updates.
+The 156-test pure suite also covers Japanese candidate conversion, Korean jamo
+edits, clause/syllable commits followed by new preedit, both native event-stream
+formats and both node/snippet modes. This is not a physical IME acceptance test.
+
+Already-converted candidate text can still be composition: use the backend's
+commit events, not a character-script check or a mandatory Enter key. See
+[Microsoft's composition states](https://learn.microsoft.com/en-us/windows/win32/intl/composition-string)
+and [Apple's marked-text API](https://developer.apple.com/documentation/appkit/nstextinputclient).
+
 ## 1.5.3 English-Only Mode
 
 Add `en_US` as an English-only node language, without changing the saved RNA
@@ -169,7 +199,7 @@ or `es` after the isolated runner's `--` separator. It verifies preedit,
 document commit, cancellation, clear and repeated opening, observing the real
 draw callback and reading the committed panel framebuffer. These are synthetic
 bridge events, **not physical system-IME or candidate-window validation**.
-The second pass checks Noise Texture is reachable during preedit as well as
+The 1.5.0 second pass checked Noise Texture was reachable during preedit as well as
 after commit in all four languages, across three open/close cycles each
 (60 draw/input observations total).
 

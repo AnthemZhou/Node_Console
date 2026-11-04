@@ -88,9 +88,12 @@ The 20ms input timer drains changes, while elapsed-time gating retains 200ms
 idle redraws and bounds drag animation ticks. Blender RNA events do not expose
 their originating timer, so timer object comparisons must not be used.
 
-In 1.4.5, a changed preedit also refreshes results using a temporary query. It is
-never written into the committed query. Commit/cancel transitions refresh once,
-before idle redraw gating; native candidate Enter/Escape ownership is unchanged.
+Only committed text is a search query. Changed preedit redraws the input field
+without searching or resetting the result list, selection or scroll position;
+cancelling composition also leaves them unchanged. A changed committed query
+refreshes once before idle redraw gating, including a commit followed by new
+preedit in one event batch. Direct English/pinyin input still searches on each
+committed edit. Native candidate Enter/Escape ownership is unchanged.
 The add-on also schedules one BLF CJK width measurement after enabling, outside
 an active search, to avoid loading the fallback font on the first result frame.
 

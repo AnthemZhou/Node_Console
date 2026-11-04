@@ -28,6 +28,8 @@ def main():
     nc = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = nc
     spec.loader.exec_module(nc)
+    # This fixture exercises Chinese/pinyin independently of the host UI locale.
+    nc._search_language = lambda: 'zh_HANS'
     passed = []
     with patch.object(nc, 'blf') as font, patch.object(nc, '_ui_scale', return_value=1.0):
         with patch.object(nc, 'bpy', SimpleNamespace(app=SimpleNamespace(background=True))):
@@ -415,19 +417,22 @@ def main():
         op._ime_preedit = 'she zhi'
         with patch.object(nc, '_search_entries', return_value=[chinese]) as search:
             op._refresh_query_results()
-            search.assert_called_once_with('she zhi', op._favorites)
-            assert op._query == '' and not op._showing_shortcuts()
-            assert op._keyboard_selection_active and ids(op) == ['noise']
+            search.assert_not_called()
+            assert op._query == '' and op._showing_shortcuts()
+            assert not op._keyboard_selection_active and ids(op) == ['a', 'b', 'c']
         op._ime_preedit = ''
         op._refresh_query_results()
         assert op._showing_shortcuts() and ids(op) == ['a', 'b', 'c']
         assert not op._keyboard_selection_active
-        op._snippet_mode, op._ime_preedit = True, 'she zhi'
-        with patch.object(nc, '_search_snippets', return_value=[chinese]) as search:
-            op._refresh_query_results()
-            search.assert_called_once_with('she zhi', GEOMETRY, op._favorites)
-            assert op._query == ''
-        passed.append('IME preview searches nodes/snippets without committing; cancellation restores shortcuts')
+        for snippet in (False, True):
+            for query in (('', 'noise', '实例') if snippet else ('noise', '实例')):
+                op._query, op._snippet_mode, op._ime_preedit = query, snippet, 'she zhi'
+                with patch.object(nc, '_search_snippets' if snippet else '_search_entries', return_value=[chinese]) as search:
+                    op._refresh_query_results()
+                    search.assert_called_once_with(query, *([GEOMETRY] if snippet else []), op._favorites)
+                    assert op._search_query() == query
+                    assert op._keyboard_selection_active == bool(query)
+        passed.append('IME composition never enters node/snippet queries or replaces empty-query shortcuts')
 
         for query, snippet in (('', False), ('', True), ('node', False), ('snippet', True)):
             for mode in ('LINE', 'BLOCK', 'NONE'):

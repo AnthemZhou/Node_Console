@@ -30,13 +30,13 @@ from . import addon_reloader, addon_updater, node_registry, json_store
 from . import native_search, node_menu_search, search_language, pinyin_search
 
 
-ADDON_VERSION = "1.5.3"
+ADDON_VERSION = "1.5.4"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 5, 3),
+    "version": (1, 5, 4),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -238,9 +238,10 @@ UI_TEXT_ZH = {
     "Preferences layout cleanup": "偏好设置布局整理",
     "Chinese and pinyin ranking alignment": "中文与拼音排序对齐",
     "English-only node search": "英文单语节点搜索",
+    "Search after IME confirmation": "输入法确认后搜索",
     "Enable Chinese Fuzzy Match": "启用中文模糊检索",
     "May slightly slow live search": "可能会略微降低实时搜索速度",
-    "Show Cached Asset Nodes": "显示缓存的资产节点",
+    "Show Cached Asset Nodes": "显示用户自定义的缓存资产节点",
     "Category Color Display": "类目颜色显示",
     "Color Line": "颜色竖线",
     "Color Block": "颜色底块",
@@ -4778,8 +4779,8 @@ class ENS_AddNodeByEnglishSearch(Operator):
         self._keyboard_selection_active = bool(_normalize(self._search_query()) and self._results)
 
     def _search_query(self):
-        # Preview composition without committing it or intercepting IME keys.
-        return self._query + getattr(self, "_ime_preedit", "")
+        # Composition is drawn in the field but is not a search until committed.
+        return self._query
 
     def _showing_shortcuts(self):
         return not self._snippet_mode and not _normalize(self._search_query())
@@ -6156,16 +6157,22 @@ def _draw_update_header(layout, context):
     region_width = getattr(getattr(context, "region", None), "width", 800)
     available_width = max(120 * scale, region_width - 48 * scale)
     prefs = _preferences()
-    # Anchor Beta to the second column; only the selector absorbs extra width.
+    # Keep Beta at the end of the left half so the selector owns the right half.
     beta_width = 50 * scale
     buttons_width = 94 * scale
-    minimum_controls_width = beta_width + 145 * scale + buttons_width
+    minimum_controls_width = 145 * scale + buttons_width
     title_width = _text_width(title, font_size)
-    single_row = max(title_width + 120 * scale, minimum_controls_width) + 12 * scale <= available_width / 2
+    single_row = max(title_width + 120 * scale + beta_width, minimum_controls_width) + 12 * scale <= available_width / 2
     controls_width = available_width / 2 if single_row else available_width
 
     header = layout.split(factor=0.5, align=False) if single_row else layout.row()
-    identity = header.row(align=True)
+    beta = None
+    if single_row and prefs is not None:
+        left = header.split(factor=1 - beta_width / controls_width, align=True)
+        identity = left.row(align=True)
+        beta = left.row(align=True)
+    else:
+        identity = header.row(align=True)
     name = identity.row(align=True)
     name.ui_units_x = (title_width + 12 * scale) / (20 * scale)
     name.label(text=title)
@@ -6176,12 +6183,15 @@ def _draw_update_header(layout, context):
     actions = (header if single_row else layout).row(align=True)
     controls_enabled = UPDATE_JOB is None and state not in {"installed", "reloading", "waiting_reload"}
     if prefs is not None:
-        fields = actions.split(factor=min(0.4, beta_width / controls_width), align=True)
-        beta = fields.row(align=True)
+        if beta is None:
+            fields = actions.split(factor=min(0.4, beta_width / controls_width), align=True)
+            beta = fields.row(align=True)
+            actions = fields
+            controls_width -= beta_width
         beta.alignment = "LEFT"
         beta.enabled = controls_enabled
         beta.prop(prefs, "accept_beta_updates", text="Beta")
-        remaining = fields.split(factor=max(0.25, 1 - buttons_width / max(scale, controls_width - beta_width)), align=True)
+        remaining = actions.split(factor=max(0.25, 1 - buttons_width / max(scale, controls_width)), align=True)
         selector = remaining.row(align=True)
         selector.enabled = controls_enabled
         selector.prop(prefs, "update_release", text="")
@@ -6826,20 +6836,13 @@ class ENS_AddonPreferences(AddonPreferences):
         library_box = layout.box()
         library_header = library_box.row(align=True)
         library_header.label(text=_ui_text("Snippet Libraries"), icon="TRIA_DOWN")
-        library_outer = library_box.row(align=True)
-        library_list = library_outer.box()
+        library_list = library_box.box()
         library_row = library_list.row(align=True)
         library_row.label(text=_ui_text("Default Library"))
         library_row.label(text=_ui_text("Active"), icon="CHECKMARK")
         library_path_row = library_list.row(align=True)
         library_path_row.enabled = False
         library_path_row.label(text=str(_snippets_path()))
-        library_buttons = library_outer.column(align=True)
-        library_buttons.enabled = False
-        add_button = library_buttons.operator("wm.url_open", text="", icon="ADD")
-        add_button.url = ""
-        remove_button = library_buttons.operator("wm.url_open", text="", icon="REMOVE")
-        remove_button.url = ""
         library_box.prop(self, "snippet_library_path", text=_ui_text("Snippet Library File"))
 
 

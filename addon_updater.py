@@ -49,6 +49,7 @@ RELEASE_HIGHLIGHTS = {
     "1.5.1": "Preferences layout cleanup",
     "1.5.2": "Chinese and pinyin ranking alignment",
     "1.5.3": "English-only node search",
+    "1.5.4": "Search after IME confirmation",
 }
 PROTECTED_NAMES = {"node_console_settings.json", "node_console_snippets.json"}
 REQUIRED_FILES = {"__init__.py", "node_registry.py", "node_search_aliases.json",

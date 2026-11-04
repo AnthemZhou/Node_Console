@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.5.4
+
+<!-- node-console-summary: {"zh":"输入法确认后搜索","en":"Search after IME confirmation"} -->
+
+### 中文
+
+- 中、日、韩输入法组词与切换候选词时只重绘输入文字，保留结果列表、选中项和滚动位置；确认文字上屏后才刷新节点或组合点搜索。取消组词不重新检索，直接输入英文或拼音仍实时检索。分段提交仅检索已提交部分，不混入后续组词文字；日韩已补充模拟回归，真实系统输入法仍待实机验收。
+- 宽窗口下将 Beta 复选框移至更新栏左半区末端，扩大右侧版本下拉菜单；窄窗口保持两行布局，更新状态仍在版本号后显示。
+- 缓存资产开关文案改为「显示用户自定义的缓存资产节点」，保持原有开关行为。
+- 移除组合点库中未实现的加减占位按钮及错误网页提示；保留当前库路径和文件浏览入口，不改动库文件。
+
+### English
+
+- Redraw Chinese/Japanese/Korean IME composition without refreshing node/snippet results, selection or scroll position. Search only when committed text changes; cancelling composition does not search. Keep live search for direct English/pinyin input. Partial commits exclude subsequent preedit; Japanese/Korean synthetic regressions pass, while physical system-IME acceptance remains pending.
+- Move Beta to the end of the update header's left half on wide windows, giving the version selector more space. Retain the two-row narrow layout and inline update status.
+- Clarify the Chinese cached-asset label without changing the toggle's behavior.
+- Remove inactive snippet-library add/remove placeholders and their incorrect website tooltips. Retain the active library path and file browser without modifying library files.
+
 ## 1.5.3
 
 <!-- node-console-summary: {"zh":"英文单语节点搜索","en":"English-only node search"} -->

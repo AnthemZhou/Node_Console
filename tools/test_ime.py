@@ -1,5 +1,6 @@
 """Unit tests only: these do not prove real system IME composition works."""
 import ctypes
+from itertools import product
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -236,26 +237,26 @@ class AdapterTests(unittest.TestCase):
         self.assertFalse(second._ime_session.closed)
         self.assertIs(self.nc.ACTIVE_CONSOLE_OPERATOR, second)
 
-    def test_preedit_previews_without_committing(self):
+    def test_preedit_redraws_without_searching(self):
         op = self.open()
         op._ime_session.receive(2, "ji he")
         self.event(op)
         self.assertEqual(op._ime_preedit, "ji he")
         self.assertEqual(op._query, "")
-        op._refresh_query_results.assert_called_once()
+        op._refresh_query_results.assert_not_called()
         op._tag_owner_redraw.assert_called_once()
 
-    def test_cancel_preedit_restores_committed_query_results(self):
+    def test_cancel_preedit_keeps_committed_query_results(self):
         op = self.open()
         op._query = "noise "
         op._ime_session.receive(2, "she zhi")
         self.event(op)
-        op._refresh_query_results.reset_mock()
         op._ime_session.receive(2, "")
         self.event(op)
         self.assertEqual(op._query, "noise ")
         self.assertEqual(op._ime_preedit, "")
-        op._refresh_query_results.assert_called_once()
+        op._refresh_query_results.assert_not_called()
+        self.assertEqual(op._tag_owner_redraw.call_count, 2)
         self.assertFalse(op.finished)
 
     def test_preedit_coalesces_and_commit_bypasses_idle_redraw_gate(self):
@@ -264,14 +265,125 @@ class AdapterTests(unittest.TestCase):
             op._ime_session.receive(2, text)
         self.event(op)
         self.assertEqual(op._ime_preedit, "she zhi")
-        op._refresh_query_results.assert_called_once()
-        op._refresh_query_results.reset_mock()
+        op._refresh_query_results.assert_not_called()
         op._ime_session.receive(4, "设置")
         self.event(op)
         self.assertEqual(op._query, "设置")
         self.assertEqual(op.original_events, [])
         op._refresh_query_results.assert_called_once()
         self.assertEqual(op._tag_owner_redraw.call_count, 2)
+
+    def test_candidate_changes_do_not_search_in_either_backend_or_mode(self):
+        from ime_input.windows import WindowsSession
+        samples = (
+            ('zh', ('s', 'shi', 'shi li', '实力', '实例', ''), '设置', 'wei zhi'),
+            ('ja', ('n', 'の', 'のい', 'のいず', 'ノイズ', ''), '設定', 'いち'),
+            ('ko', ('ㄴ', '노', '논', '노', '노이', ''), '설정', 'ㅇ'),
+        )
+        for windows, snippet, sample in product((False, True), (False, True), samples):
+            language, preedits, committed, following = sample
+            for initial in ('', 'noise ', preedits[-2]):
+                with self.subTest(windows=windows, snippet=snippet, language=language, initial=initial):
+                    self.uninstall(self.context)
+                    session = FakeSession(None)
+                    if windows:
+                        session.drain_actions = lambda query, command: WindowsSession.drain_actions(session, query, command)
+                    self.uninstall = ime_adapter.install(self.nc, None, self.log, session_factory=lambda: session)
+                    op = self.open()
+                    op._query, op._snippet_mode = initial, snippet
+                    for preedit in preedits:
+                        session.receive(2, preedit)
+                        self.event(op)
+                        self.assertEqual(op._query, initial)
+                        self.assertEqual(op._ime_preedit, preedit)
+                        op._refresh_query_results.assert_not_called()
+                    self.assertEqual(op._tag_owner_redraw.call_count, len(preedits))
+                    session.receive(1 if windows else 4, committed if windows else initial + committed)
+                    session.receive(2, following)
+                    self.event(op)
+                    self.assertEqual(op._query, initial + committed)
+                    self.assertEqual(op._ime_preedit, following)
+                    op._refresh_query_results.assert_called_once()
+                    session.receive(2, '')
+                    self.event(op)
+                    op._refresh_query_results.assert_called_once()
+
+    def test_japanese_clause_and_korean_syllable_commits_exclude_new_composition(self):
+        from ime_input.windows import WindowsSession
+        samples = (
+            ('ja', ((('の', 'のいず', 'ノイズ'), 'ノイズ', 'て'),
+                    (('てく', 'てくすちゃ', 'テクスチャ'), 'テクスチャ', ''))),
+            ('ko', ((('ㄴ', '노'), '노', 'ㅇ'),
+                    (('이',), '이', 'ㅈ'), (('즈',), '즈', ''))),
+        )
+        for windows, snippet, sample in product((False, True), (False, True), samples):
+            language, stages = sample
+            with self.subTest(windows=windows, snippet=snippet, language=language):
+                self.uninstall(self.context)
+                session = FakeSession(None)
+                if windows:
+                    session.drain_actions = lambda query, command: WindowsSession.drain_actions(session, query, command)
+                self.uninstall = ime_adapter.install(self.nc, None, self.log, session_factory=lambda: session)
+                op = self.open()
+                op._snippet_mode = snippet
+                searched, expected = [], []
+                op._refresh_query_results.side_effect = lambda: searched.append(op._query)
+                query = ''
+                for preedits, committed, following in stages:
+                    for preedit in preedits:
+                        session.receive(2, preedit)
+                        self.event(op)
+                        self.assertEqual(op._query, query)
+                        self.assertEqual(searched, expected)
+                    query += committed
+                    session.receive(1 if windows else 4, committed if windows else query)
+                    session.receive(2, following)
+                    self.event(op)
+                    expected.append(query)
+                    self.assertEqual(searched, expected)
+                    self.assertEqual(op._ime_preedit, following)
+                session.receive(2, '')
+                self.event(op)
+                self.assertEqual(searched, expected)
+
+    def test_direct_english_and_pinyin_still_search_each_commit(self):
+        for text in ('noise', 'shili'):
+            with self.subTest(text=text):
+                op = self.open()
+                for index in range(1, len(text) + 1):
+                    op._ime_session.receive(4, text[:index])
+                    self.event(op)
+                    self.assertEqual(op._query, text[:index])
+                    self.assertEqual(op._refresh_query_results.call_count, index)
+
+    def test_repeated_same_commit_does_not_search_again(self):
+        op = self.open()
+        op._ime_session.receive(4, '实例')
+        self.event(op)
+        op._ime_session.receive(2, 'shi li')
+        self.event(op)
+        op._ime_session.receive(4, '实例')
+        self.event(op)
+        op._refresh_query_results.assert_called_once()
+        self.assertEqual(op._ime_preedit, '')
+
+    def test_windows_committed_query_is_searched_before_node_confirmation(self):
+        from ime_input.windows import WindowsSession
+        self.uninstall(self.context)
+        session = FakeSession(None)
+        session.drain_actions = lambda query, command: WindowsSession.drain_actions(session, query, command)
+        self.uninstall = ime_adapter.install(self.nc, None, self.log, session_factory=lambda: session)
+        op = self.open()
+        searched = []
+        op._refresh_query_results.side_effect = lambda: searched.append((op._query, op.hidden))
+        session.receive(2, 'shi li')
+        self.event(op)
+        self.assertEqual(searched, [])
+        session.receive(1, '实例')
+        session.receive(5, ('RET', False))
+        self.event(op)
+        self.assertEqual(searched, [('实例', False)])
+        self.assertTrue(op.hidden)
 
     def test_commit_refreshes_once_and_updates_query(self):
         op = self.open()

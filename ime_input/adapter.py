@@ -44,16 +44,16 @@ def install(nc, library, log, session_factory=None):
         while session.diagnostics:
             log("ime_key", detail=session.diagnostics.popleft())
         previous_query = self._query
-        refreshed = (previous_query, previous)
+        refreshed = previous_query
         outcome = None
 
         def command(query, kind, ctrl):
             nonlocal outcome, refreshed
-            if refreshed != (query, session.preedit):
+            self._ime_preedit = session.preedit
+            if refreshed != query:
                 self._query = query
-                self._ime_preedit = session.preedit
                 self._refresh_query_results()
-                refreshed = (query, session.preedit)
+                refreshed = query
             outcome = originals["modal"](self, context, _CommandEvent(event, kind, ctrl))
             return self._query
 
@@ -64,7 +64,8 @@ def install(nc, library, log, session_factory=None):
         if getattr(self, "_ime_session", None) is not session:
             return outcome
         self._ime_preedit = session.preedit
-        if refreshed != (self._query, self._ime_preedit):
+        # Candidate edits only redraw the field; keep results/selection stable.
+        if refreshed != self._query:
             self._refresh_query_results()
         if previous_query != self._query:
             log("ime_commit", query=self._query)

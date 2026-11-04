@@ -107,9 +107,23 @@ def main():
                         assert beta.parent.children[0] is beta
                     selector = next(item for item in props if item.props['name'] == 'update_release')
                     controls_width = (width - 48) * scale / (2 if width == 1200 else 1)
-                    assert abs(beta.parent.parent.props['factor'] * controls_width - 50 * scale) < 0.001
-                    selector_width = selector.parent.parent.props['factor'] * (controls_width - 50 * scale)
-                    assert abs(selector_width - (controls_width - 144 * scale)) < 0.001
+                    beta_split = beta.parent.parent
+                    if width == 1200:
+                        header = layout.children[0]
+                        assert beta_split is header.children[0]
+                        assert beta.parent is beta_split.children[1]
+                        assert labels[0] in list(beta_split.children[0].walk())
+                        assert selector in list(header.children[1].walk())
+                        assert abs((1 - beta_split.props['factor']) * controls_width - 50 * scale) < 0.001
+                        selector_space = controls_width
+                    else:
+                        assert beta_split is layout.children[1].children[0]
+                        assert abs(beta_split.props['factor'] * controls_width - 50 * scale) < 0.001
+                        selector_space = controls_width - 50 * scale
+                    selector_width = selector.parent.parent.props['factor'] * selector_space
+                    assert abs(selector_width - (selector_space - 94 * scale)) < 0.001
+                    enabled = state['state'] not in {'installed', 'reloading', 'waiting_reload'}
+                    assert beta.parent.enabled == selector.parent.enabled == enabled
                     backup = next(item for item in buttons if item.props['name'] == 'wm.path_open')
                     assert backup.filepath == state.get('backup', '')
                     assert backup.parent.enabled == bool(state.get('backup'))
@@ -174,6 +188,7 @@ def main():
                     assert nc._ui_text('Default Library') in labels(library_box)
                     assert any(x.kind == 'prop' and x.props['name'] == 'snippet_library_path'
                                for x in library_box.walk())
+                    assert not any(x.kind == 'operator' for x in library_box.walk())
                     toggle = next(x for x in snippet_box.walk() if x.kind == 'prop')
                     assert toggle.props['icon'] == ('TRIA_DOWN' if expanded else 'TRIA_RIGHT')
                     remove = [x for x in snippet_box.walk() if x.kind == 'operator']
@@ -190,6 +205,10 @@ def main():
                                    for x in prefs.layout.walk())
                     settings_box = prefs.layout.children[0]
                     assert settings_box.kind == 'box'
+                    asset_toggle = next(x for x in settings_box.walk()
+                                        if x.kind == 'prop' and x.props['name'] == 'scan_asset_libraries')
+                    assert asset_toggle.props['text'] == (
+                        '显示用户自定义的缓存资产节点' if language == 'zh_HANS' else 'Show Cached Asset Nodes')
                     social_index = 1 if width == 1200 else 2
                     social = settings_box.children[social_index]
                     assert social.kind == 'split' and social.props['factor'] == 0.5
