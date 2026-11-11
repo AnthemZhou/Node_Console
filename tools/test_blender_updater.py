@@ -54,8 +54,7 @@ def main():
         nc._preferences = lambda: prefs
         try:
             assert bpy.ops.node_console.update_addon.get_rna_type()
-            assert "filepath" in bpy.ops.wm.path_open.get_rna_type().properties
-            passed.append("updater operator registered and backup-folder control supported")
+            passed.append("updater operator registered")
             assert nc.ENS_AddonPreferences.bl_rna.properties["accept_beta_updates"].default is False
             assert bpy.ops.node_console.install_release.get_rna_type()
             assert not bpy.ops.node_console.install_release.poll()

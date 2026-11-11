@@ -30,13 +30,13 @@ from . import addon_reloader, addon_updater, node_registry, json_store
 from . import native_search, node_menu_search, search_language, pinyin_search
 
 
-ADDON_VERSION = "1.5.4"
+ADDON_VERSION = "1.5.5"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 5, 4),
+    "version": (1, 5, 5),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -225,6 +225,15 @@ SNIPPET_CATEGORY_ENUM_BY_TREE = {
 }
 SNIPPET_CATEGORY_NONE = (SNIPPET_CATEGORY_ENUM_ITEMS[-1],)
 
+SOCIAL_LINK_LABELS = {
+    "en": ("Bilibili:", "Xiaohongshu:", "Feishu:", "Technical Dictionary"),
+    "zh": ("B站:", "小红书:", "飞书:", "飞书技术字典"),
+    "ja": ("Bilibili:", "Xiaohongshu:", "Feishu:", "技術リファレンス"),
+    "ko": ("Bilibili:", "Xiaohongshu:", "Feishu:", "기술 자료실"),
+    "ru": ("Bilibili:", "Xiaohongshu:", "Feishu:", "Технический справочник"),
+    "es": ("Bilibili:", "Xiaohongshu:", "Feishu:", "Diccionario técnico"),
+}
+
 UI_TEXT_ZH = {
     "Search nodes...": "搜索节点...",
     "No results found": "没有找到结果",
@@ -239,6 +248,7 @@ UI_TEXT_ZH = {
     "Chinese and pinyin ranking alignment": "中文与拼音排序对齐",
     "English-only node search": "英文单语节点搜索",
     "Search after IME confirmation": "输入法确认后搜索",
+    "Preferences display fixes": "偏好设置显示修复",
     "Enable Chinese Fuzzy Match": "启用中文模糊检索",
     "May slightly slow live search": "可能会略微降低实时搜索速度",
     "Show Cached Asset Nodes": "显示用户自定义的缓存资产节点",
@@ -2630,6 +2640,19 @@ def _ui_text(text: str) -> str:
     if _is_chinese_interface():
         return UI_TEXT_ZH.get(text, text)
     return text
+
+
+def _social_link_labels():
+    language = "en"
+    try:
+        view = bpy.context.preferences.view
+        if view.use_translate_interface:
+            language = view.language
+            if language == "DEFAULT":
+                language = bpy.app.translations.locale
+    except (AttributeError, RuntimeError):
+        pass
+    return SOCIAL_LINK_LABELS.get(language.replace("-", "_").split("_")[0], SOCIAL_LINK_LABELS["en"])
 
 
 def _display_category_label(category: str) -> str:
@@ -6150,16 +6173,29 @@ def _draw_update_header(layout, context):
     title = f"Node Console v{ADDON_VERSION}"
     # The selector already conveys the normal state; only show actionable status.
     status_text = "" if state in {"idle", "available", "current", "updated"} else _update_status_text()
-    # Native widgets include display DPI, unlike the custom console's scale.
-    system = getattr(getattr(context, "preferences", None), "system", None)
+    # Split factors use layout coordinates, not pixels after Preferences zoom.
+    preferences = getattr(context, "preferences", None)
+    system = getattr(preferences, "system", None)
     scale = getattr(system, "ui_scale", _resolution_scale())
+    styles = getattr(preferences, "ui_styles", None)
+    if styles:
+        scale *= max(1.0, styles[0].widget.points / 11.0)
     font_size = _scaled(13, scale)
-    region_width = getattr(getattr(context, "region", None), "width", 800)
+    region = getattr(context, "region", None)
+    region_width = getattr(region, "width", 800)
+    view = getattr(region, "view2d", None)
+    if view is not None:
+        left_x, _ = view.region_to_view(0, 0)
+        right_x, _ = view.region_to_view(region_width, 0)
+        if right_x > left_x:
+            region_width = right_x - left_x
     available_width = max(120 * scale, region_width - 48 * scale)
     prefs = _preferences()
     # Keep Beta at the end of the left half so the selector owns the right half.
+    update_label = bpy.app.translations.pgettext_iface(
+        _ui_text("Update"), bpy.app.translations.contexts.operator_default)
     beta_width = 50 * scale
-    buttons_width = 94 * scale
+    buttons_width = max(70 * scale, _text_width(update_label, font_size) + 44 * scale)
     minimum_controls_width = 145 * scale + buttons_width
     title_width = _text_width(title, font_size)
     single_row = max(title_width + 120 * scale + beta_width, minimum_controls_width) + 12 * scale <= available_width / 2
@@ -6173,8 +6209,10 @@ def _draw_update_header(layout, context):
         beta = left.row(align=True)
     else:
         identity = header.row(align=True)
+    identity.alignment = "LEFT"
     name = identity.row(align=True)
-    name.ui_units_x = (title_width + 12 * scale) / (20 * scale)
+    # Native labels measure their own font, DPI and Preferences view zoom.
+    name.alignment = "LEFT"
     name.label(text=title)
     status = identity.row(align=True)
     status.alert = state == "error"
@@ -6202,15 +6240,11 @@ def _draw_update_header(layout, context):
     controls.enabled = controls_enabled
     refresh = controls.row(align=True)
     refresh.ui_units_x = 4.5
-    refresh.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text=_ui_text("Update"), icon="FILE_REFRESH")
+    refresh.operator(NODECONSOLE_OT_UpdateAddon.bl_idname, text=update_label, icon="FILE_REFRESH", translate=False)
     if prefs is not None:
         install = controls.row(align=True)
         install.operator_context = "INVOKE_DEFAULT"
         install.operator(NODECONSOLE_OT_InstallRelease.bl_idname, text="", icon="IMPORT")
-    backup = buttons.row(align=True)
-    backup.ui_units_x = 1.2
-    backup.enabled = bool(UPDATE_STATUS.get("backup"))
-    backup.operator("wm.path_open", text="", icon="FILE_FOLDER").filepath = UPDATE_STATUS.get("backup", "")
 
 
 def _accept_beta_updates():
@@ -6638,17 +6672,19 @@ class ENS_AddonPreferences(AddonPreferences):
         private_left = private_links.column(align=True)
         private_right = private_links.column(align=True)
 
-        def subdued_url_button(layout, prefix, title, url="", enabled=True):
+        def subdued_url_button(layout, prefix, title, url="", enabled=True, prefix_width=8):
             button_row = layout.row(align=True)
             button_row.enabled = enabled
-            text = f"{prefix:<8}{title}"
-            op = button_row.operator("wm.url_open", text=f"{text:<34}", icon="URL")
+            text = f"{prefix:<{prefix_width}}{title}"
+            op = button_row.operator("wm.url_open", text=f"{text:<34}", icon="URL", translate=False)
             op.url = url
 
-        subdued_url_button(private_left, "B站:", "周圣宇_Anthem", "https://space.bilibili.com/25142156?spm_id_from=333.1007.0.0")
-        subdued_url_button(private_left, "小红书:", "一周不剩", "https://xhslink.com/m/6zzQ97wiPAI")
+        bilibili, xiaohongshu, feishu, technical_dictionary = _social_link_labels()
+        prefix_width = max(8, len(bilibili) + 1, len(xiaohongshu) + 1)
+        subdued_url_button(private_left, bilibili, "周圣宇_Anthem", "https://space.bilibili.com/25142156?spm_id_from=333.1007.0.0", prefix_width=prefix_width)
+        subdued_url_button(private_left, xiaohongshu, "一周不剩", "https://xhslink.com/m/6zzQ97wiPAI", prefix_width=prefix_width)
 
-        subdued_url_button(private_right, "飞书:", "飞书技术字典", "https://dcnztj4835bh.feishu.cn/wiki/ClI2wK0nyi2DvckJA5wcbmf7nBe?from=from_copylink")
+        subdued_url_button(private_right, feishu, technical_dictionary, "https://dcnztj4835bh.feishu.cn/wiki/ClI2wK0nyi2DvckJA5wcbmf7nBe?from=from_copylink")
         subdued_url_button(private_right, "GitHub:", f"Node Console v{ADDON_VERSION}", "https://github.com/AnthemZhou")
 
         settings_box.separator(type="LINE")

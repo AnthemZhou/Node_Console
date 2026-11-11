@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.5
+
+<!-- node-console-summary: {"zh":"偏好设置显示修复","en":"Preferences display fixes"} -->
+
+### 中文
+
+- 修复偏好设置中版本号、Beta 和更新按钮文字被截断的问题；按原生文字宽度、界面区域缩放及字体大小分配空间，更新状态仍紧跟版本号显示，不因检查更新而新增一行。
+- 更新按钮按最终显示的本地化译文计算宽度；同步部分偏好设置文案的中、英、日、韩、俄、西语显示，保留账号名、插件名与链接地址。
+- 移除更新栏的备份文件夹按钮，将空间留给版本选择；后台自动备份和失败恢复机制保持不变。
+- README 以插件功能、安装和使用方法为主；逐版本变化保留在 Release 和变更日志中，保留现有横幅及六语言内容，发布维护步骤移至独立文档。
+- 保留现有搜索、输入法、收藏、快捷节点、组合点和设置。已在隔离的 macOS Blender 5.2.2 LTS / 5.1.2 中回归验证偏好设置与安装升级；本轮未新增 Windows/Linux 实机验证。
+
+### English
+
+- Fix clipped version, Beta and Update labels in Preferences. Account for native text sizing, editor-region zoom and font size; keep update status beside the version without adding a row when checking.
+- Size the Update button using its final translated label. Localize selected Preferences text for Chinese, English, Japanese, Korean, Russian and Spanish while preserving account names, product names and URLs.
+- Remove the backup-folder button from the update header, freeing space for version selection. Keep automatic backups and failure recovery unchanged.
+- Refocus the README on features, installation and usage. Keep version history in Releases and CHANGELOG, preserve the banner and six-language content, and move maintainer publishing steps to a separate guide.
+- Preserve search, IME input, favorites, shortcuts, snippets and settings. Regression-test Preferences and installation/upgrades in isolated macOS Blender 5.2.2 LTS / 5.1.2; no new Windows/Linux hardware validation.
+
 ## 1.5.4
 
 <!-- node-console-summary: {"zh":"输入法确认后搜索","en":"Search after IME confirmation"} -->
