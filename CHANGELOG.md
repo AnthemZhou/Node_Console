@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.6.0
+
+<!-- node-console-summary: {"zh":"Blender 5.3 节点支持","en":"Blender 5.3 node support"} -->
+
+### 中文
+
+- 适配正式发布的 Blender 5.3.0，继续通过实际注册类型、节点树创建能力和官方添加菜单生成索引，不按名称猜测 RNA ID。相对 5.2.2，核验 24 个新增公开内置类型，以及 36 项既有节点新增编辑器支持；同一类型在多个编辑器出现不重复算作新节点。
+- 覆盖栅格化点、栅格求解泊松、栅格拓扑布尔、停用体素、获取栅格名称、构造曲线、NURBS 阶数/权重、六个蜡笔输入、合并列表、获取矢量分量、几何体材质、设置点云类型、导入 SPZ、Comment，以及四个 EEVEE 灯光节点。材质编辑器的数学、字符串、Switch 等节点和合成器的 Bundle、数学、变换等新增支持沿用官方菜单条件。
+- 排除 Blender 明确限定内部使用的两个灯光迭代实现节点；EEVEE 灯光节点遵守渲染引擎及材质/世界上下文。Comment 使用中性的类目颜色。
+- 继续使用当前 Blender 安装包内、带翻译上下文的官方六语言译名；补充官方发布说明中使用的 Poisson Solver 搜索别名及“泊松”的正确拼音。别名不冒充官方界面译名，不修改用户界面语言。
+- 检查 5.3 的合成器效果堆栈和 Bloom 资产节点组，支持切换当前效果后创建节点。资产库遵守 `is_available()` 启用条件，禁用库不再从旧缓存返回；不自动下载未安装的在线资产。Miter Scale 等新增插口不单列成节点。
+- 按 Blender 版本、构建和索引结构刷新检索缓存；保留收藏、使用记录、快捷节点、组合点和设置。验证范围及限制见 PERFORMANCE.md。
+
+### English
+
+- Support released Blender 5.3.0 using actual RNA registrations, node-tree creation and official add menus. Compared with 5.2.2, verify 24 new public built-in types and 36 additional editor memberships for existing types; shared types are not counted as separate new nodes.
+- Cover volume/grid, curve/NURBS, six Grease Pencil inputs, list/vector/material, point-cloud/SPZ, Comment and four EEVEE lighting nodes, plus newly available shader math/string/switch and compositor bundle/math/transform nodes.
+- Exclude two internal-only light-iteration implementation nodes; respect engine/material/world menu conditions and use a neutral Comment category color.
+- Read context-aware official names in six languages from the installed Blender catalogs. Add the release-note term Poisson Solver as an alias and correct its Chinese pinyin, without changing official display names or the user's UI language.
+- Validate active compositor effect stacks and the bundled Bloom asset group. Respect asset-library availability, including cached disabled libraries; do not download remote assets implicitly or invent standalone nodes for new sockets.
+- Invalidate version/build/schema-specific indexes while preserving favorites, usage, shortcuts, snippets and preferences. See PERFORMANCE.md for actual test versions, coverage and limitations.
+
+Official references: [Geometry Nodes](https://developer.blender.org/docs/release_notes/5.3/geometry_nodes/), [Compositor](https://developer.blender.org/docs/release_notes/5.3/compositor/), [EEVEE](https://developer.blender.org/docs/release_notes/5.3/eevee/), [Python API](https://developer.blender.org/docs/release_notes/5.3/python_api/), [internal light nodes](https://github.com/blender/blender/blob/v5.3.0/source/blender/nodes/shader/nodes/node_shader_light_iter_internal.cc).
+
 ## 1.5.5
 
 <!-- node-console-summary: {"zh":"偏好设置显示修复","en":"Preferences display fixes"} -->

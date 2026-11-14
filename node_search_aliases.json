@@ -5,6 +5,7 @@
     "Field to List": ["场转列表"],
     "Closure to List": ["闭包转列表"],
     "Get List Item": ["获取列表项"],
+    "Grid Solve Poisson": ["Poisson Solver", "泊松求解器"],
     "Transfer Attributes": ["传输属性"],
     "Trim String": ["裁剪字符串"],
     "String To Image": ["字符串转图像"],

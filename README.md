@@ -2,16 +2,16 @@
 
 <img width="1920" height="600" alt="节点控制台 02" src="https://github.com/user-attachments/assets/c0468802-5677-4372-92f9-28a31d0f6dd7" />
 
-![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS-f5792a?logo=blender&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.5.5-blue)
+![Blender](https://img.shields.io/badge/Blender-5.1.2%20%7C%205.2.2%20LTS%20%7C%205.3.0-f5792a?logo=blender&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.6.0-blue)
 ![Category](https://img.shields.io/badge/category-Node%20Editor-555)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
 作者：Anthem  
-版本：1.5.5
+版本：1.6.0
 
-[下载 / Download](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.5) · [版本记录 / Releases](https://github.com/AnthemZhou/Node_Console/releases) · [Issues](https://github.com/AnthemZhou/Node_Console/issues)
+[下载 / Download](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.6.0) · [版本记录 / Releases](https://github.com/AnthemZhou/Node_Console/releases) · [Issues](https://github.com/AnthemZhou/Node_Console/issues)
 
 ## Languages / 语言
 
@@ -32,7 +32,7 @@ Node Console replaces `Shift + A` in Blender's Geometry, Shader and Compositor n
 
 ### Install
 
-1. Download [Node_Console_1.5.5.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.5.5/Node_Console_1.5.5.zip), not GitHub's automatically generated Source code archives.
+1. Download [Node_Console_1.6.0.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.6.0/Node_Console_1.6.0.zip), not GitHub's automatically generated Source code archives.
 2. Open Blender's `Edit > Preferences > Add-ons` and choose installation from disk.
 3. Select the ZIP and enable `Node Console`.
 
@@ -91,7 +91,7 @@ Updates keep a local backup and preserve settings, favorites, shortcuts and snip
 
 ### Compatibility
 
-- Tested Blender versions: 5.1.2 and 5.2.2 LTS. Available nodes depend on the running Blender version and editor.
+- Tested Blender versions: 5.1.2, 5.2.2 LTS and 5.3.0. Available nodes depend on the running Blender version, editor and render engine; only downloaded local assets can be created.
 - Chinese IME input has been used on Apple Silicon macOS and Windows. Real Japanese/Korean IMEs, Intel Macs, third-party IMEs and all display/keyboard configurations are not fully verified.
 - Linux supports direct English/pinyin input and pasted text; native IME integration is not provided. If native input cannot initialize, the standard input path remains available.
 - The add-on does not modify Blender's language files, node labels or socket labels.
@@ -107,7 +107,7 @@ Node Console は Blender のノード検索アドオンです。ジオメトリ�
 
 ### インストールと言語設定
 
-1. [リリースページ](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.5)から `Node_Console_1.5.5.zip` をダウンロードし、Blender の環境設定からインストールして有効にします。Source code ZIP は使いません。
+1. [リリースページ](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.6.0)から `Node_Console_1.6.0.zip` をダウンロードし、Blender の環境設定からインストールして有効にします。Source code ZIP は使いません。
 2. `Node Language` を `日本語` にします。`Search Result Display` で英語のみ、日本語のみ、または両方の表示順を選べます。英語だけで検索・表示したい場合は `Node Language` を `English` にします。
 
 ### 検索と操作
@@ -126,7 +126,7 @@ Node Console は Blender のノード検索アドオンです。ジオメトリ�
 
 ### 注意事項
 
-動作確認済みの Blender は 5.1.2 / 5.2.2 LTS です。ノード名は公式翻訳を使い、未翻訳の名前は英語で表示します。設定画面やメッセージは主に英語・中国語です。日本語・韓国語の実際のシステム IME や全キーボード配置は、Mac/Windows での実機検証がまだ必要です。
+動作確認済みの Blender は 5.1.2 / 5.2.2 LTS / 5.3.0 です。ノード名は公式翻訳を使い、未翻訳の名前は英語で表示します。設定画面やメッセージは主に英語・中国語です。日本語・韓国語の実際のシステム IME や全キーボード配置は、Mac/Windows での実機検証がまだ必要です。
 
 バージョンごとの変更は [Releases](https://github.com/AnthemZhou/Node_Console/releases) と[変更履歴](CHANGELOG.md)、詳しい検証範囲は [PERFORMANCE.md](PERFORMANCE.md) を参照してください。
 
@@ -139,7 +139,7 @@ Node Console은 Blender의 지오메트리, 셰이더, 컴포지터 노드 편�
 
 ### 설치와 언어 설정
 
-1. [릴리스 페이지](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.5)에서 `Node_Console_1.5.5.zip`을 받아 Blender 환경설정에서 설치하고 활성화합니다. Source code ZIP은 사용하지 않습니다.
+1. [릴리스 페이지](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.6.0)에서 `Node_Console_1.6.0.zip`을 받아 Blender 환경설정에서 설치하고 활성화합니다. Source code ZIP은 사용하지 않습니다.
 2. `Node Language`를 `한국어`로 선택합니다. `Search Result Display`에서 영어만, 한국어만 또는 두 언어의 표시 순서를 선택할 수 있습니다. 영어로만 검색하고 표시하려면 `Node Language`를 `English`로 선택합니다.
 
 ### 검색과 조작
@@ -158,7 +158,7 @@ Node Console은 Blender의 지오메트리, 셰이더, 컴포지터 노드 편�
 
 ### 참고 사항
 
-검증한 Blender 버전은 5.1.2 / 5.2.2 LTS입니다. 노드 이름은 공식 번역을 사용하며, 번역이 없으면 영어로 표시합니다. 설정과 메시지는 주로 영어·중국어입니다. 한국어·일본어 시스템 IME와 모든 키보드 배열은 Mac/Windows 실기기 검증이 더 필요합니다.
+검증한 Blender 버전은 5.1.2 / 5.2.2 LTS / 5.3.0입니다. 노드 이름은 공식 번역을 사용하며, 번역이 없으면 영어로 표시합니다. 설정과 메시지는 주로 영어·중국어입니다. 한국어·일본어 시스템 IME와 모든 키보드 배열은 Mac/Windows 실기기 검증이 더 필요합니다.
 
 버전별 변경 내용은 [Releases](https://github.com/AnthemZhou/Node_Console/releases)와 [변경 기록](CHANGELOG.md), 상세 검증 범위는 [PERFORMANCE.md](PERFORMANCE.md)를 참고하세요.
 
@@ -171,7 +171,7 @@ Node Console помогает искать и добавлять узлы в р�
 
 ### Установка и язык
 
-1. Скачайте `Node_Console_1.5.5.zip` со [страницы релиза](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.5), установите через настройки Blender и включите Node Console. Не используйте архив Source code.
+1. Скачайте `Node_Console_1.6.0.zip` со [страницы релиза](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.6.0), установите через настройки Blender и включите Node Console. Не используйте архив Source code.
 2. В `Node Language` выберите `Русский`. Параметр `Search Result Display` задаёт английские, русские или двуязычные названия и их порядок. Для поиска только на английском выберите `English` в `Node Language`.
 
 ### Поиск и работа с узлами
@@ -190,7 +190,7 @@ Node Console помогает искать и добавлять узлы в р�
 
 ### Ограничения
 
-Проверены Blender 5.1.2 и 5.2.2 LTS. Названия используют официальный перевод Blender с возвратом к английскому при его отсутствии. Настройки и сообщения преимущественно на английском и китайском. Не все системные IME, клавиатуры и окна кандидатов на Mac/Windows проверены на реальном оборудовании, особенно для японского и корейского.
+Проверены Blender 5.1.2, 5.2.2 LTS и 5.3.0. Названия используют официальный перевод Blender с возвратом к английскому при его отсутствии. Настройки и сообщения преимущественно на английском и китайском. Не все системные IME, клавиатуры и окна кандидатов на Mac/Windows проверены на реальном оборудовании, особенно для японского и корейского.
 
 Изменения версий: [Releases](https://github.com/AnthemZhou/Node_Console/releases) и [история изменений](CHANGELOG.md). Подробности проверок: [PERFORMANCE.md](PERFORMANCE.md).
 
@@ -203,7 +203,7 @@ Node Console facilita la búsqueda y creación de nodos en los editores de geome
 
 ### Instalación e idioma
 
-1. Descarga `Node_Console_1.5.5.zip` desde la [página de la versión](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.5.5), instálalo desde las preferencias de Blender y activa Node Console. No uses los archivos Source code.
+1. Descarga `Node_Console_1.6.0.zip` desde la [página de la versión](https://github.com/AnthemZhou/Node_Console/releases/tag/v1.6.0), instálalo desde las preferencias de Blender y activa Node Console. No uses los archivos Source code.
 2. Selecciona `Español` en `Node Language`. `Search Result Display` permite mostrar inglés, español o ambos idiomas en el orden que prefieras. Para buscar solo en inglés, selecciona `English` en `Node Language`.
 
 ### Búsqueda y uso
@@ -222,7 +222,7 @@ El botón de actualización consulta las versiones de GitHub. Selecciona una ver
 
 ### Compatibilidad
 
-Versiones de Blender comprobadas: 5.1.2 y 5.2.2 LTS. Se usan traducciones oficiales con nombres en inglés cuando faltan traducciones. Los ajustes y mensajes siguen principalmente en inglés y chino. No se han verificado todos los métodos de entrada, teclados y candidatos en equipos Mac/Windows reales, especialmente los IME japonés y coreano.
+Versiones de Blender comprobadas: 5.1.2, 5.2.2 LTS y 5.3.0. Se usan traducciones oficiales con nombres en inglés cuando faltan traducciones. Los ajustes y mensajes siguen principalmente en inglés y chino. No se han verificado todos los métodos de entrada, teclados y candidatos en equipos Mac/Windows reales, especialmente los IME japonés y coreano.
 
 Cambios por versión: [Releases](https://github.com/AnthemZhou/Node_Console/releases) y [registro de cambios](CHANGELOG.md). Pruebas y limitaciones: [PERFORMANCE.md](PERFORMANCE.md).
 
@@ -244,7 +244,7 @@ Node Console 是一个 Blender 节点搜索增强插件。在几何、材质和�
 
 ### 安装
 
-1. 下载 [Node_Console_1.5.5.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.5.5/Node_Console_1.5.5.zip)，不要使用 GitHub 自动生成的 Source code 压缩包。
+1. 下载 [Node_Console_1.6.0.zip](https://github.com/AnthemZhou/Node_Console/releases/download/v1.6.0/Node_Console_1.6.0.zip)，不要使用 GitHub 自动生成的 Source code 压缩包。
 2. 打开 Blender 的 `编辑 > 偏好设置 > 插件`，选择从磁盘安装。
 3. 选择 ZIP 文件并启用 `Node Console`。
 
@@ -303,7 +303,7 @@ macOS 和 Windows 用户可以直接使用中文输入法。组词时显示带�
 
 ### 兼容与说明
 
-- 已测试的 Blender 版本为 5.1.2 和 5.2.2 LTS；可用节点随当前 Blender 版本与编辑器而定。
+- 已测试的 Blender 版本为 5.1.2、5.2.2 LTS 和 5.3.0；可用节点随当前 Blender 版本、编辑器及渲染引擎而定，资产节点仅支持创建已下载到本地的内容。
 - 中文输入已有 Apple Silicon macOS 和 Windows 使用验证；日韩真实输入法、Intel Mac、第三方输入法以及所有显示和键盘配置尚未完整验证。
 - Linux 支持英文、拼音直接输入及粘贴文本，暂未提供原生输入法集成；原生输入模块初始化失败时会保留普通输入路径。
 - 插件不会修改 Blender 的语言文件、节点标签或插口标签。

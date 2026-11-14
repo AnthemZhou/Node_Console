@@ -30,13 +30,13 @@ from . import addon_reloader, addon_updater, node_registry, json_store
 from . import native_search, node_menu_search, search_language, pinyin_search
 
 
-ADDON_VERSION = "1.5.5"
+ADDON_VERSION = "1.6.0"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 5, 5),
+    "version": (1, 6, 0),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -249,6 +249,7 @@ UI_TEXT_ZH = {
     "English-only node search": "英文单语节点搜索",
     "Search after IME confirmation": "输入法确认后搜索",
     "Preferences display fixes": "偏好设置显示修复",
+    "Blender 5.3 node support": "Blender 5.3 节点支持",
     "Enable Chinese Fuzzy Match": "启用中文模糊检索",
     "May slightly slow live search": "可能会略微降低实时搜索速度",
     "Show Cached Asset Nodes": "显示用户自定义的缓存资产节点",
@@ -548,6 +549,7 @@ PINYIN_PHRASE_TABLE = {
     "重复": "chong fu",
     "行列式": "hang lie shi",
     "栅格": "zha ge",
+    "泊松": "bo song",
     "山格": "shan ge",
     "框": "kuang",
     "校正": "jiao zheng",
@@ -2251,7 +2253,7 @@ def _asset_index_signature() -> str:
     prefs = _preferences()
     if prefs and not prefs.scan_asset_libraries:
         return "assets-disabled"
-    payload = json.dumps(_load_asset_index(), ensure_ascii=False, sort_keys=True)
+    payload = json.dumps((_load_asset_index(), _asset_library_roots()), ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
 
 
@@ -2818,7 +2820,7 @@ def _entry_base_type_color(entry: NodeSearchEntry) -> tuple[float, float, float,
 
     if entry.kind == "SNIPPET" and entry.node_type.startswith("Snippet:"):
         return NODE_TYPE_COLORS.get(entry.node_type.split(":", 1)[1], CATEGORY_COLOR_FALLBACK)
-    if entry.node_type in {"NodeGroupInput", "NodeGroupOutput", "GeometryNodeViewer"}:
+    if entry.node_type in {"NodeGroupInput", "NodeGroupOutput", "GeometryNodeViewer", "NodeComment"}:
         return NODE_TYPE_COLORS["output"]
     # These outputs are red when first created; Viewer and group interfaces
     # intentionally keep their neutral search colors.
@@ -3548,18 +3550,29 @@ def _built_in_asset_node_directories() -> list[Path]:
     return directories
 
 
-def _external_asset_node_directories() -> list[Path]:
-    directories = []
+def _asset_library_roots() -> tuple:
+    roots = []
     try:
         for library in bpy.context.preferences.filepaths.asset_libraries:
             if not library.path:
                 continue
-            library_path = Path(bpy.path.abspath(library.path))
-            if library_path.exists():
-                directories.append(library_path)
+            library_path = Path(bpy.path.abspath(library.path)).resolve()
+            available = getattr(library, "is_available", None)
+            enabled = available() if callable(available) else getattr(library, "enabled", True)
+            roots.append((str(library_path), bool(enabled)))
     except Exception:
         pass
-    return directories
+    return tuple(sorted(roots))
+
+
+def _external_asset_node_directories() -> list[Path]:
+    return [Path(path) for path, enabled in _asset_library_roots()
+            if enabled and Path(path).is_dir()]
+
+
+def _asset_library_path_available(path: Path, roots: tuple) -> bool:
+    matches = [enabled for root, enabled in roots if path.is_relative_to(root)]
+    return not matches or any(matches)
 
 
 def _asset_category_from_catalog(catalog_name: str, blend_path: Path) -> str:
@@ -3765,8 +3778,11 @@ def _iter_asset_node_groups():
     if prefs and not prefs.scan_asset_libraries:
         return
 
+    roots = _asset_library_roots()
     for item in _load_asset_index():
-        yield Path(item["path"]), item
+        path = Path(item["path"])
+        if not roots or _asset_library_path_available(path.resolve(), roots):
+            yield path, item
 
 
 def _make_english_search_text(english: str, node_type: str = "") -> str:
@@ -3804,6 +3820,7 @@ def _rebuild_search_entries(context):
     runtime = node_registry.runtime_signature(tree) if tree else None
     capabilities = node_registry.inventory(tree, runtime) if tree else {}
     cache_key = _search_index_cache_key(context, runtime)
+    asset_roots = _asset_library_roots()
 
     language = _search_language()
     seen_keys = set()
@@ -3825,6 +3842,9 @@ def _rebuild_search_entries(context):
         if _is_redundant_mix_color_entry(entry):
             return
         if entry.kind == "ASSET":
+            if (asset_roots and entry.asset_path
+                    and not _asset_library_path_available(Path(entry.asset_path).resolve(), asset_roots)):
+                return
             aliases = node_registry.search_aliases(entry.english, language)
             if aliases != entry.aliases:
                 entry = replace(entry, aliases=aliases)

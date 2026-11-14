@@ -1,5 +1,58 @@
 # Node Console Performance
 
+## 1.6.0 Blender 5.3 Compatibility
+
+Tested on macOS arm64 in private factory profiles, without loading or saving
+the user's preferences: Blender 5.3.0 (`02f0899d78e3`), 5.2.2 LTS
+(`d13f752e3b9c`), and 5.1.2 (`ec6e62d40fa9`). The 5.3 executable comes from the
+official release DMG, verified against Blender's published SHA256 checksum.
+
+The independent RNA creation audit finds 26 new registered types relative to
+5.2.2. Two light-iteration implementation types have a native `add_ui_poll`
+that always rejects UI creation; Node Console excludes these. The remaining
+24 are public new types. Across Geometry/Shader/Compositor there are 20/25/19
+additional public type-editor memberships: 28 belong to those shared new types,
+and 36 are existing types gaining an editor (19 shader, 17 compositor). These
+are capability counts, not counts of unique search rows or parameter variants.
+
+`tools/test_blender_53.py` checks all 64 memberships against actual registrations,
+official menus, English/Chinese/pinyin/initial queries and real node creation:
+532 query assertions, 133 creations including operation variants, and 128 color
+checks. Comment uses neutral gray; existing interface-category nodes retain
+their established behavior. The test also checks EEVEE-only context filtering,
+Poisson Solver aliases/pronunciation, Bloom as a bundled asset rather than a
+fabricated RNA type, library availability/cache invalidation, and older-version
+gating. Curve to Mesh's Miter Scale is verified as a socket, not a node.
+
+Full six-language indexing and creation regressions:
+
+| Actual Blender | Search assertions | Node creations |
+| --- | ---: | ---: |
+| 5.3.0 | 27,720 | 7,188 |
+| 5.2.2 LTS | 24,627 | 6,396 |
+| 5.1.2 | 22,650 | 5,862 |
+
+Translations are compared with independently loaded official MO catalogs and
+their RNA contexts. Tests retain UI language, favorites, usage, shortcuts and
+settings; cache identities survive cold/warm reloads. The 5.3 cache suite passes
+24 cases. Official add-menu paths are compared with direct Blender menu draws
+in English/Chinese on 5.3; the old 5.2.2 screenshot fixture is only evaluated
+on 5.2.2, not presented as 5.3 native search-order validation.
+
+The isolated UI test `tools/test_compositor_effects_ui.py` switches between two
+unpinned scene effects and creates Get Vector Component, Comment, Bloom and
+Typed Bundle in the active effect. The real GPU popup harness passes 15
+synthetic composition/commit/cancel observations across three open/close cycles:
+uncommitted text does not refresh results. This is not a physical system-IME
+acceptance test. The 156-test Python suite passes, the ZIP installs in 5.3, and
+the published 1.5.5 updater upgrades to 1.6.0 on all three Blender versions while
+preserving user files, unsaved nodes, unrelated keymaps and native IME loading.
+
+No new Windows/Linux hardware run, exhaustive numerical/rendering verification,
+live online-asset download or universal native search-order parity is claimed.
+No search-scoring/weight changes are made. Reports and screenshots remain under
+ignored `build/`; they are not bundled with the plugin or committed separately.
+
 ## 1.5.4 Search After IME Confirmation
 
 In-progress IME text now updates the input field only. Node and snippet queries

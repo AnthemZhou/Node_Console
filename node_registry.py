@@ -6,7 +6,13 @@ from pathlib import Path
 import bpy
 from .search_language import search_key
 
-INDEX_SCHEMA = 7
+INDEX_SCHEMA = 8
+# Blender's C++ add_ui_poll rejects these GPU implementation nodes even though
+# nodes.new accepts them. They are not public add-menu/search entries.
+INTERNAL_NODE_TYPES = frozenset({
+    'ShaderNodeLightIterInternalInput',
+    'ShaderNodeLightIterInternalOutput',
+})
 LANGUAGES = (
     ('zh_HANS', '中文', ('zh_HANS', 'zh_CN')),
     ('ja_JP', '日本語', ('ja_JP', 'ja')),
@@ -46,7 +52,8 @@ def node_classes():
     for name in dir(bpy.types):
         cls = getattr(bpy.types, name)
         if isinstance(cls, type) and issubclass(cls, bpy.types.Node):
-            if cls.bl_rna.identifier == name and bpy.types.Node.bl_rna_get_subclass(name):
+            if (name not in INTERNAL_NODE_TYPES and cls.bl_rna.identifier == name
+                    and bpy.types.Node.bl_rna_get_subclass(name)):
                 yield cls
 
 
