@@ -22,7 +22,10 @@ assert scripts.parent.name.startswith('node-console-isolated-')
 bpy.context.preferences.use_preferences_save = False
 bpy.context.preferences.view.show_splash = False
 english = '--english' in sys.argv
-bpy.context.preferences.view.language = 'en_US' if english else 'zh_HANS'
+language = sys.argv[sys.argv.index('--language') + 1] if '--language' in sys.argv else 'en_US' if english else 'zh_HANS'
+bpy.context.preferences.view.language = language
+bpy.context.preferences.view.use_translate_interface = True
+bpy.context.preferences.view.use_translate_tooltips = True
 target = scripts / 'addons' / 'Node_Console'
 for name in RUNTIME_FILES:
     destination = target / name

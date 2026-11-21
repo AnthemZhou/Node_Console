@@ -256,8 +256,7 @@ def main():
                     assert settings_box.kind == 'box'
                     asset_toggle = next(x for x in settings_box.walk()
                                         if x.kind == 'prop' and x.props['name'] == 'scan_asset_libraries')
-                    assert asset_toggle.props['text'] == (
-                        '显示用户自定义的缓存资产节点' if language == 'zh_HANS' else 'Show Cached Asset Nodes')
+                    assert asset_toggle.props['text'] == nc._ui_text('Show Cached Asset Nodes')
                     social_index = 1 if width == 1200 else 2
                     social = settings_box.children[social_index]
                     assert social.kind == 'split' and social.props['factor'] == 0.5

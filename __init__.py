@@ -23,20 +23,21 @@ from bpy.types import AddonPreferences, Operator, SpaceNodeEditor
 from gpu_extras.batch import batch_for_shader
 
 # Blender may reload only this file when an installed add-on is re-enabled.
-for _child_name in ("addon_reloader", "addon_updater", "search_language", "node_registry", "native_search", "pinyin_search", "node_menu_search", "json_store", "ime_input"):
+for _child_name in ("addon_reloader", "addon_updater", "search_language", "ui_translations", "node_registry", "native_search", "pinyin_search", "node_menu_search", "json_store", "ime_input"):
     if _child_name in globals():
         importlib.reload(globals()[_child_name])
 from . import addon_reloader, addon_updater, node_registry, json_store
 from . import native_search, node_menu_search, search_language, pinyin_search
+from . import ui_translations
 
 
-ADDON_VERSION = "1.6.0"
+ADDON_VERSION = "1.6.1"
 
 
 bl_info = {
     "name": "Node Console",
     "author": "Anthem",
-    "version": (1, 6, 0),
+    "version": (1, 6, 1),
     "blender": (5, 1, 2),
     "location": "Node Editor > Shift A",
     "description": "Language-independent custom node launcher with favorite boosting.",
@@ -374,30 +375,9 @@ UI_TEXT_ZH = {
     "Installed files changed; restart Blender before updating": "安装文件已变化，请重启 Blender 后再更新",
 }
 
-TRANSLATIONS = {
-    "zh_HANS": {
-        ("*", "Color Line"): "颜色竖线",
-        ("*", "Color Block"): "颜色底块",
-        ("*", "Off"): "关闭",
-        ("*", "Show a slim category color line at the left edge"): "在左侧显示一条类目颜色竖线",
-        ("*", "Show colored category backgrounds"): "显示类目颜色底块",
-        ("*", "Hide category color decorations"): "关闭类目颜色装饰",
-        ("*", "Save Snippet Node"): "保存组合点",
-        ("*", "Snippet Node Name"): "组合点名称",
-        ("*", "Snippet Node Category"): "组合点类目",
-    },
-    "zh_CN": {
-        ("*", "Color Line"): "颜色竖线",
-        ("*", "Color Block"): "颜色底块",
-        ("*", "Off"): "关闭",
-        ("*", "Show a slim category color line at the left edge"): "在左侧显示一条类目颜色竖线",
-        ("*", "Show colored category backgrounds"): "显示类目颜色底块",
-        ("*", "Hide category color decorations"): "关闭类目颜色装饰",
-        ("*", "Save Snippet Node"): "保存组合点",
-        ("*", "Snippet Node Name"): "组合点名称",
-        ("*", "Snippet Node Category"): "组合点类目",
-    },
-}
+UI_TEXT = ui_translations.catalogs(UI_TEXT_ZH)
+UI_TEXT_ZH = UI_TEXT["zh"]
+TRANSLATIONS = ui_translations.blender_catalog(UI_TEXT)
 
 
 @dataclass(frozen=True)
@@ -2630,31 +2610,25 @@ def _display_mode_items(self, _context):
     return DISPLAY_MODE_ITEMS.get(self.search_language, DISPLAY_MODE_ITEMS["zh_HANS"])
 
 
-def _is_chinese_interface() -> bool:
+def _ui_language() -> str:
     try:
         view = bpy.context.preferences.view
-        return bool(view.use_translate_interface and str(view.language).startswith("zh"))
-    except Exception:
-        return False
+        return ui_translations.language_code(view.language, bpy.app.translations.locale,
+                                             view.use_translate_interface)
+    except (AttributeError, RuntimeError):
+        return "en"
+
+
+def _is_chinese_interface() -> bool:
+    return _ui_language() == "zh"
 
 
 def _ui_text(text: str) -> str:
-    if _is_chinese_interface():
-        return UI_TEXT_ZH.get(text, text)
-    return text
+    return UI_TEXT[_ui_language()].get(text, text)
 
 
 def _social_link_labels():
-    language = "en"
-    try:
-        view = bpy.context.preferences.view
-        if view.use_translate_interface:
-            language = view.language
-            if language == "DEFAULT":
-                language = bpy.app.translations.locale
-    except (AttributeError, RuntimeError):
-        pass
-    return SOCIAL_LINK_LABELS.get(language.replace("-", "_").split("_")[0], SOCIAL_LINK_LABELS["en"])
+    return SOCIAL_LINK_LABELS[_ui_language()]
 
 
 def _display_category_label(category: str) -> str:
@@ -4731,7 +4705,7 @@ def _clip_text(text: str, max_width: float, size: int) -> str:
 class ENS_AddNodeByEnglishSearch(Operator):
     bl_idname = "node.node_console"
     bl_label = "Node Console"
-    bl_description = "Search and add nodes by English name"
+    bl_description = "Search and add nodes"
     bl_options = {"REGISTER", "UNDO"}
 
     _draw_handler = None
@@ -5928,7 +5902,7 @@ class NODECONSOLE_OT_RefreshAssetIndex(Operator):
 
     def execute(self, _context):
         count = _refresh_asset_index()
-        self.report({"INFO"}, f"Node Console cached {count} asset node groups")
+        self.report({"INFO"}, _ui_text("Node Console cached {count} asset node groups").format(count=count))
         return {"FINISHED"}
 
 
@@ -5965,17 +5939,19 @@ class NODECONSOLE_OT_SaveSnippet(Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     snippet_name: StringProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Snippet Node Name",
         description="Name used to search this snippet",
         default="",
     )
     category: EnumProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Snippet Node Category",
         description="Category color and grouping for this snippet",
         items=_snippet_category_enum_items,
         default=SNIPPET_CATEGORY_NONE[0][3],
     )
-    category_tree_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    category_tree_id: StringProperty(translation_context=ui_translations.CONTEXT, options={"HIDDEN", "SKIP_SAVE"})
 
     @classmethod
     def poll(cls, context):
@@ -6090,7 +6066,7 @@ class NODECONSOLE_OT_RemoveSnippet(Operator):
     bl_description = "Remove this saved Node Console snippet"
     bl_options = {"INTERNAL"}
 
-    snippet_id: StringProperty(default="")
+    snippet_id: StringProperty(translation_context=ui_translations.CONTEXT, default="")
 
     def execute(self, context):
         snippet_id = self.snippet_id
@@ -6111,8 +6087,8 @@ class NODECONSOLE_OT_RemoveFavorite(Operator):
     bl_description = "Remove this node from Node Console favorites"
     bl_options = {"INTERNAL"}
 
-    identifier: StringProperty()
-    tree_id: StringProperty(default="")
+    identifier: StringProperty(translation_context=ui_translations.CONTEXT)
+    tree_id: StringProperty(translation_context=ui_translations.CONTEXT, default="")
 
     def execute(self, _context):
         _remove_favorite(self.identifier, self.tree_id)
@@ -6125,8 +6101,8 @@ class NODECONSOLE_OT_RemoveShortcut(Operator):
     bl_description = "Remove this node shortcut"
     bl_options = {"INTERNAL"}
 
-    identifier: StringProperty()
-    tree_id: StringProperty(default="")
+    identifier: StringProperty(translation_context=ui_translations.CONTEXT)
+    tree_id: StringProperty(translation_context=ui_translations.CONTEXT, default="")
 
     def execute(self, _context):
         _remove_shortcut(self.identifier, self.tree_id)
@@ -6139,9 +6115,9 @@ class NODECONSOLE_OT_MoveShortcut(Operator):
     bl_description = "Move this shortcut"
     bl_options = {"INTERNAL"}
 
-    identifier: StringProperty()
-    direction: StringProperty(default="UP")
-    tree_id: StringProperty(default="")
+    identifier: StringProperty(translation_context=ui_translations.CONTEXT)
+    direction: StringProperty(translation_context=ui_translations.CONTEXT, default="UP")
+    tree_id: StringProperty(translation_context=ui_translations.CONTEXT, default="")
 
     def execute(self, _context):
         _move_shortcut(self.identifier, -1 if self.direction == "UP" else 1, self.tree_id)
@@ -6212,8 +6188,7 @@ def _draw_update_header(layout, context):
     available_width = max(120 * scale, region_width - 48 * scale)
     prefs = _preferences()
     # Keep Beta at the end of the left half so the selector owns the right half.
-    update_label = bpy.app.translations.pgettext_iface(
-        _ui_text("Update"), bpy.app.translations.contexts.operator_default)
+    update_label = _ui_text("Update")
     beta_width = 50 * scale
     buttons_width = max(70 * scale, _text_width(update_label, font_size) + 44 * scale)
     minimum_controls_width = 145 * scale + buttons_width
@@ -6248,7 +6223,7 @@ def _draw_update_header(layout, context):
             controls_width -= beta_width
         beta.alignment = "LEFT"
         beta.enabled = controls_enabled
-        beta.prop(prefs, "accept_beta_updates", text="Beta")
+        beta.prop(prefs, "accept_beta_updates", text="Beta", translate=False)
         remaining = actions.split(factor=max(0.25, 1 - buttons_width / max(scale, controls_width)), align=True)
         selector = remaining.row(align=True)
         selector.enabled = controls_enabled
@@ -6280,12 +6255,13 @@ def _release_label(release):
     if release["version"] == ADDON_VERSION:
         channel = _ui_text("Installed")
     summary = release.get("summary", {})
-    language = "zh" if _is_chinese_interface() else "en"
+    language = _ui_language()
     highlight = summary.get(language)
     if not highlight:
         historical = addon_updater.RELEASE_HIGHLIGHTS.get(release["version"])
         highlight = (_ui_text(historical) if historical else
-                     summary.get("en") or summary.get("zh") or _ui_text("See release notes"))
+                     _ui_text(summary["en"]) if summary.get("en") else
+                     summary.get("zh") or _ui_text("See release notes"))
     if language == "zh":
         return f"{release['version']}（{highlight}，{channel}）"
     return f"{release['version']} ({highlight}; {channel})"
@@ -6521,19 +6497,21 @@ class ENS_AddonPreferences(AddonPreferences):
     bl_idname = ADDON_ID
 
     search_language: EnumProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Node Language",
         description="Use English only, or search English and a second language using Blender's installed translations",
         items=NODE_LANGUAGE_ITEMS,
         default=_default_search_language(), update=_node_language_changed,
     )
 
-    accept_beta_updates: BoolProperty(name="Accept Beta Versions",
+    accept_beta_updates: BoolProperty(translation_context=ui_translations.CONTEXT, name="Accept Beta Versions",
         description="Include published prereleases when checking for updates; does not install automatically",
         default=False, update=_beta_updates_changed)
-    update_release: EnumProperty(name="Available Versions", items=_update_release_items,
+    update_release: EnumProperty(translation_context=ui_translations.CONTEXT, name="Available Versions", items=_update_release_items,
                                  update=_update_release_changed, options={"SKIP_SAVE"})
 
     display_mode: EnumProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Search Result Display",
         description="How node names are shown in the custom search panel",
         items=_display_mode_items,
@@ -6541,12 +6519,14 @@ class ENS_AddonPreferences(AddonPreferences):
         update=_preference_changed,
     )
     chinese_fuzzy_match: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Enable Chinese Fuzzy Match",
         description="Allow sparse Chinese/pinyin matching such as '设置法向' matching '设置曲线法向'. May make searching slightly slower.",
         default=False,
         update=_preference_changed,
     )
     shortcut_key: EnumProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Shortcut Key",
         description="Keyboard key used to open Node Console in the node editor",
         items=(
@@ -6558,30 +6538,35 @@ class ENS_AddonPreferences(AddonPreferences):
         update=_shortcut_changed,
     )
     shortcut_shift: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Shift",
         description="Require Shift for the Node Console shortcut",
         default=True,
         update=_shortcut_changed,
     )
     shortcut_ctrl: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Ctrl",
         description="Require Ctrl for the Node Console shortcut",
         default=False,
         update=_shortcut_changed,
     )
     shortcut_alt: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Alt",
         description="Require Alt for the Node Console shortcut",
         default=False,
         update=_shortcut_changed,
     )
     shortcut_oskey: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Command",
         description="Require Command for the Node Console shortcut on macOS",
         default=False,
         update=_shortcut_changed,
     )
     snippet_shortcut_key: EnumProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Snippet Shortcut Key",
         description="Keyboard key used to save selected nodes as a snippet node",
         items=(
@@ -6594,30 +6579,35 @@ class ENS_AddonPreferences(AddonPreferences):
         update=_shortcut_changed,
     )
     snippet_shortcut_shift: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Shift",
         description="Require Shift for the snippet node shortcut",
         default=True,
         update=_shortcut_changed,
     )
     snippet_shortcut_ctrl: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Ctrl",
         description="Require Ctrl for the snippet node shortcut",
         default=sys.platform != "darwin",
         update=_shortcut_changed,
     )
     snippet_shortcut_alt: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Alt",
         description="Require Alt for the snippet node shortcut",
         default=False,
         update=_shortcut_changed,
     )
     snippet_shortcut_oskey: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Command",
         description="Require Command for the snippet node shortcut on macOS",
         default=sys.platform == "darwin",
         update=_shortcut_changed,
     )
     snippet_library_path: StringProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Snippet Library File",
         description="External JSON file used to store snippet nodes",
         default="",
@@ -6625,18 +6615,21 @@ class ENS_AddonPreferences(AddonPreferences):
         update=_preference_changed,
     )
     snippet_nodes_expanded: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Snippet Nodes",
         description="Show saved snippet nodes in preferences",
         default=False,
         update=_preference_changed,
     )
     scan_asset_libraries: BoolProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Show Cached Asset Nodes",
         description="Show cached Asset Library node groups in search results. Refresh Asset Index updates the cache.",
         default=True,
         update=_preference_changed,
     )
     category_color_mode: EnumProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Category Color Display",
         description="How category colors are shown in Node Console search results",
         items=(
@@ -6648,6 +6641,7 @@ class ENS_AddonPreferences(AddonPreferences):
         update=_visual_preference_changed,
     )
     ui_scale: FloatProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Console Size",
         description="Adjust the Node Console text and panel size",
         default=0.8 if sys.platform == "win32" else 1.0,
@@ -6659,6 +6653,7 @@ class ENS_AddonPreferences(AddonPreferences):
         update=_visual_preference_changed,
     )
     console_width: FloatProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Console Width",
         description="Adjust the Node Console panel width",
         default=float(PANEL_WIDTH),
@@ -6671,12 +6666,14 @@ class ENS_AddonPreferences(AddonPreferences):
         update=_visual_preference_changed,
     )
     favorites_json: StringProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Favorite Nodes",
         description="Internal favorite node storage",
         default="[]",
         options={"HIDDEN"},
     )
     favorite_meta_json: StringProperty(
+        translation_context=ui_translations.CONTEXT,
         name="Favorite Node Names",
         description="Internal favorite node display names",
         default="{}",
@@ -7172,6 +7169,8 @@ def register():
         if IME_UNINSTALL is None:
             IME_UNINSTALL = install_if_available(sys.modules[__name__])
         for cls in classes:
+            if issubclass(cls, Operator):
+                cls.bl_translation_context = ui_translations.CONTEXT
             bpy.utils.register_class(cls)
         _load_preferences_from_settings()
         _set_update_releases([])

@@ -52,6 +52,7 @@ RELEASE_HIGHLIGHTS = {
     "1.5.4": "Search after IME confirmation",
     "1.5.5": "Preferences display fixes",
     "1.6.0": "Blender 5.3 node support",
+    "1.6.1": "Preferences in six languages",
 }
 PROTECTED_NAMES = {"node_console_settings.json", "node_console_snippets.json"}
 REQUIRED_FILES = {"__init__.py", "node_registry.py", "node_search_aliases.json",

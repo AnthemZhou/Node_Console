@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.1
+
+<!-- node-console-summary: {"zh":"偏好设置六语言完善","en":"Preferences in six languages"} -->
+
+- 补齐偏好设置、更新提示、历史版本更新重点和悬停说明的中、英、日、韩、俄、西六语言文案，跟随 Blender 界面语言，不改变已选节点语言及用户数据。
+- 使用插件独立翻译上下文，避免覆盖 Blender 或其他插件的同名文字；同步六语言使用说明。
+- Complete Preferences, update messages, historical release highlights and tooltips in English, Chinese, Japanese, Korean, Russian and Spanish, following Blender's UI language without changing the selected node language or user data.
+- Isolate translations in the add-on's own context to avoid overriding Blender or other add-ons; update all six README language sections.
+
 ## 1.6.0
 
 <!-- node-console-summary: {"zh":"Blender 5.3 节点支持","en":"Blender 5.3 node support"} -->
